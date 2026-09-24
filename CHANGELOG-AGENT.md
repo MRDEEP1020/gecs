@@ -3058,6 +3058,11 @@ Fichier(s) : app/Jobs/ProcessDocumentOcr.php (`premiereOrganisationHorsNsia()` �
 Fichier(s) : tests/Feature/Jobs/ProcessDocumentOcrTest.php (nouveau test `test_une_formule_dintroduction_nest_pas_avalee_dans_le_nom_via_le_motif_suffixe`)
 Pourquoi : découvert en vérifiant le RC/NIU du même document CDS Technologies (demande de l'utilisateur "the number now and the niu") — "L'entreprise CDS Technologies Sarl" était proposé comme organisation au lieu de "CDS Technologies Sarl". Cause : le motif "forme juridique en suffixe" capture toute une fenêtre de mots précédant "Sarl/SA/...", et `$mot` (majuscule initiale + reste quelconque) ne distingue pas un vrai mot du nom d'une formule d'introduction ("L'entreprise", "La société"...) qui commence, elle aussi, par une majuscule de début de phrase. RC et NIU eux-mêmes étaient déjà corrects sur ce document — aucun changement nécessaire là. 433/433 tests.
 
+## [2026-09-24 10:00] Dépôt GitHub — settings.local.json retiré du suivi git
+Fichier(s) : .gitignore
+Fichier(s) : .claude/settings.local.json (retiré de l'index git via `git rm --cached`, conservé sur le disque)
+Pourquoi : mise en place du dépôt GitHub (MRDEEP1020/gecs) — `settings.local.json` contient les permissions Claude Code personnelles de ce poste, modifiées à chaque commande approuvée ; il avait été inclus par erreur dans le commit initial et ne doit pas être partagé (seul `.claude/settings.json`, le hook de journalisation de la Règle n°8, reste versionné).
+
 ## [2026-09-22 10:00] Correctif — le NIU ne reconnaissait que "Cont[r]. N°", pas l'ordre inversé "N° Cont[r]."
 Fichier(s) : app/Jobs/ProcessDocumentOcr.php (`extraireExpediteurNiu()` — nouveau repli `/\bN°\s*Cont(?:r)?\.?\s*:?\s*([\w]{5,20})/iu`, entre le repli "Cont[r]. N°" du 09h35 et le repli générique "N°" seul)
 Fichier(s) : tests/Feature/Jobs/ProcessDocumentOcrTest.php (nouveau test `test_le_niu_est_extrait_quand_etiquete_n_degre_cont_dans_lordre_inverse`)
