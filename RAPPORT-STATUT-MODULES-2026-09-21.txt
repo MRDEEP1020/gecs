@@ -1,0 +1,369 @@
+===============================================================================
+GEC (Gestion Electronique du Courrier) — Nsia Assurances
+RAPPORT DE STATUT DES 10 MODULES FONCTIONNELS (PHASE 1)
+Genere le 2026-09-21, sur la base de DECISIONS.md (integral, 3582 lignes),
+CHANGELOG-AGENT.md (integral, 2855 lignes) et verification directe du code
+source (Models, Livewire, Jobs, Policies, migrations, routes).
+===============================================================================
+
+LEGENDE DES STATUTS
+--------------------
+TERMINE       = toutes les fonctionnalites du perimetre phase 1 pour ce module
+                sont codees et fonctionnelles (les points explicitement HORS
+                SCOPE phase 1 — PRD.md §4 — ne comptent pas contre ce statut).
+PARTIEL       = une partie reelle et fonctionnelle existe, mais au moins une
+                sous-fonctionnalite du perimetre phase 1 manque ou est un stub.
+NON COMMENCE  = rien de fonctionnel n'existe (au mieux des fichiers vides/stubs
+                jamais branches).
+
+===============================================================================
+TABLEAU RECAPITULATIF
+===============================================================================
+
+ # | Module                              | Statut       | Point bloquant principal
+---|--------------------------------------|--------------|----------------------------------------------------
+ 1 | Enregistrement courrier              | TERMINE      | Champs "Affaire X c/Y" (Contentieux) non ajoutes
+ 2 | Numerisation et OCR                  | TERMINE      | Detection cercle manuscrit differee (assumee)
+ 3 | Classement et indexation             | PARTIEL      | Dossiers de classement : privileges seuls, rien de plus
+ 4 | Circuit de validation (Workflow)     | TERMINE      | Verrouillage post-"Transfere" non implemente (assume)
+ 5 | Suivi/tracabilite + SLA              | PARTIEL      | SlaCalculatorService = stub fige "a_temps", 0 scheduler
+ 6 | Gestion des affectations             | PARTIEL      | Hierarchie sous-departements jamais construite
+ 7 | Alertes et relances automatiques     | NON COMMENCE | Job + Notification vides, aucun scheduler nulle part
+ 8 | Recherche avancee                    | PARTIEL      | Recherche par localisation physique impossible (dep. #3)
+ 9 | Archivage electronique securise      | PARTIEL      | Pas de Job d'archivage auto, pas de decharge, pas de suppr.
+10 | Tableau de bord et statistiques      | PARTIEL      | Pas d'export PDF/Excel (HORS SCOPE assume, donc OK)
+
+===============================================================================
+DETAIL PAR MODULE
+===============================================================================
+
+--- MODULE 1 — Enregistrement du courrier entrant et sortant ---
+STATUT : TERMINE (perimetre phase 1 tel que precise par le SRS client du 2026-09-15)
+
+Construit :
+- RegistrationForm.php / EditForm.php / Forms/CourrierForm.php
+- Numero de reference unique genere atomiquement (NumeroReferenceGenerator,
+  lockForUpdate, format GEC-{annee}-{sequence})
+- Pre-remplissage OCR etendu : date, objet, expediteur (organisation/nom/RC/
+  NIU/telephone/email/adresse), destinataire — chacun avec bandeau "a verifier"
+- Flux dedie courrier confidentiel (RegistrationFormConfidentiel.php, jamais
+  scanne, pas d'upload de fichier)
+- Assistant en 5 etapes (wizard UI, 2026-09-17/18)
+- Flux "scan-first" avec brouillons (courrier_brouillons)
+- Import automatique par dossier surveille
+
+Manque / reporte (cite DECISIONS.md) :
+- Champs "Affaire X c/Y" (Partie A / Partie B, cas Contentieux) — note le
+  2026-09-07 comme "pas traite", jamais construit depuis (aucune colonne
+  partie_a/partie_b en base)
+- Extraction automatique du mode de reception — jamais tentee par principe
+  (aucun marqueur textuel fiable), reste toujours saisi manuellement
+- Fuite residuelle : EditForm ne purge pas le texte OCR si un courrier bascule
+  en confidentiel apres coup (note le 2026-09-15, non corrige)
+
+Derniere activite : 2026-09-21 10:40-11:35 (confidentialite numerique, DGA
+confirme/corrige le niveau) — WorkflowService.php, ShowCourrier.php,
+showCourrier.blade.php, migration convert_courriers_confidentialite_to_numeric
+
+--- MODULE 2 — Numerisation et dematerialisation ---
+STATUT : TERMINE (dans les limites OCR documentees et acceptees)
+
+Construit :
+- Tesseract OCR (fra+eng) via ProcessDocumentOcr / ProcessBrouillonOcr
+- Conversion PDF->image via Ghostscript (600 dpi + passe inversee pour
+  bandeaux clairs sur fond fonce)
+- Controle qualite (longueur mini + confiance moyenne >= 55%)
+- Correction d'orientation EXIF
+- Previsualisation PDF.js (zoom, recherche, pagination)
+- Extraction par motifs structurels (le tampon papier n'est plus utilise,
+  abandon confirme par le client le 2026-09-04)
+
+Manque / reporte :
+- Detection du cercle manuscrit par vision par ordinateur — jamais construite
+  (aucune librairie CV dans la stack, aucun echantillon reel disponible)
+- Reconnaissance de texte manuscrit — explicitement hors perimetre (Tesseract
+  ne lit que l'imprime)
+- Un document reel de test a un bandeau RC/NIU definitivement illisible malgre
+  deux tentatives de correction dediees (2026-09-18 02:15) — limite qualite
+  d'impression/photo acceptee, pas un bug
+
+Derniere activite : 2026-09-18 02:15-02:30 (ProcessDocumentOcr.php — passe
+inversee, 600dpi, correctif limite memoire)
+
+--- MODULE 3 — Classement et indexation automatiques ---
+STATUT : PARTIEL
+
+Construit et complet :
+- Moteur de regles mots-cles (ClassificationService, RegleClassement, MotCle)
+- Regle "historique d'expediteur" (prioritaire sur les mots-cles)
+- UI d'administration des regles (RegleList)
+- Job en arriere-plan (IndexCourrierJob, ReanalyserCourriersJob)
+- Principe "proposition jamais imposee" respecte partout
+- Recherche plein texte (rejoint le Module 8)
+- Le courrier confidentiel contourne correctement tout le pipeline de
+  classification (2026-09-15)
+
+Manque entierement (DECISIONS.md, 2026-09-16, "Module 3 — dossiers de
+classement") :
+- Dossiers de classement crees par service (chef de service ou collaborateurs)
+  : SEULE l'etape 1 est faite — deux privileges semes
+  (dossiers_classement.creer, dossiers_classement.gerer_tout). AUCUN modele
+  DossierClassement, AUCUNE migration, AUCUNE Policy, AUCUNE UI n'existent
+  (verifie : zero fichier trouve). DECISIONS.md dit lui-meme : "Prochaine
+  etape (pas commencee) : modele DossierClassement + migration +
+  DossierClassementPolicy + UI de creation/gestion." Bloque depuis le
+  2026-09-16, jamais repris.
+- Privilege d'acces par dossier (plus fin que le niveau service) — non modelise
+- Sous-type "Contentieux" (partie_a/partie_b) — jamais ajoute
+- Classification par Machine Learning — HORS SCOPE phase 1 (PRD.md §4), ne
+  compte pas contre ce statut
+
+Derniere activite : 2026-09-16 09:00 (privileges uniquement) — rien depuis.
+
+--- MODULE 4 — Circuit de validation (Workflow) ---
+STATUT : TERMINE (workflow generique unique, conforme au perimetre PRD.md §3)
+
+Construit :
+- Machine a etats unique codee en dur (WorkflowService::TRANSITIONS)
+- Tracabilite complete de chaque transition
+- Sous-circuit DGA/ADJ DGA avec 3 sous-statuts explicites (en_attente_de_
+  transfert / en_cours_de_transfert / "Transfere")
+- Liste de destinataires de transfert par agent (destinataires_transfert)
+- Transfert en masse (MesCourriers)
+- Diffusion temps reel du statut sur le parcours (2026-09-18 11:15)
+- Routage automatique des sinistres contournant la validation DGA
+
+Manque / reporte :
+- Verrouillage de la fiche une fois au statut "Transfere" — prevu par le spec,
+  deliberement non implemente ("scope ambigu, pas tranche avec l'utilisateur",
+  2026-09-15)
+- Derogation admin pour sauter une etape — non implementee (2026-09-04, "a
+  ajouter si un besoin reel se presente")
+- Circuits multiples par type de courrier — HORS SCOPE phase 1 (PRD.md §4)
+
+Derniere activite : 2026-09-18 17:00 (etape "Transfert" ajoutee au parcours) +
+2026-09-21 10:40 (le DGA fixe aussi la confidentialite au transfert)
+
+--- MODULE 5 — Suivi et tracabilite (avec gestion des delais SLA) ---
+STATUT : PARTIEL (tracabilite TERMINEE, SLA NON COMMENCE)
+
+Tracabilite : solide et complete — table courrier_historiques append-only,
+chaque action du circuit tracee, aucune voie de suppression physique nulle part.
+
+SLA : SlaCalculatorService::calculerStatutDelai() est un STUB FIGE qui renvoie
+toujours 'a_temps', inconditionnellement (verifie directement dans le code).
+Le modele SlaRegle existe (type_courrier, delai_max_heures, seuil_alerte_
+heures fillable) MAIS aucune migration ne cree de table sla_regles (absente
+des 45 fichiers de migration), aucun code ne la lit ni ne l'ecrit, et aucun
+reglage SLA par document individuel ou par chef de service n'existe.
+DECISIONS.md (2026-09-15, synchro SRS) le confirme explicitement : "SLA
+ajustable par document individuel... SlaCalculatorService::calculerStatutDelai()
+reste un stub retournant toujours 'a_temps', aucun scheduler enregistre."
+Aucune entree de CHANGELOG-AGENT.md ne touche jamais SlaCalculatorService.php
+ou une migration sla_regles — inchange depuis son ebauche initiale.
+
+--- MODULE 6 — Gestion des affectations ---
+STATUT : PARTIEL
+
+Construit :
+- Affectation manuelle avec preselection "moins charge" (bug reel trouve et
+  corrige le 2026-09-07 — la preselection n'etait pas cablee)
+- Table affectations append-only
+- Reaffectation avec motif obligatoire
+- Courrier::affectationCourante(), garantie "jamais orphelin"
+- Affichage de la charge de travail (tri croissant)
+
+Manque :
+- Hierarchie des sous-departements (ex. DSIN -> Sinistre Auto/Sante, chacun
+  avec son propre chef) — le modele Service n'a AUCUNE colonne parent_id
+  (verifie : fillable = nom, code, responsable_id uniquement). Signale comme
+  net-nouveau dans la synchro SRS du 2026-09-15, jamais implemente depuis.
+
+--- MODULE 7 — Alertes et relances automatiques ---
+STATUT : NON COMMENCE
+
+app/Jobs/SendMailAlertJob.php et app/Notifications/CourrierEnRetardNotification.php
+sont des stubs litteralement vides (corps vides / commentaire seul), jamais
+dispatches nulle part dans le code. AUCUN scheduler n'est enregistre nulle
+part (routes/console.php ne contient que la commande "inspire" par defaut ;
+aucun appel Schedule:: dans app/ ; bootstrap/app.php n'appelle jamais
+->withSchedule()). Le tableau de bord, l'item "Alertes" de la sidebar et la
+cloche de notification de la navbar sont volontairement laisses comme des
+etats honnetes/vides plutot que d'afficher des donnees fabriquees — decision
+documentee et repetee au moins 4 fois dans DECISIONS.md (2026-09-08,
+2026-09-15, 2026-09-16 x2). Ce module n'a jamais depasse le stade des deux
+fichiers vides depuis le debut du projet.
+
+--- MODULE 8 — Recherche avancee ---
+STATUT : PARTIEL
+
+Construit :
+- Composant dedie CourrierList.php (route courriers/rechercher) — une vraie
+  fonctionnalite de recherche separee, pas de simples filtres ajoutes a une
+  liste
+- Filtres numero/objet/expediteur/dates/service/statut/sens
+- Recherche plein texte MySQL FULLTEXT sur le contenu OCR (verifie contre un
+  vrai MySQL, pas seulement le repli SQLite des tests)
+- Filtres type_document/confidentialite
+- Recherche combinee via la barre de navigation (?q=)
+- Colonnes triables, perimetre par profil applique au niveau requete
+
+Manque :
+- "Recherche par localisation physique" et "recherche par tracabilite" comme
+  modes dedies explicites — signales net-nouveau dans la synchro SRS du
+  2026-09-15 ; depend des Dossiers de classement (Module 3), qui n'existent
+  pas encore -> ne peut donc pas exister actuellement. Aucun champ de
+  localisation physique n'existe sur courriers ni ailleurs.
+
+Derniere activite : 2026-09-18 06:15 (colonne "N° Courrier" triable, reelle
+pas decorative)
+
+--- MODULE 9 — Archivage electronique securise ---
+STATUT : PARTIEL
+
+Construit :
+- courriers.confidentialite : desormais une echelle numerique hierarchique
+  1-5 (2026-09-21), comparee de facon cumulative a
+  User::niveauConfidentialiteEffectif() dans CourrierPolicy (methode
+  niveauSuffisant(), verifiee en premier dans view()/update()/affecter()/
+  traiter()/valider()/transferer()/validerService()) — exactement le "niveau
+  de confidentialite numerique hierarchique, applique independamment du
+  canal" que le PRD designe comme le changement le plus structurant, et c'est
+  reellement applique cote serveur, pas seulement cache dans l'UI (confirme
+  via CourrierPolicy.php et CourrierConfidentialiteTest.php dedie)
+- Systeme de privileges (hasPrivilege()) mature et complet
+
+Manque entierement :
+- Aucun Job de transition "traite -> archive" n'existe — DECISIONS.md
+  (2026-09-04, entree Module 4) le dit explicitement : "traite -> archive
+  n'est pas une transition manuelle... ce sera un Job du Module 9, PAS
+  CONSTRUIT ICI." Aucun tel job n'existe dans app/Jobs/.
+- Decharge (recu d'emprunt de l'original physique) — signalee net-nouveau le
+  2026-09-15, "toujours sans objet, Module 9 pas commence" (2026-09-04),
+  jamais construite depuis
+- Droits d'acces par dossier x profil — depend des Dossiers de classement
+  (Module 3), qui n'existent pas -> ne peut donc pas exister
+- Aucun flux de suppression douce/validee par un admin pour les archives
+  (Regle n°5 de CLAUDE.md) — aucune capacite de suppression n'existe pour
+  Courrier actuellement (confirme : CourrierPolicy n'a aucune methode delete
+  — omission deliberee notee explicitement dans l'entree du 2026-09-18)
+
+Derniere activite : 2026-09-21 09:05-11:35 (application de la confidentialite
++ echelle numerique)
+
+--- MODULE 10 — Tableau de bord et statistiques ---
+STATUT : PARTIEL
+
+Construit :
+- Vrai Dashboard.php / Dashboard.blade.php (a remplace le placeholder du
+  starter-kit le 2026-09-16)
+- 4 vraies cartes d'indicateurs, "Derniers courriers enregistres"
+- "Taches du jour" (filtre par privilege, donnees reelles issues de
+  WorkflowQueue, aucun quota fabrique)
+- Mini-calendrier reellement fonctionnel
+- Filtrage du contenu par privilege (une seule mise en page, garde @can, selon
+  confirmation SRS)
+- Alignement visuel iteratif etendu sur les maquettes client jusqu'au 2026-09-21
+
+Manque / assume comme stub honnete :
+- Le panneau "Notifications" reste "Bientot disponible" (depend du Module 7,
+  jamais de donnee fabriquee)
+- Widget "Enregistrement rapide en une page" — explicitement abandonne sur
+  instruction client
+- AUCUN export PDF/Excel n'existe nulle part (aucun controleur/bouton
+  d'export trouve dans Dashboard.php, CourrierList.php, ni dans les routes)
+  — les filtres avances/export sont explicitement HORS SCOPE phase 1
+  (PRD.md §4), donc cela ne compte pas contre le statut TERMINE, mais c'est
+  reellement absent, pas seulement reporte
+
+Derniere activite : 2026-09-18 19:50 (largeur du panneau lateral) — aucun
+travail Module 10 trouve dans la session du 2026-09-21.
+
+===============================================================================
+ACTIVITE DE LA SESSION DU JOUR (2026-09-21)
+===============================================================================
+
+Tous les fichiers modifies aujourd'hui concernent UNE SEULE fonctionnalite :
+la reconstruction complete de la page admin "Utilisateurs & Acces"
+(/admin/utilisateurs) a partir d'une maquette client, ce qui touche les
+Modules 1, 3 (privileges seulement), 6/9 (confidentialite) et supprime
+completement /admin/privileges.
+
+1. 09:00 — migrations 2026_09_21_090000 (colonnes users : telephone, poste,
+   photo_path, actif, derniere_connexion_le, niveau_confidentialite) et
+   2026_09_21_090100 (privileges.type)
+2. 09:05 — User.php, Courrier.php, Privilege.php, CourrierPolicy.php,
+   CourrierList.php — hierarchie de confidentialite numerique modelisee et
+   appliquee ; 2 bugs reels trouves/corriges (defaut en memoire via
+   $attributes ; auto-verrouillage de l'Administrateur)
+3. 09:10 — FortifyServiceProvider.php, EnregistrerDerniereConnexion.php
+   (nouveau), AppServiceProvider.php — desactivation de compte reellement
+   appliquee + tracage de la derniere connexion (integration Fortify, pas
+   fabrique)
+4. 09:15 — PrivilegeList.php SUPPRIME, privilegeList.blade.php SUPPRIME,
+   PrivilegeListTest.php SUPPRIME, routes/web.php (route admin.privileges
+   retiree), sidebar.blade.php, PrivilegeSeeder.php — catalogue de privileges
+   fige, page admin dediee retiree sur decision client
+5. 09:20 — UserList.php, userList.blade.php, AvatarService.php (nouveau) —
+   reconstruction complete : tableau pagine, modales ajout/edition, modale
+   d'edition a 6 onglets (dont "Destinataires de transfert", absent de la
+   maquette mais conserve pour ne rien perdre), modale de gestion des
+   permissions
+6. 09:25 — Tests : UserListTest.php reecrit, CourrierConfidentialiteTest.php
+   (nouveau), AuthenticationTest.php (+2 tests), RegistrationFormConfidentielTest.php
+7. 10:00 — userList.blade.php — modale restructuree en 3 colonnes (onglets
+   verticaux + panneau "Apercu du compte" persistant) pour coller a la maquette
+8. 10:15 — UserList.php, userList.blade.php, UserListTest.php — separation
+   cosmetique Nom/Prenom (toujours une seule colonne users.name, aucun
+   changement de schema)
+9. 10:25 — userList.blade.php — "Service et profil"/"Niveau de confidentialite"
+   fusionnes sous "Informations generales"
+10. 10:40 — WorkflowService.php, ShowCourrier.php, showCourrier.blade.php,
+    User.php, tests — le DGA fixe/confirme desormais le vrai niveau de
+    confidentialite du courrier (pas seulement la premiere estimation de la
+    receptionniste) ; bug d'auto-verrouillage du DGA corrige puis un
+    contournement cache annule sur correction explicite de l'utilisateur (10:55)
+11. 11:20 — migration 2026_09_21_110000 (nouvelle) + changements etendus sur
+    Courrier.php, User.php, CourrierPolicy.php, CourrierList.php, 6
+    composants Livewire, vues PDF, 7 fichiers de tests — la confidentialite
+    passe d'un enum texte a 3 valeurs a une echelle numerique 1-5
+12. 11:35 — correction finale de formatage ("Niveau :n" partout, jamais un
+    chiffre nu) sur les 7 memes vues Blade + 1 test
+
+Aucun fichier touche aujourd'hui n'appartient aux Modules 2, 4, 5, 7 ou 8 (le
+Module 10 non plus). Le travail du jour est entierement concentre sur :
+Module 9 (application de la confidentialite — vraie avancee substantielle) +
+Module 1 (champs lies a la confidentialite) + une consolidation de l'UI
+d'administration des privileges du Module 3 (catalogue fige, aucun travail
+sur les dossiers de classement) + un ecran d'administration des utilisateurs
+qui touche a la plomberie d'acces des Modules 6/9 plutot qu'a un seul module
+fonctionnel isole.
+
+===============================================================================
+SYNTHESE — CE QUI RESTE A FAIRE, PAR PRIORITE DE RISQUE PROJET
+===============================================================================
+
+1. Module 7 (Alertes/relances) — RIEN n'existe au-dela de 2 fichiers vides.
+   C'est le module le plus en retard du projet, cite comme stub a repetition
+   depuis le 2026-09-08 sans jamais avancer. Bloque aussi la vraie utilite
+   du Module 5 (SLA) et du panneau "Notifications" du Module 10.
+
+2. Module 5, volet SLA — le calculateur est un stub fige, aucune table
+   sla_regles, aucun scheduler Laravel enregistre nulle part dans le projet
+   (verifie : ni routes/console.php, ni bootstrap/app.php). Meme constat
+   racine que le Module 7 : le Scheduler Laravel n'a jamais ete branche.
+
+3. Module 3, volet Dossiers de classement — bloque depuis le 2026-09-16
+   (2 privileges semes, rien de plus). Bloque en cascade la partie
+   "localisation physique" du Module 8 et les droits par dossier du Module 9.
+
+4. Module 6, hierarchie des sous-departements — Service.parent_id n'existe
+   pas, signale net-nouveau depuis le 2026-09-15.
+
+5. Module 9, transition automatique "traite -> archive" et "decharge" —
+   jamais construites, explicitement documentees comme "pas construit ici"
+   depuis le 2026-09-04.
+
+===============================================================================
+Fin du rapport.
+===============================================================================
