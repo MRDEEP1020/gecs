@@ -593,4 +593,100 @@ class UserListTest extends TestCase
         $component->call('ajouterDestinataire', $agent->id);
         $this->assertFalse(User::find($agent->id)->destinatairesTransfert->contains('id', $agent->id));
     }
+
+    // 2026-09-24 — lien "Gérer cet utilisateur" de la page Organisation :
+    // ouvre directement la modale "Modifier" de ce compte, cascade
+    // pré-remplie depuis son service réel.
+    public function test_le_parametre_modifier_ouvre_directement_la_fiche_du_compte(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $service = Service::factory()->create(['code' => 'DIS']);
+        $departement = $this->departementPonte($service);
+        $collaborateur = $this->utilisateurAvecProfil('Collaborateur', ['service_id' => $service->id]);
+        $this->actingAs($admin);
+
+        Livewire::withQueryParams(['modifier' => $collaborateur->id])
+            ->test(UserList::class)
+            ->assertSet('utilisateurEditionId', $collaborateur->id)
+            ->assertSet('editionDepartementSelectionneId', $departement->id);
+    }
+
+    // 2026-09-24 ("make the all modify modal to show the correct
+    // informations") — la modale affiche la même position que la colonne
+    // "Département" de la table, pas seulement le pont service_id.
+    public function test_la_modale_preremplit_lentite_dont_lutilisateur_est_responsable(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $responsable = $this->utilisateurAvecProfil('Responsable de service');
+        $serviceSante = Service::factory()->create();
+        $direction = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_DEPARTMENT, 'parent_id' => null]);
+        $sante = OrganizationUnit::factory()->create([
+            'type' => OrganizationUnit::TYPE_SERVICE,
+            'parent_id' => $direction->id,
+            'service_id' => $serviceSante->id,
+            'responsible_user_id' => $responsable->id,
+        ]);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $responsable->id)
+            ->assertSet('editionDepartementSelectionneId', $direction->id)
+            ->assertSet('editionUniteSelectionneeId', $sante->id)
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        // Ce qui est affiché est ce qui est enregistré.
+        $this->assertSame($serviceSante->id, $responsable->fresh()->service_id);
+    }
+
+    public function test_la_modale_preremplit_le_rattachement_fait_depuis_lorganisation(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $service = Service::factory()->create();
+        $departement = $this->departementPonte($service);
+        $collaborateur = $this->utilisateurAvecProfil('Collaborateur');
+        $departement->utilisateurs()->attach($collaborateur->id, ['is_primary' => true]);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $collaborateur->id)
+            ->assertSet('editionDepartementSelectionneId', $departement->id)
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        $this->assertSame($service->id, $collaborateur->fresh()->service_id);
+    }
+
+    public function test_modifier_le_telephone_conserve_un_service_hors_organigramme(): void
+    {
+        // Bug réel (2026-09-24) : un service pas encore dans l'organigramme
+        // (agent "AC", DGA "SDG") était effacé au premier enregistrement.
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $serviceHorsOrganigramme = Service::factory()->create(['nom' => 'Accueil', 'code' => 'AC']);
+        $agent = $this->utilisateurAvecProfil('Agent', ['service_id' => $serviceHorsOrganigramme->id]);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $agent->id)
+            ->assertSee('Service actuel : Accueil (AC)')
+            ->set('editionTelephone', '+225 01 02 03 04')
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        $this->assertSame($serviceHorsOrganigramme->id, $agent->fresh()->service_id);
+    }
+
+    public function test_le_parametre_modifier_ne_contourne_pas_les_droits_sur_le_compte(): void
+    {
+        // Sans privileges.gerer, un compte Administrateur reste intouchable
+        // (voir UserList::peutGererCompte()), même via l'URL.
+        $gestionnaire = $this->utilisateurAvecProfil('Agent');
+        $gestionnaire->privilegesDirectes()->attach(Privilege::where('cle', 'utilisateurs.gerer')->firstOrFail());
+        $cible = $this->utilisateurAvecProfil('Administrateur');
+        $this->actingAs($gestionnaire->fresh());
+
+        Livewire::withQueryParams(['modifier' => $cible->id])
+            ->test(UserList::class)
+            ->assertForbidden();
+    }
 }

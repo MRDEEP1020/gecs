@@ -9,6 +9,7 @@ use App\Models\CourrierHistorique;
 use App\Models\Profil;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\CourrierEnRetardNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -114,7 +115,7 @@ class DashboardTest extends TestCase
         $this->assertSame(1, Livewire::test(Dashboard::class)->get('courriersUrgents'));
     }
 
-    // Règle n°6 — même périmètre que WorkflowQueue pour Collaborateur : ne
+    // Règle n°6 — même périmètre que "Tous les courriers" pour Collaborateur : ne
     // voit que ce qui lui est actuellement affecté.
     public function test_taches_du_jour_est_scope_au_collaborateur(): void
     {
@@ -137,6 +138,66 @@ class DashboardTest extends TestCase
         $this->assertSame($lesien->id, $taches->first()->id);
     }
 
+    // 2026-09-24 ("customize the tâche du jour") : triées par échéance (les
+    // retards d'abord), chaque tâche affiche l'action attendue et son
+    // échéance réelle, l'en-tête compte le total.
+    public function test_taches_du_jour_triees_par_echeance_avec_action_et_delai(): void
+    {
+        $collaborateur = $this->utilisateurAvecProfil('Collaborateur');
+        $service = Service::factory()->create(['code' => 'DIS']);
+
+        $dansCinqJours = $this->courrier(['statut' => 'affecte', 'service_id' => $service->id, 'echeance' => today()->addDays(5), 'numero_reference' => 'GEC-2026-000101']);
+        $enRetard = $this->courrier(['statut' => 'en_traitement', 'service_id' => $service->id, 'echeance' => today()->subDays(2), 'numero_reference' => 'GEC-2026-000102']);
+        $aujourdhui = $this->courrier(['statut' => 'affecte', 'service_id' => $service->id, 'echeance' => today(), 'numero_reference' => 'GEC-2026-000103']);
+
+        foreach ([$dansCinqJours, $enRetard, $aujourdhui] as $courrier) {
+            Affectation::create(['courrier_id' => $courrier->id, 'user_id' => $collaborateur->id, 'affecte_par_id' => $collaborateur->id]);
+        }
+
+        $this->actingAs($collaborateur);
+
+        $composant = Livewire::test(Dashboard::class);
+
+        $this->assertSame([$enRetard->id, $aujourdhui->id, $dansCinqJours->id], $composant->get('tachesDuJour')->pluck('id')->all());
+        $this->assertSame(3, $composant->get('totalTachesDuJour'));
+
+        // Échéance affichée en chronomètre en direct (2026-09-24) : le
+        // compte à rebours est calculé côté navigateur, le serveur fournit
+        // la fin réelle de chaque tâche (data-fin), dans l'ordre d'urgence.
+        $composant
+            ->assertSeeInOrder([
+                'GEC-2026-000102', 'data-fin="'.$enRetard->fresh()->chronoFin()->getTimestampMs().'"', 'À traiter',
+                'GEC-2026-000103', 'data-fin="'.$aujourdhui->fresh()->chronoFin()->getTimestampMs().'"', 'À démarrer',
+                'GEC-2026-000101', 'data-fin="'.$dansCinqJours->fresh()->chronoFin()->getTimestampMs().'"',
+            ], false)
+            ->assertSee('x-data="chronometre"', false)
+            ->assertSee('DIS');
+    }
+
+    // 2026-10-02 — demande explicite de l'utilisateur ("remove on the
+    // dashboard too", suite directe du même changement sur "Tous les
+    // courriers") : <x-chronometre> masque son compte à rebours sur CETTE
+    // page (:masquer-temps="true" dans "Derniers courriers" ET "Tâches du
+    // jour"), ne garde que les badges d'état "Bientôt en retard"/"En
+    // retard". Le composant Alpine reste bien présent (x-data="chronometre"
+    // toujours là, etat toujours calculé côté client) — seul le badge
+    // visible compte à rebours (classe tabular-nums) disparaît.
+    public function test_le_compte_a_rebours_est_masque_sur_le_tableau_de_bord(): void
+    {
+        $collaborateur = $this->utilisateurAvecProfil('Collaborateur');
+        $service = Service::factory()->create(['code' => 'DIS']);
+
+        $enRetard = $this->courrier(['statut' => 'en_traitement', 'service_id' => $service->id, 'echeance' => today()->subDays(2)]);
+        Affectation::create(['courrier_id' => $enRetard->id, 'user_id' => $collaborateur->id, 'affecte_par_id' => $collaborateur->id]);
+
+        $this->actingAs($collaborateur);
+
+        $html = Livewire::test(Dashboard::class)->html();
+
+        $this->assertStringContainsString('x-data="chronometre"', $html);
+        $this->assertStringNotContainsString('tabular-nums', $html, 'Le compte à rebours ne doit pas apparaître sur le tableau de bord.');
+    }
+
     // Privilège dashboard.taches_du_jour non assigné à Agent par défaut
     // (voir PrivilegeSeeder) — le widget doit rester absent (null), pas une
     // liste vide affichée à tort.
@@ -154,5 +215,42 @@ class DashboardTest extends TestCase
 
         $this->actingAs($this->utilisateurAvecProfil('Collaborateur'));
         Livewire::test(Dashboard::class)->assertDontSee('Enregistrer un courrier');
+    }
+
+    // 2026-10-05 (Module 7) — la carte "Notifications" affichait jusqu'ici
+    // le texte figé "Bientôt disponible." (voir SimulationDashboardTest,
+    // constat n°4, mis à jour le même jour) ; elle montre désormais un vrai
+    // aperçu des notifications de l'utilisateur connecté.
+    public function test_la_carte_notifications_affiche_un_vrai_apercu(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $courrier = $this->courrier();
+        $agent->notify(new CourrierEnRetardNotification($courrier, enRetard: true));
+        $this->actingAs($agent);
+
+        Livewire::test(Dashboard::class)
+            ->assertSee($courrier->numero_reference)
+            ->assertDontSee('Bientôt disponible');
+    }
+
+    public function test_la_carte_notifications_affiche_letat_vide_honnete_sans_notification(): void
+    {
+        $this->actingAs($this->utilisateurAvecProfil('Agent'));
+
+        Livewire::test(Dashboard::class)
+            ->assertSee(__('Aucune notification pour l\'instant.'))
+            ->assertDontSee('Bientôt disponible');
+    }
+
+    // Règle n°6 — jamais les notifications d'un autre utilisateur.
+    public function test_la_carte_notifications_najamais_les_notifications_dun_autre_utilisateur(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $autre = $this->utilisateurAvecProfil('Agent');
+        $courrier = $this->courrier();
+        $autre->notify(new CourrierEnRetardNotification($courrier, enRetard: true));
+        $this->actingAs($agent);
+
+        Livewire::test(Dashboard::class)->assertDontSee($courrier->numero_reference);
     }
 }

@@ -10,6 +10,7 @@ use App\Models\OrganizationUnit;
 use App\Models\User;
 use App\Services\ClassificationService;
 use App\Services\DossierClassementService;
+use App\Services\SlaCalculatorService;
 use App\Services\WorkflowService;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
@@ -32,7 +33,7 @@ class ShowCourrier extends Component
     // l'onglet affiché reste piloté par Alpine côté client (aucun
     // changement du mécanisme existant, voir la vue), mais sa valeur
     // INITIALE peut désormais être fixée via ?onglet=circuit dans l'URL —
-    // pour que WorkflowQueue (file "Transferts") et le panneau "Actions
+    // pour que les "Tâches du jour" du tableau de bord et le panneau "Actions
     // rapides" puissent ouvrir directement sur "Circuit de traitement" au
     // lieu de forcer un clic supplémentaire sur chaque courrier. Valeur
     // non validée contre une liste blanche : une valeur inconnue ne
@@ -98,10 +99,24 @@ class ShowCourrier extends Component
 
     public string $commentaireCirculation = '';
 
+    // Module 5 — délai du chronomètre de traitement (2026-09-24), saisi par
+    // le responsable à l'affectation puis modifiable avec motif.
+    public ?int $delaiValeur = null;
+
+    public string $delaiUnite = 'jours';
+
+    public string $motifDelai = '';
+
     // Module 3/9 — modale "Classer dans un dossier" (2026-09-22, demande
     // explicite de l'utilisateur : "les trois" points d'entrée). Id brut,
     // revérifié contre $this->dossiersAccessibles avant d'agir (Règle n°6).
     public ?int $dossierAClasserId = null;
+
+    // Module 9 — modale "Émettre une décharge" (2026-10-05). Id brut,
+    // revérifié contre $this->utilisateursPourDecharge avant d'agir (Règle n°6).
+    public ?int $dechargeEmprunteurId = null;
+
+    public string $dechargeMotif = '';
 
     public function mount(int $courrierId): void
     {
@@ -127,6 +142,12 @@ class ShowCourrier extends Component
         // l'utilisateur le 2026-09-04, voir DECISIONS.md.
         if ($courrier->statut === 'enregistre' && ($premier = $this->collaborateursDuService->first())) {
             $this->collaborateurSelectionne = $premier['id'];
+        }
+
+        // Délai proposé à l'affectation = SLA actuel du courrier (le sien,
+        // sinon celui de son type) : le responsable le garde ou l'ajuste.
+        if ($courrier->statut === 'enregistre') {
+            $this->delaiValeur = SlaCalculatorService::delaiJours($courrier->sla_jours, $courrier->type_document);
         }
 
         // Module 1/4 — présélection RÉELLE (pas seulement un commentaire qui
@@ -199,6 +220,14 @@ class ShowCourrier extends Component
             'affectationCourante.collaborateur',
             'affectationCourante.affectePar',
             'piecesJointes',
+            // 2026-10-02 — affiché à 3 endroits de cette page ("Informations
+            // générales", "Détails complémentaires", "Actions rapides") :
+            // sans eager loading, la relation se charge quand même (mise en
+            // cache après le 1er accès), mais Règle n°3 (eager loading
+            // systématique) l'exige explicitement comme les autres ci-dessus.
+            'dossierClassement',
+            // Module 9 — "Décharge" (2026-10-05).
+            'dechargeActive.emprunteur',
         ])->findOrFail($this->courrierId);
 
         $this->authorize('view', $courrier);
@@ -249,6 +278,20 @@ class ShowCourrier extends Component
         return Auth::user()?->can('validerService', $this->courrier) ?? false;
     }
 
+    // Module 1/9 (2026-09-24) — "Marquer comme remis" sur un pli
+    // confidentiel, réservé à son destinataire (voir CourrierPolicy::cloturerConfidentiel()).
+    #[Computed]
+    public function peutCloturerConfidentiel(): bool
+    {
+        return Auth::user()?->can('cloturerConfidentiel', $this->courrier) ?? false;
+    }
+
+    #[Computed]
+    public function peutFixerDelai(): bool
+    {
+        return Auth::user()?->can('fixerDelai', $this->courrier) ?? false;
+    }
+
     // Module 3/9 — "Classer dans un dossier" : même principe que peutModifier
     // ci-dessus, une seule évaluation par rendu.
     #[Computed]
@@ -291,6 +334,24 @@ class ShowCourrier extends Component
             ->get();
     }
 
+    // Module 9 — "Décharge" (2026-10-05). Évalué une seule fois par rendu,
+    // même principe que peutModifier/peutTransferer ci-dessus.
+    #[Computed]
+    public function peutEmettreDecharge(): bool
+    {
+        return Auth::user()->can('emettreDecharge', $this->courrier);
+    }
+
+    // Liste pour le menu déroulant "Emprunteur" — n'importe quel utilisateur
+    // peut physiquement venir récupérer un original aux archives, pas
+    // seulement les collaborateurs d'un service précis (contrairement à
+    // collaborateursDuService ci-dessous, propre à la réaffectation).
+    #[Computed]
+    public function utilisateursPourDecharge()
+    {
+        return User::query()->orderBy('name')->get(['id', 'name']);
+    }
+
     // Module 1/4 — liste affichée dans la modale "Transférer à" : curatée
     // par l'administrateur pour CET utilisateur précis (voir DECISIONS.md
     // "Destinataires de transfert"), pas dérivée d'un profil/privilège.
@@ -307,6 +368,13 @@ class ShowCourrier extends Component
     #[Computed]
     public function collaborateursDuService()
     {
+        // Pli confidentiel (2026-09-24) : 'enregistre' SANS service — rien à
+        // affecter ; sans ce garde-fou, mount() plantait (500) pour tout
+        // lecteur de la fiche (TypeError dans chargeParCollaborateur()).
+        if ($this->courrier->service_id === null) {
+            return collect();
+        }
+
         $charge = app(WorkflowService::class)->chargeParCollaborateur($this->courrier->service_id);
 
         return User::query()
@@ -465,8 +533,12 @@ class ShowCourrier extends Component
                     || ($this->courrier->statut === 'rejete' && $statutEffectif === 'transfert')
                 : $statut === $statutEffectif;
 
+            // Un pli confidentiel est clôturé par 'confidentiel_remis'
+            // (2026-09-24, WorkflowService::cloturerConfidentiel()), pas par
+            // une validation hiérarchique.
             $dateAtteinte = $atteinte
-                ? $this->courrier->historiques->firstWhere('action', $definition['action'])?->created_at
+                ? ($this->courrier->historiques->firstWhere('action', $definition['action'])
+                    ?? ($statut === 'traite' ? $this->courrier->historiques->firstWhere('action', 'confidentiel_remis') : null))?->created_at
                 : null;
 
             $resultat[] = [
@@ -557,6 +629,8 @@ class ShowCourrier extends Component
             $this->peutValider,
             $this->peutTransferer,
             $this->peutValiderService,
+            $this->peutCloturerConfidentiel,
+            $this->peutFixerDelai,
             $this->collaborateursDuService,
             $this->destinatairesTransfert,
         );
@@ -718,7 +792,46 @@ class ShowCourrier extends Component
             return;
         }
 
-        $this->executer(fn () => $workflow->affecter($courrier, $collaborateur, Auth::user()), __('Courrier affecté à :nom.', ['nom' => $collaborateur->name]));
+        // Délai du chronomètre (2026-09-24) : fixé dans la même action que
+        // l'affectation quand le responsable en a le droit et l'a renseigné.
+        $avecDelai = $this->delaiValeur !== null && Auth::user()->can('fixerDelai', $courrier);
+
+        if ($avecDelai) {
+            $this->validerDelai();
+        }
+
+        $this->executer(function () use ($workflow, $courrier, $collaborateur, $avecDelai) {
+            $workflow->affecter($courrier, $collaborateur, Auth::user());
+
+            if ($avecDelai) {
+                $workflow->fixerDelai($courrier->fresh(), $this->minutesDelai(), Auth::user());
+            }
+        }, __('Courrier affecté à :nom.', ['nom' => $collaborateur->name]));
+    }
+
+    // Module 5 — nouveau délai à partir de maintenant, motif obligatoire
+    // (traçabilité, Règle n°5).
+    public function modifierDelai(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('fixerDelai');
+
+        $this->validerDelai();
+        $this->validate(['motifDelai' => ['required', 'string', 'min:5', 'max:500']], [], ['motifDelai' => __('motif du changement de délai')]);
+
+        $this->executer(fn () => $workflow->fixerDelai($courrier, $this->minutesDelai(), Auth::user(), $this->motifDelai), __('Délai de traitement mis à jour.'));
+    }
+
+    private function validerDelai(): void
+    {
+        $this->validate([
+            'delaiUnite' => ['required', 'in:heures,jours'],
+            'delaiValeur' => ['required', 'integer', 'min:1', 'max:'.($this->delaiUnite === 'heures' ? 2000 : 365)],
+        ], [], ['delaiValeur' => __('délai'), 'delaiUnite' => __('unité')]);
+    }
+
+    private function minutesDelai(): int
+    {
+        return $this->delaiValeur * ($this->delaiUnite === 'heures' ? 60 : 24 * 60);
     }
 
     // Module 1/4 — la réceptionniste clique "Transférer" pour envoyer
@@ -790,7 +903,7 @@ class ShowCourrier extends Component
         // redirection, le re-rendu affichait une page 403 juste après un
         // succès, donnant l'impression que l'action avait échoué.
         if ($reussi && Auth::user()->cannot('view', $courrier->fresh())) {
-            $this->redirect(route('courriers.a-traiter'), navigate: true);
+            $this->redirect(route('courriers.rechercher', ['statut' => CourrierList::STATUT_ACTIFS]), navigate: true);
         }
     }
 
@@ -844,6 +957,68 @@ class ShowCourrier extends Component
 
         Flux::modal('classement-dossier-modal')->close();
         Flux::toast(text: __('Courrier retiré du dossier.'));
+    }
+
+    // Module 9 — "Décharge" (2026-10-05).
+    public function ouvrirDecharge(): void
+    {
+        $this->authorize('emettreDecharge', $this->courrier);
+
+        $this->reset('dechargeEmprunteurId', 'dechargeMotif');
+
+        Flux::modal('decharge-modal')->show();
+    }
+
+    public function emettreDecharge(WorkflowService $workflow): void
+    {
+        $courrier = Courrier::findOrFail($this->courrierId);
+        $this->authorize('emettreDecharge', $courrier);
+
+        $data = $this->validate([
+            'dechargeEmprunteurId' => ['required', 'integer'],
+            'dechargeMotif' => ['nullable', 'string', 'max:500'],
+        ], [], ['dechargeEmprunteurId' => __('emprunteur'), 'dechargeMotif' => __('motif')]);
+
+        // Règle n°6 — jamais confiance en un ID client : l'emprunteur doit
+        // être un vrai utilisateur existant, pas une valeur devinée.
+        $emprunteur = $this->utilisateursPourDecharge->firstWhere('id', $data['dechargeEmprunteurId']);
+
+        if (! $emprunteur) {
+            $this->addError('dechargeEmprunteurId', __('Choisissez un emprunteur.'));
+
+            return;
+        }
+
+        try {
+            $decharge = $workflow->emettreDecharge($courrier, $emprunteur, Auth::user(), $data['dechargeMotif'] ?: null);
+        } catch (RuntimeException $e) {
+            Flux::toast(variant: 'danger', text: $e->getMessage());
+
+            return;
+        }
+
+        $this->reset('dechargeEmprunteurId', 'dechargeMotif');
+        unset($this->courrier);
+
+        Flux::modal('decharge-modal')->close();
+        Flux::toast(variant: 'success', text: __('Décharge :ref émise.', ['ref' => $decharge->numero_reference]));
+    }
+
+    public function marquerDechargeRendue(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('emettreDecharge');
+
+        $decharge = $courrier->dechargeActive;
+
+        if (! $decharge) {
+            return;
+        }
+
+        $workflow->marquerDechargeRendue($decharge, Auth::user());
+
+        unset($this->courrier);
+
+        Flux::toast(text: __('Original marqué comme rendu.'));
     }
 
     public function reaffecter(WorkflowService $workflow): void
@@ -904,6 +1079,13 @@ class ShowCourrier extends Component
         $courrier = $this->courrierPour('reprendre');
 
         $this->executer(fn () => $workflow->reprendre($courrier, Auth::user()), __('Traitement repris.'));
+    }
+
+    public function cloturerConfidentiel(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('cloturerConfidentiel');
+
+        $this->executer(fn () => $workflow->cloturerConfidentiel($courrier, Auth::user()), __('Pli confidentiel marqué comme remis — il sera archivé automatiquement.'));
     }
 
     public function rejeter(WorkflowService $workflow): void
@@ -975,7 +1157,7 @@ class ShowCourrier extends Component
 
     private function reinitialiserCirculation(): void
     {
-        $this->reset('collaborateurSelectionne', 'siteSelectionneId', 'departementSelectionneId', 'uniteSelectionneeId', 'confidentialiteSelectionnee', 'destinataireTransfertChoisi', 'motifReaffectation', 'motifRenvoi', 'motifAttente', 'motifRejet', 'commentaireCirculation');
+        $this->reset('collaborateurSelectionne', 'siteSelectionneId', 'departementSelectionneId', 'uniteSelectionneeId', 'confidentialiteSelectionnee', 'destinataireTransfertChoisi', 'motifReaffectation', 'motifRenvoi', 'motifAttente', 'motifRejet', 'commentaireCirculation', 'delaiValeur', 'delaiUnite', 'motifDelai');
         unset(
             $this->courrier,
             $this->etapesParcours,
@@ -985,6 +1167,8 @@ class ShowCourrier extends Component
             $this->peutValider,
             $this->peutTransferer,
             $this->peutValiderService,
+            $this->peutCloturerConfidentiel,
+            $this->peutFixerDelai,
             $this->collaborateursDuService,
             $this->destinatairesTransfert,
             $this->sitesDisponibles,

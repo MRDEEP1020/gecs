@@ -34,9 +34,10 @@
                     <flux:icon.envelope class="size-5" />
                 </div>
                 <div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
                         <flux:heading level="1">{{ __('Modifier le courrier') }}</flux:heading>
                         <x-statut-badge :statut="$this->courrier->statut" />
+                        <x-chronometre :courrier="$this->courrier" />
                     </div>
                     <flux:subheading>{{ $numeroReference }} — {{ __('le numéro de référence ne peut pas être modifié.') }}</flux:subheading>
                 </div>
@@ -162,7 +163,7 @@
 
                             <flux:field>
                                 <flux:label>{{ __('État actuel') }}</flux:label>
-                                <div class="pt-1.5"><x-statut-badge :statut="$this->courrier->statut" /></div>
+                                <div class="mt-1.5"><x-statut-avec-echeance :courrier="$this->courrier" /></div>
                             </flux:field>
 
                             <flux:input wire:model="typeTraitement" :label="__('Type de traitement')" placeholder="{{ __('ex. Traitement classique, urgent…') }}" />
@@ -277,27 +278,43 @@
 
                     <div class="p-4">
                         @if ($this->courrier->fichier_path)
+                            @php $telechargerUrlEdition = auth()->user()->can('telecharger', $this->courrier) ? route('courriers.document', $this->courrier) : null; @endphp
                             <div
                                 wire:ignore
                                 x-data="{
                                     erreur: null,
                                     zoom: 100,
-                                    rechercheOuverte: false,
-                                    requeteRecherche: '',
-                                    nbResultats: 0,
+                                    pageActuelle: 1,
+                                    numPages: 1,
                                     url: @js(route('courriers.document.apercu', $this->courrier)),
                                     instance() {
                                         const apercu = window.DocumentPreview.obtenir(this.url + ':edition');
-                                        apercu.boite = this.$refs.corps;
-                                        apercu.conteneur = this.$refs.conteneurPdf;
+                                        apercu.boite = document.getElementById('apercu-edition-corps');
+                                        apercu.conteneur = document.getElementById('apercu-edition-conteneur');
 
                                         return apercu;
                                     },
                                     async init() {
                                         try {
                                             const apercu = this.instance();
+                                            // Cliquer-glisser (2026-09-24) —
+                                            // plutôt que de devoir viser la
+                                            // barre de défilement une fois
+                                            // zoomé au-delà de 100 %.
+                                            window.DocumentPreview.activerDeplacement(apercu.boite);
+                                            // Molette pour zoomer (2026-09-24, retour utilisateur :
+                                            // « why can[t] i zoom without the + sign ») — Ctrl/Cmd +
+                                            // molette, même bornes que zoomIn()/zoomOut() ci-dessous.
+                                            // ATTENTION — jamais de guillemet droit dans un commentaire
+                                            // à l'intérieur d'un attribut x-data (délimité par des
+                                            // guillemets droits) : ça referme l'attribut HTML en plein
+                                            // milieu (voir memory livewire_flux_gotchas — guillemets
+                                            // français «» seulement).
+                                            window.DocumentPreview.activerZoomMolette(apercu.boite, (pas) => this.zoomer(Math.min(Math.max(this.zoom + pas, 50), 200)));
                                             await apercu.charger(this.url, apercu.boite, apercu.conteneur);
                                             this.zoom = Math.round((apercu.echelle / apercu.echelleBase) * 100);
+                                            this.pageActuelle = apercu.pageActuelle;
+                                            this.numPages = apercu.numPages;
                                         } catch (e) {
                                             console.error('[aperçu édition courrier]', e);
                                             this.erreur = e.message ?? String(e);
@@ -315,45 +332,152 @@
                                     },
                                     zoomIn() { this.zoomer(Math.min(this.zoom + 25, 200)); },
                                     zoomOut() { this.zoomer(Math.max(this.zoom - 25, 50)); },
-                                    basculerRecherche() {
-                                        this.rechercheOuverte = ! this.rechercheOuverte;
-
-                                        if (! this.rechercheOuverte) {
-                                            this.requeteRecherche = '';
-                                            this.rechercher();
+                                    async pageSuivante() {
+                                        try {
+                                            const apercu = this.instance();
+                                            await apercu.pageSuivante();
+                                            this.pageActuelle = apercu.pageActuelle;
+                                        } catch (e) {
+                                            console.error('[aperçu édition courrier] page suivante', e);
+                                            this.erreur = e.message ?? String(e);
                                         }
                                     },
-                                    rechercher() {
-                                        this.nbResultats = this.instance().rechercher(this.requeteRecherche);
+                                    async pagePrecedente() {
+                                        try {
+                                            const apercu = this.instance();
+                                            await apercu.pagePrecedente();
+                                            this.pageActuelle = apercu.pageActuelle;
+                                        } catch (e) {
+                                            console.error('[aperçu édition courrier] page précédente', e);
+                                            this.erreur = e.message ?? String(e);
+                                        }
                                     },
-                                    pleinEcran() { this.$refs.corps.requestFullscreen?.(); },
                                 }"
                                 x-init="init()"
                             >
-                                <div class="mb-2 flex items-center justify-between gap-1">
-                                    <flux:button size="sm" variant="ghost" icon="magnifying-glass" x-on:click="basculerRecherche()" :aria-label="__('Rechercher dans le document')" />
-                                    <div class="flex items-center gap-1">
-                                        <flux:button size="sm" variant="ghost" icon="minus" x-on:click="zoomOut()" :aria-label="__('Zoom -')" />
-                                        <span class="w-10 text-center text-xs text-zinc-500" x-text="zoom + '%'"></span>
-                                        <flux:button size="sm" variant="ghost" icon="plus" x-on:click="zoomIn()" :aria-label="__('Zoom +')" />
-                                        <flux:button size="sm" variant="ghost" icon="arrows-pointing-out" x-on:click="pleinEcran()" :aria-label="__('Plein écran')" />
-                                        @can('telecharger', $this->courrier)
-                                            <flux:button size="sm" variant="ghost" icon="arrow-down-tray" :href="route('courriers.document', $this->courrier)" :aria-label="__('Télécharger')" />
-                                        @endcan
+                                <x-apercu.barre-outils
+                                    variant="panneau"
+                                    :nom-fichier="basename($this->courrier->fichier_path)"
+                                    agrandir-evenement="apercu-edition-agrandi"
+                                    :telecharger-url="$telechargerUrlEdition"
+                                />
+                                <x-apercu.visionneuse id="apercu-edition" />
+                            </div>
+
+                            {{-- Modale "Agrandir" — même patron corrigé que les autres
+                                 pages (hauteur imposée EXPLICITEMENT sur <flux:modal>
+                                 lui-même, corps en flex-1 min-h-0). Instance pdf.js
+                                 séparée du petit panneau ci-dessus. --}}
+                            <div
+                                wire:key="apercu-edition-agrandi-{{ $this->courrier->id }}"
+                                wire:ignore
+                                x-data="{
+                                    erreur: null,
+                                    zoom: 100,
+                                    url: @js(route('courriers.document.apercu', $this->courrier)),
+                                    pageActuelle: 1,
+                                    numPages: 1,
+                                    instance() {
+                                        const apercu = window.DocumentPreview.obtenir(this.url + ':edition-agrandi');
+                                        apercu.boite = document.getElementById('apercu-edition-agrandi-corps');
+                                        apercu.conteneur = document.getElementById('apercu-edition-agrandi-conteneur');
+
+                                        return apercu;
+                                    },
+                                    async rendre() {
+                                        try {
+                                            const apercu = this.instance();
+                                            window.DocumentPreview.activerDeplacement(apercu.boite);
+                                            // Molette pour zoomer (2026-09-24, retour utilisateur :
+                                            // « why can[t] i zoom without the + sign ») — Ctrl/Cmd +
+                                            // molette, même bornes que zoomIn()/zoomOut() ci-dessous.
+                                            // ATTENTION — jamais de guillemet droit dans un commentaire
+                                            // à l'intérieur d'un attribut x-data (délimité par des
+                                            // guillemets droits) : ça referme l'attribut HTML en plein
+                                            // milieu (voir memory livewire_flux_gotchas — guillemets
+                                            // français «» seulement).
+                                            window.DocumentPreview.activerZoomMolette(apercu.boite, (pas) => this.zoomer(Math.min(Math.max(this.zoom + pas, 50), 200)));
+                                            await apercu.charger(this.url, apercu.boite, apercu.conteneur, true, true);
+                                            this.zoom = Math.round((apercu.echelle / apercu.echelleBase) * 100);
+                                            this.pageActuelle = apercu.pageActuelle;
+                                            this.numPages = apercu.numPages;
+                                        } catch (e) {
+                                            console.error('[aperçu édition agrandi]', e);
+                                            this.erreur = e.message ?? String(e);
+                                        }
+                                    },
+                                    async zoomer(nouveauZoom) {
+                                        this.zoom = nouveauZoom;
+
+                                        try {
+                                            await this.instance().zoomer(this.zoom);
+                                        } catch (e) {
+                                            console.error('[aperçu édition agrandi] zoom', e);
+                                            this.erreur = e.message ?? String(e);
+                                        }
+                                    },
+                                    zoomIn() { this.zoomer(Math.min(this.zoom + 25, 200)); },
+                                    zoomOut() { this.zoomer(Math.max(this.zoom - 25, 50)); },
+                                    async pageSuivante() {
+                                        try {
+                                            const apercu = this.instance();
+                                            await apercu.pageSuivante();
+                                            this.pageActuelle = apercu.pageActuelle;
+                                        } catch (e) {
+                                            console.error('[aperçu édition agrandi] page suivante', e);
+                                            this.erreur = e.message ?? String(e);
+                                        }
+                                    },
+                                    async pagePrecedente() {
+                                        try {
+                                            const apercu = this.instance();
+                                            await apercu.pagePrecedente();
+                                            this.pageActuelle = apercu.pageActuelle;
+                                        } catch (e) {
+                                            console.error('[aperçu édition agrandi] page précédente', e);
+                                            this.erreur = e.message ?? String(e);
+                                        }
+                                    },
+                                }"
+                                x-on:modal-show.document="if ($event.detail.name === 'apercu-edition-agrandi') { rendre(); }"
+                            >
+                                {{-- 2026-09-24 — SANS "display: flex" forcé (`flex!`) ICI :
+                                     ça écrasait la règle par défaut du navigateur qui cache un
+                                     popover fermé (`display: none`), laissant la modale réserver
+                                     ses 88vh de hauteur EN PERMANENCE dans le flux de la page,
+                                     même fermée (grand espace vide sous la fiche). La mise en
+                                     page en colonne reste sur le DIV intérieur juste en dessous. --}}
+                                <flux:modal name="apercu-edition-agrandi" variant="bare" class="h-[88vh]! max-h-[88vh]! w-full! max-w-7xl! overflow-hidden! rounded-xl! bg-white! p-0! shadow-lg! dark:bg-zinc-900!">
+                                    <div class="flex h-full min-h-0 flex-col">
+                                        <x-apercu.barre-outils
+                                            variant="modale"
+                                            :nom-fichier="basename($this->courrier->fichier_path)"
+                                            :numero-reference="$this->courrier->numero_reference"
+                                            :telecharger-url="$telechargerUrlEdition"
+                                            fermer-modale="apercu-edition-agrandi"
+                                        />
+
+                                        <div class="flex min-h-0 flex-1 flex-col min-[900px]:flex-row">
+                                            <x-apercu.visionneuse id="apercu-edition-agrandi" grandir />
+                                            <div class="h-64 shrink-0 min-[900px]:h-auto min-[900px]:w-90">
+                                                <x-apercu.panneau-correspondance
+                                                    :objet="$this->courrier->objet"
+                                                    :numero-reference="$this->courrier->numero_reference"
+                                                    :expediteur-nom="$this->courrier->expediteur_nom"
+                                                    :expediteur-organisation="$this->courrier->expediteur_organisation"
+                                                    :expediteur-fonction="$this->courrier->expediteur_fonction"
+                                                    :expediteur-adresse="$this->courrier->expediteur_adresse"
+                                                    :expediteur-telephone="$this->courrier->expediteur_telephone"
+                                                    :expediteur-email="$this->courrier->expediteur_email"
+                                                    :destinataire="$this->courrier->destinataire"
+                                                    :date="$this->courrier->date_mouvement"
+                                                    :nom-fichier="basename($this->courrier->fichier_path)"
+                                                    :telecharger-url="$telechargerUrlEdition"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-
-                                <div x-show="rechercheOuverte" x-cloak class="mb-2 flex items-center gap-2">
-                                    <flux:input size="sm" x-model="requeteRecherche" x-on:input.debounce.300ms="rechercher()" placeholder="{{ __('Rechercher…') }}" />
-                                    <flux:text class="shrink-0 text-xs text-zinc-500" x-show="requeteRecherche">
-                                        <span x-text="nbResultats"></span> {{ __('résultat(s)') }}
-                                    </flux:text>
-                                </div>
-
-                                <div x-ref="corps" class="flex h-64 w-full items-center justify-center overflow-auto rounded-lg border border-brand-border bg-white dark:border-zinc-700">
-                                    <p x-show="erreur" x-text="erreur" class="p-2 text-sm text-brand-danger"></p>
-                                    <div x-ref="conteneurPdf"></div>
-                                </div>
+                                </flux:modal>
                             </div>
                         @else
                             <div class="flex h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-brand-border bg-brand-surface-soft text-center">

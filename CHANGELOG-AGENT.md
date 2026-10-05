@@ -12,6 +12,112 @@ règle et donc toujours à jour même si une entrée manque ici).
 
 ---
 
+## [2026-10-05 03:45] Fuseau horaire applicatif : UTC → Africa/Douala
+Fichier(s) : config/app.php
+Fichier(s) : .env
+Fichier(s) : .env.example
+Pourquoi : bug réel repéré par l'utilisateur ("THE TIME IS NOT CORRECT FOR DOUALA") — config/app.php avait 'timezone' => 'UTC' en dur depuis le scaffold initial, jamais ajusté pour Nsia Assurances Cameroun (Douala, WAT = UTC+1) ; tout `now()`/`today()` de l'application (chronomètre SLA, historique, en-tête, scheduler) affichait donc une heure en retard sur l'heure réelle. Changement global (pas seulement le Calendrier) : 'timezone' => env('APP_TIMEZONE', 'Africa/Douala'), APP_TIMEZONE=Africa/Douala ajouté à .env et .env.example. config:clear exécuté pour appliquer immédiatement. Vérifié : now() passe de UTC à WAT.
+
+## [2026-10-05 03:40] Calendrier : carte événement ne déborde plus sur l'heure suivante
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Pourquoi : bug réel repéré par l'utilisateur ("IT IS IN BETWEEN THE 14H AND 15H TIMELINE WHY") — le décalage vertical (minute/60 * hauteur ligne) combiné à la hauteur fixe de la carte pouvait dépasser la ligne de l'heure (ex. 14:47 → marge 50px + carte 48px = 98px, déborde la ligne de 64px) ; décalage désormais plafonné à (hauteur ligne − hauteur carte) pour que la carte reste toujours entièrement dans sa propre heure. Vérifié avec un événement de test à 14:47 (rollback, aucune donnée réelle modifiée).
+
+## [2026-10-05 03:35] Calendrier : carte événement alignée sur la structure réelle Outlook
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur avec gros plan annoté ("LOOK HOW THE TIME BOXE IS STRUCTURED") — Outlook ne répète jamais l'heure dans le corps de la carte (la position dans la grille la porte déjà) ; heure retirée du titre visible (reste disponible au survol via title=""), hauteur 40px→48px et padding élargi pour se rapprocher des proportions réelles de la référence.
+
+## [2026-10-05 03:30] Calendrier : ligne "maintenant" confinée à la colonne du jour
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : bug réel repéré par l'utilisateur sur capture ("CHECK THE OVERLAP") — la ligne "maintenant" s'étendait sur toute la largeur de la semaine (right-0 left-12 = les 5 colonnes) au lieu de la seule colonne d'aujourd'hui, traversant visuellement un événement d'un autre jour. Repositionnée via `left`/`width` en `calc()` sur l'index réel du jour "aujourd'hui" dans la semaine affichée, confinée à sa seule colonne — comme le fait réellement Outlook (vérifié sur la toute première capture de référence de cette session).
+
+## [2026-10-05 03:20] Calendrier : événements à heure fixe stylés comme de vraies cartes
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur avec capture Outlook réelle ("LOOK AT THIS ONE") — un courrier à heure fixe (chrono_fin_le) n'était qu'une fine ligne 24px à une seule info ; devient une carte 40px avec bordure gauche colorée (accent SLA), titre en gras + expéditeur/affecté en second ligne, même gabarit visuel que les puces "toute la journée". Pas de hauteur proportionnelle à une durée réelle (chrono_fin_le est une échéance ponctuelle, pas un intervalle début/fin) — hauteur fixe choisie pour matcher les proportions visuelles de la référence sans fabriquer une durée qui n'existe pas dans les données.
+
+## [2026-10-05 03:10] Calendrier : hauteur de la grille horaire portée à 70vh
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur avec capture annotée ("INCREASE IT DOWN THERE") — grande zone vide sous la grille horaire (plafonnée à 28rem fixes) ; remplacé par max-h-[70vh] pour occuper la hauteur réellement disponible de l'écran plutôt qu'une valeur fixe trop courte.
+
+## [2026-10-05 03:00] Calendrier : cellules horaires agrandies (48px → 64px)
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur ("INCREASE THE CELL SIZES") — lignes de la grille horaire jugées trop petites ; hauteur de ligne portée de 3rem à 4rem partout où la valeur était utilisée (cellules h-12→h-16, grid-rows-[repeat(24,...)], calculs JS de la ligne "maintenant"/auto-scroll, décalage minute des événements à heure fixe) pour rester cohérent.
+
+## [2026-10-05 02:45] Calendrier : bandeau "toute la journée" déplacé DANS la zone qui défile
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur avec capture annotée ("WHY THERE UP IT SHOULD BE INSIDE THE TIMELINE") — le bandeau des courriers sans heure vivait dans un bloc séparé au-dessus de la grille horaire scrollable ; déplacé à l'intérieur de cette même zone, épinglé en haut (sticky), comme le fait réellement Outlook. La grille horaire + ligne "maintenant" + événements à heure fixe vivent maintenant dans un conteneur `relative` imbriqué pour garder leurs calculs de position (grid-row, offset "maintenant", auto-scroll) corrects indépendamment de la hauteur (variable) du bandeau.
+
+## [2026-10-05 02:30] Calendrier : courriers à heure fixe placés dans la grille horaire
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur ("ADD TIME TOO") après avoir confirmé que 0/5 courriers réels ont un chrono_fin_le défini — un courrier AVEC une heure précise (délai fixé via WorkflowService::fixerDelai(), Module 5) apparaît désormais dans la grille horaire à sa vraie heure (grid-row/grid-column + décalage minute), au lieu du bandeau "toute la journée" ; ceux sans heure (date_limite seule) continuent d'apparaître dans le bandeau comme avant. Vérifié avec un enregistrement de test en transaction annulée (rollback), aucune donnée réelle modifiée.
+
+## [2026-10-05 02:00] Calendrier : avatar "affecté par" en plus de "affecté à"
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Pourquoi : retour utilisateur ("THE PERSOSONE WHO AFFECTED IT TO THEM SHOULD ALSO APPEAR") — avatars empilés (affectePar derrière, collaborateur devant, Module 6), masqué si auto-affectation pour ne pas dupliquer le même avatar.
+
+## [2026-10-05 02:15] Calendrier : grille horaire décorative façon Outlook + ligne "maintenant"
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php (corrige au passage un <a> dupliqué laissé par une édition interrompue)
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur avec capture Outlook réelle ("THE SHOULD BE TIME LIKE FOR OUTLOOK") — ajout d'une grille 24h scrollable (chrome pur, jamais de puce dedans : date_limite n'a pas d'heure) sous le bandeau "toute la journée" existant, avec une ligne "maintenant" recalculée côté client (Alpine, horloge navigateur, pas wire:poll — Règle n°2), auto-scroll à l'heure courante au chargement.
+
+## [2026-10-05 01:45] Puces du Calendrier enrichies : objet + expéditeur + affecté (+ rebuild)
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : public/build/assets (rebuild npm run build)
+Pourquoi : retour utilisateur avec capture Outlook ("IT SHOULD SHOW INFOR LIKE THIS" puis "THE ASSIGNER TOO") — chaque puce affichait seulement le numéro de référence ; affiche désormais l'objet (gras, 2 lignes max) + l'expéditeur (ligne secondaire), plus l'avatar initiales du collaborateur affecté (Module 6, Courrier::affectationCourante()->collaborateur) quand il y en a un. Plafond par jour réduit de 6 à 4 (contenu plus riche par puce).
+
+## [2026-10-05 01:30] Rebuild des assets front (npm run build) — mise en page Calendrier cassée
+Fichier(s) : public/build/assets/app-gOgO8QTK.css
+Fichier(s) : public/build/manifest.json
+Pourquoi : retour utilisateur avec capture ("NOT THE SAME DESIGN WHY") — la mise en page 2 colonnes de /courriers/calendrier (mini-calendrier + semaine) s'affichait empilée pleine largeur. Cause : build Tailwind/Vite manuel (pas de watcher, voir CLAUDE.md stack) jamais relancé après la création de courrierCalendar.blade.php — les classes Tailwind neuves (lg:grid-cols-[240px_minmax(0,1fr)] notamment) étaient absentes du CSS compilé et livré, donc sans effet. `npm run build` résout le problème ; aucun changement de code applicatif nécessaire.
+
+## [2026-10-05 01:15] Widget décoratif "Calendrier" du Dashboard relié à la vraie page
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Pourquoi : suite directe de l'ajout de /courriers/calendrier — la mini-carte Alpine existante (purement décorative depuis le 2026-09-23, faute de page réelle à ouvrir) gagne un lien "Voir le calendrier des échéances", gardé par le vrai privilège courriers.calendrier (peutOuvrirCalendrierComplet(), distinct de dashboard.calendrier qui ne régit que la visibilité de la carte elle-même).
+
+## [2026-10-05 01:00] Nouvelle vue "Calendrier" des échéances SLA (complément Module 5/8)
+Fichier(s) : app/Livewire/Backend/CourrierCalendar.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Pourquoi : demande utilisateur (capture Outlook comme référence visuelle, "LIKE THIS") — page dédiée pour visualiser les courriers par échéance SLA (date_limite) sur une semaine de travail Lun-Ven, colorés par statut SLA, avec mini-calendrier de navigation.
+
+## [2026-10-05 01:00] Policy + routing + privilège pour la vue Calendrier
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : routes/web.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Pourquoi : nouvelle clé courriers.calendrier (Règle n°6 — accès via Policy, jamais un simple if), route courriers/calendrier déclarée avant la route générique courriers/{courrierId}, seeder exécuté sur la vraie base gec (go-ahead explicite de l'utilisateur).
+
+## [2026-10-05 01:00] Entrée sidebar "Calendrier" sous "Courriers"
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : accès à la nouvelle vue Calendrier depuis la navigation, gardé par le privilège courriers.calendrier comme les autres entrées du groupe.
+
+## [2026-10-05 00:15] Badge de statut : largeur augmentée (padding horizontal)
+Fichier(s) : resources/views/components/statut-badge.blade.php
+Pourquoi : retour utilisateur ("increase that box width") sur le badge "Archivé" jugé trop étroit sur la capture d'écran ; px-2 → px-3 sur le composant partagé, effet sur tous les badges de statut (liste, dashboard, showCourrier...).
+
+## [2026-10-05 00:10] Badge de statut "Archivé" : vert → gris/noir neutre
+Fichier(s) : resources/views/components/statut-badge.blade.php
+Pourquoi : retour utilisateur direct sur capture d'écran ("change that green of archive to gray black") ; "archive" sort du groupe SUCCESS (vert, partagé avec "traité"/"affecté") pour la palette grise/noire neutre déjà utilisée comme statut par défaut, composant partagé donc effet sur toutes les pages (liste, dashboard, showCourrier...).
+
+## [2026-10-05 00:05] ShowCourrier : titre Dossier/Référence en majuscules
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : Module 3 (classement) — retour utilisateur immédiat ("IN CAPITAL LETTERS") sur le préfixe dossier/référence ajouté précédemment dans le titre.
+
+## [2026-10-05 00:00] ShowCourrier : dossier de classement affiché en préfixe du numéro (format "Dossier/Référence")
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : Module 3 (classement) — retour utilisateur sur capture d'écran : remplacer le badge "Dossier" séparé à côté du statut par un préfixe directement dans le titre, format "DOSSIER_NAME/COURIER_REFERENCE_NUMBER", quand le courrier est classé.
+
 ## [2026-09-03 12:42] Mise en place effective du hook de journalisation automatique
 Fichier(s) : .claude/settings.json
 Fichier(s) : .gitignore
@@ -3063,6 +3169,497 @@ Fichier(s) : .gitignore
 Fichier(s) : .claude/settings.local.json (retiré de l'index git via `git rm --cached`, conservé sur le disque)
 Pourquoi : mise en place du dépôt GitHub (MRDEEP1020/gecs) — `settings.local.json` contient les permissions Claude Code personnelles de ce poste, modifiées à chaque commande approuvée ; il avait été inclus par erreur dans le commit initial et ne doit pas être partagé (seul `.claude/settings.json`, le hook de journalisation de la Règle n°8, reste versionné).
 
+## [2026-09-24 10:30] Simulation "vie réelle" — 3 courriers de la réception à l'archivage
+Fichier(s) : tests/Feature/Courriers/SimulationParcoursReelTest.php
+Pourquoi : demande explicite de l'utilisateur ("real life testing ... from receptionist to archive") — un seul scénario de bout en bout (Modules 1 à 9) joué avec les comptes pilotes réels (ComptesTestPiloteSeeder) et UNIQUEMENT via les vrais composants/pages : configuration admin (organisation, destinataires de transfert, règles de classement, niveau de confidentialité), puis courrier normal scanné (circuit DGA complet + renvoi pour correction), sinistre (routage direct DSIN + mise en attente), courrier confidentiel ; matrice de toutes les pages GET par compte. Base SQLite en mémoire, jamais la vraie base `gec`. Rapport lisible écrit dans storage/logs/simulation-parcours.md.
+
+## [2026-09-24 11:00] Module 1/9 — colonne courriers.confidentiel_direct
+Fichier(s) : database/migrations/2026_09_24_120000_add_confidentiel_direct_to_courriers_table.php
+Pourquoi : constat n°1 de la simulation (DGA destinataire d'un pli confidentiel → 403, aucune action, jamais archivé) — marque explicite d'un pli enregistré via RegistrationFormConfidentiel, sur laquelle reposent l'accès du destinataire et la clôture ; rattrapage des plis existants (voir DECISIONS.md "Courrier confidentiel : accès et clôture par le destinataire").
+
+## [2026-09-24 11:10] Courrier — accès du destinataire confidentiel, acteurs exemptés du gate dossier, ordre de l'historique
+Fichier(s) : app/Models/Courrier.php
+Pourquoi : les 3 constats de la simulation du parcours réel — (1) `confidentiel_direct` ($fillable/cast/défaut) + branche `voir_confidentiel_recu` dans scopeVisiblePar() (Module 1/9) ; (2) nouvelle méthode `impliqueUtilisateur()` + exemption miroir dans le bloc dossier de scopeVisiblePar() : créateur, collaborateur affecté, responsable du service et destinataire du transfert gardent l'accès à un courrier rangé dans un dossier personnel (Module 3/9, amende la décision "les trois se cumulent" du 2026-09-16) ; (3) historiques() départagé par id — entrées écrites dans la même seconde affichées dans le désordre (Module 5).
+
+## [2026-09-24 11:15] CourrierPolicy — destinataire d'un pli confidentiel + exemption du gate dossier
+Fichier(s) : app/Policies/CourrierPolicy.php
+Pourquoi : constats n°1 et n°2 de la simulation — view() ouvre un pli `confidentiel_direct` à son destinataire (privilège `courriers.voir_confidentiel_recu`, niveau toujours vérifié), nouvelle ability `cloturerConfidentiel()` ; accesDossierSuffisant() laisse passer les acteurs du courrier (`Courrier::impliqueUtilisateur()`) — Module 1/3/9, voir DECISIONS.md.
+
+## [2026-09-24 11:20] Privilèges — 2 clés pour le pli confidentiel reçu
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Pourquoi : "chaque action / lecture = un privilège" (Système de privilèges) — `courriers.voir_confidentiel_recu` et `courriers.cloturer_confidentiel`, défaut DGA + Responsable de service (+ Administrateur comme toujours) ; à rejouer sur la vraie base (`php artisan db:seed --class=PrivilegeSeeder`).
+
+## [2026-09-24 11:25] Pli confidentiel — marqué à l'enregistrement
+Fichier(s) : app/Livewire/Backend/RegistrationFormConfidentiel.php
+Pourquoi : pose `confidentiel_direct = true` sur tout pli enregistré par ce flux (Module 1), base de l'accès/clôture par le destinataire.
+
+## [2026-09-24 11:25] WorkflowService — clôture d'un pli confidentiel par son destinataire
+Fichier(s) : app/Services/WorkflowService.php
+Pourquoi : constat n°1 de la simulation — nouvelle méthode `cloturerConfidentiel()` ('enregistre' → 'traite' + historique 'confidentiel_remis'), hors de TRANSITIONS pour ne jamais ouvrir ce raccourci aux courriers normaux (Module 4, "pas d'étape sautée") ; l'archivage automatique (Module 9) prend ensuite le relais.
+
+## [2026-09-24 11:30] Fiche courrier — bouton "Marquer comme remis" (pli confidentiel)
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : constat n°1 de la simulation — computed `peutCloturerConfidentiel` + action `cloturerConfidentiel()` (Policy revérifiée, Règle n°6) et bouton avec confirmation dans le panneau Circuit, message d'attente pour les autres lecteurs ; etapesParcours() date l'étape "Clôture" via 'confidentiel_remis' pour un pli confidentiel (Module 1/9).
+
+## [2026-09-24 11:35] Traductions EN — pli confidentiel "Marquer comme remis"
+Fichier(s) : lang/en.json
+Pourquoi : bascule FR/EN (DECISIONS.md, 2026-09-07) — 5 nouvelles chaînes du bouton/toast de clôture d'un pli confidentiel.
+
+## [2026-09-24 11:40] DECISIONS.md — 2 décisions issues de la simulation
+Fichier(s) : DECISIONS.md
+Pourquoi : consigner "Courrier confidentiel : accès et clôture par le destinataire" et "Dossier de classement : les acteurs du circuit gardent l'accès" (amende "les trois se cumulent" du 2026-09-16) — règle ARCHITECTURE-ESSENTIALS : décision nouvelle → DECISIONS.md.
+
+## [2026-09-24 11:45] Simulation — les 3 constats deviennent des assertions bloquantes
+Fichier(s) : tests/Feature/Courriers/SimulationParcoursReelTest.php
+Pourquoi : verrouiller les correctifs (Règle n°7) — le pli confidentiel est vu/clôturé/archivé par la DGA et refusé aux autres, le courrier rangé dans un dossier personnel reste visible du responsable et de l'agent créateur, l'historique affiché suit l'ordre d'insertion.
+
+## [2026-09-24 11:55] Correctif — fiche d'un pli confidentiel en erreur 500
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Pourquoi : trouvé par la simulation une fois la DGA autorisée — mount() présélectionne le collaborateur le moins chargé pour tout courrier 'enregistre', or un pli confidentiel n'a pas de service : TypeError dans WorkflowService::chargeParCollaborateur(null) → 500 pour TOUT lecteur (y compris l'Administrateur, avant même ce chantier). collaborateursDuService() renvoie une liste vide sans service (Module 1/6).
+
+## [2026-09-24 12:10] Organisation — "Gérer cet utilisateur" ouvre directement la fiche du compte
+Fichier(s) : app/Livewire/Backend/UserList.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Pourquoi : retour de l'utilisateur pendant la simulation manuelle ("i can't modify") — le lien menait à la liste générale sans ouvrir le compte, aucun moyen visible depuis l'Organisation de changer le service réel (users.service_id) d'un utilisateur rattaché ; lien ?modifier={id} → UserList::mount() ouvre la modale "Modifier" (droits revérifiés par ouvrirEdition()).
+
+## [2026-09-24 12:15] Tests — ouverture directe de la fiche utilisateur via ?modifier=
+Fichier(s) : tests/Feature/Admin/UserListTest.php
+Pourquoi : Règle n°7 — cas nominal (modale ouverte, cascade pré-remplie depuis le service réel) + droits refusés (un gestionnaire sans privileges.gerer ne peut pas ouvrir un compte Administrateur par l'URL).
+
+## [2026-09-24 12:40] Utilisateurs — la modale "Modifier" affiche la même position que la table, sans effacer un service hors organigramme
+Fichier(s) : app/Livewire/Backend/UserList.php
+Fichier(s) : resources/views/livewire/frontend/userList.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : demande explicite de l'utilisateur ("make the all modify modal to show the correct informations") — comparaison sur la vraie base : 4 comptes (responsables, rattachés depuis l'Organisation) avaient une cascade vide alors que la table affichait leur département. preselectionnerCascadeEdition() suit désormais l'ordre de departementLabelDe() (responsable → rattachement → pont service_id) ; `editionCascadeInitiale` + règle d'enregistrement : cascade non touchée qui ne résout aucun service = service actuel conservé (bug réel : modifier un téléphone effaçait le service "AC" de l'agent / "SDG" de la DGA) ; ligne "Service actuel : … (hors organigramme)" dans la modale. Module 9 / Organisation v2.
+
+## [2026-09-24 12:40] Tests — modale "Modifier" : responsable, rattachement, service hors organigramme
+Fichier(s) : tests/Feature/Admin/UserListTest.php
+Pourquoi : Règle n°7 — verrouille les 3 cas corrigés ci-dessus (ce qui est affiché est ce qui est enregistré ; un service hors organigramme survit à une simple correction de téléphone).
+
+## [2026-09-24 13:00] Organisation — modifier la fonction d'un membre rattaché
+Fichier(s) : app/Livewire/Backend/OrganisationIndex.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : retour de l'utilisateur (capture onglet Utilisateurs, "test 2" à fonction "—") — la fonction n'était saisissable qu'au rattachement ; action "Modifier la fonction" (menu de la ligne) → édition en ligne, privilège organisation.manage_users revérifié et appartenance du membre au nœud contrôlée côté serveur (Règle n°6). Module Organisation v2.
+
+## [2026-09-24 13:00] Tests — modifier la fonction d'un membre
+Fichier(s) : tests/Feature/Admin/OrganisationIndexTest.php
+Pourquoi : Règle n°7 — cas nominal + droits refusés (lecteur avec organisation.view seulement).
+
+## [2026-09-24 13:30] Dossier surveillé — modes config/execution, activation persistante, synchro inter-onglets
+Fichier(s) : resources/js/scan-watcher.js
+Pourquoi : demande explicite de l'utilisateur ("put that démarrer surveiller in the admin menu as config") — le composant Alpine a désormais un mode 'config' (page d'administration : choisir/activer/désactiver/oublier, n'importe rien) et un mode 'execution' (Numérisation/Nouveau courrier : importe sans bouton de configuration) ; drapeau `actif` persistant dans IndexedDB ; BroadcastChannel pour appliquer un changement de configuration aux onglets déjà ouverts ; destroy() arrête le sondage à la navigation wire:navigate (Module 1/2, voir DECISIONS.md).
+
+## [2026-09-24 13:40] Numérisation — import automatique visible sans recharger la page
+Fichier(s) : app/Livewire/Backend/ScanPremier.php
+Fichier(s) : resources/views/livewire/frontend/scanPremier.blade.php
+Pourquoi : retour de l'utilisateur ("why doesn't it take automatically without i actualising it") — diagnostic sur la vraie base : les 2 scans avaient bien été importés et l'OCR réussi en ~20 s, mais le tableau "Documents importés" ne se rafraîchissait jamais (numeriserAutomatique() #[Renderless], aucun écouteur de fin d'OCR sur cette page). #[Renderless] retiré + écouteur echo-private brouillon.ocr.termine (Règle n°2, pas de wire:poll) ; carte du dossier surveillé passée en mode 'execution' (plus de bouton Choisir/Arrêter, lien vers la configuration admin) ; x-init="init()" retiré (double init() → deux boucles de sondage). Module 1/2.
+
+## [2026-09-24 13:40] Nouveau courrier — dossier surveillé en mode 'execution'
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Pourquoi : même composant que Numérisation — data-mode="execution", double init() retiré, bouton "Autoriser l'import automatique" quand Chrome redemande l'accès au dossier (Module 1/2).
+
+## [2026-09-24 14:00] Administration › Dossier surveillé — nouvelle page de configuration
+Fichier(s) : app/Livewire/Backend/DossierSurveille.php
+Fichier(s) : resources/views/livewire/frontend/dossierSurveille.blade.php
+Fichier(s) : routes/web.php
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : demande explicite de l'utilisateur ("put that démarrer surveiller in the admin menu as config") — page admin/dossier-surveille (mode 'config' de scan-watcher.js : choisir le dossier, démarrer/arrêter, autoriser l'accès, retirer), avertissement "réglage propre à ce poste" (API File System Access), 5 derniers imports ; entrée de menu Administration pilotée par privilège (Système de privilèges). Module 1/2.
+
+## [2026-09-24 14:00] Privilèges — administration.dossier_surveille
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Pourquoi : "chaque entrée de sidebar pilotée par privilège" — nouvelle clé, Administrateur seul par défaut ; ajoutée à la vraie base par script ciblé (pas de PrivilegeSeeder complet, qui réassignerait tous les défauts).
+
+## [2026-09-24 14:00] Traductions EN — dossier surveillé, modifier la fonction
+Fichier(s) : lang/en.json
+Pourquoi : bascule FR/EN — chaînes de la nouvelle page Dossier surveillé et de la carte d'import de Numérisation/Nouveau courrier.
+
+## [2026-09-24 14:00] Tests — page Dossier surveillé et rafraîchissement automatique de Numérisation
+Fichier(s) : tests/Feature/Admin/DossierSurveilleTest.php
+Fichier(s) : tests/Feature/Courriers/SimulationParcoursReelTest.php
+Pourquoi : Règle n°7 — accès admin/refus agent + menu, Numérisation en mode 'execution', import visible sans recharger, fin d'OCR répercutée par l'écouteur ; la page ajoutée à la matrice des pages de la simulation.
+
+## [2026-09-24 14:30] Correctif — "Réponse HTTP 500 en récupérant le document" (GEC-2026-000003)
+Fichier(s) : app/Services/WorkflowService.php
+Pourquoi : retour de l'utilisateur — le PDF avait été déplacé dans courriers/2026/DIS/ mais fichier_path était resté sous _en_attente/. deplacerFichier() : (1) le déplacement de la copie de secours est désormais séparé — son échec faisait renvoyer false alors que le fichier principal était déjà déplacé ; (2) si l'ancien chemin est vide mais la destination existe, fichier_path se recale dessus (Module 2/4, Règle n°4).
+
+## [2026-09-24 14:30] Aperçu/téléchargement — fichier absent = 404 journalisé, plus 500
+Fichier(s) : app/Http/Controllers/CourrierDocumentApercuController.php
+Fichier(s) : app/Http/Controllers/CourrierDocumentDownloadController.php
+Fichier(s) : resources/js/document-preview.js
+Pourquoi : même retour — un fichier manquant au chemin enregistré levait une exception de stockage (500) ; désormais 404 + Log::warning exploitable (Règle n°1), et message clair dans l'aperçu PDF ("Document introuvable sur le stockage").
+
+## [2026-09-24 14:30] Données — chemin du document de GEC-2026-000003 corrigé (vraie base)
+Fichier(s) : (aucun fichier du dépôt — script ponctuel dans le scratchpad, base `gec`)
+Pourquoi : seul courrier concerné après vérification de TOUS les courriers/pièces jointes ; fichier_path recalé sur courriers/2026/DIS/GEC-2026-000003.pdf (fichier présent), avec entrée d'historique immuable 'correction_chemin_fichier' (Règle n°5).
+
+## [2026-09-24 14:30] Tests — recalage du chemin, échec de la copie de secours, 404 fichier absent
+Fichier(s) : tests/Feature/Services/WorkflowServiceTest.php
+Fichier(s) : tests/Feature/Courriers/CourrierDocumentApercuTest.php
+Pourquoi : Règle n°7 — verrouille les 3 comportements corrigés ci-dessus.
+
+## [2026-09-24 15:00] Tableau de bord — carte "Tâches du jour" repensée
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : demande explicite de l'utilisateur ("customize the tâche du jour", capture : case réduite à une barre, texte collé au bord — flux:link écrasait le flex de la ligne). Chaque tâche affiche l'action attendue selon le statut (À affecter/À démarrer/À traiter/À valider…), l'échéance SLA réelle (En retard de N j / Aujourd'hui / J-N, couleurs de la palette de marque), la priorité (point de couleur) et le service ; tri par date_limite (retards d'abord, colonne indexée — Règle n°3) ; compteur total dans l'en-tête (totalTachesDuJour) ; lien ouvrant directement l'onglet Circuit. Module 5/10.
+
+## [2026-09-24 15:00] Tests — "Tâches du jour" triées par échéance
+Fichier(s) : tests/Feature/DashboardTest.php
+Pourquoi : Règle n°7 — ordre retard → aujourd'hui → J-5, action et délai affichés, compteur total.
+
+## [2026-09-24 15:30] DGA — consultation des courriers qu'elle a transférés
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : app/Livewire/Backend/WorkflowQueue.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Pourquoi : demande explicite de l'utilisateur ("dga doesn't see all the courier he transfered") — nouveau privilège de portée `courriers.voir_transferes` (DGA par défaut, lecture seule) : Courrier::estTransferePar() (destinataire du transfert OU auteur de 'service_valide_dga' dans l'historique) + branche miroir dans scopeVisiblePar() ; paramètre `$avecTransfertsTraites` = false pour WorkflowQueue (ces courriers ne sont plus "à traiter" pour elle) ; CourrierPolicy::validerService() exige désormais le statut 'en_cours_de_transfert'. Amende la décision du 2026-09-08 (Module 4/9, voir DECISIONS.md). Clé ajoutée à la vraie base par script ciblé.
+
+## [2026-09-24 15:30] Tests — la DGA garde la consultation, hors de sa file
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : Règle n°7 — ancien test "redirigée au lieu d'une 403" remplacé (elle reste sur la fiche, sans action possible) ; nouveau test : ses transferts (y compris un ancien sans destinataire_transfert_id) dans la recherche mais pas dans "À traiter", refus sur le transfert d'une autre DGA.
+
+## [2026-09-24 15:45] Courriers enregistrés — onglet "Suivi"
+Fichier(s) : app/Livewire/Backend/CourriersEnregistres.php
+Fichier(s) : resources/views/livewire/frontend/courriersEnregistres.blade.php
+Fichier(s) : lang/en.json
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : précision de l'utilisateur ("after he transfer he has to see the courier update / follow without working on it") — l'onglet "Transféré" ne montrait que le statut 'enregistre', le courrier disparaissait dès l'affectation. Nouvel onglet "Suivi" : tous les courriers entrants sortis du transfert, quel que soit leur statut, avec statut, collaborateur affecté et dernier mouvement (eager loading, paginé — Règle n°3), même périmètre visiblePar ; test : suivi à l'étape "en traitement", aucune action possible (Module 4/5).
+
+## [2026-09-24 16:10] Suppression de la page "Transferts" (file d'attente WorkflowQueue)
+Fichier(s) : app/Livewire/Backend/WorkflowQueue.php (supprimé)
+Fichier(s) : resources/views/livewire/frontend/workflowQueue.blade.php (supprimé)
+Fichier(s) : routes/web.php
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Fichier(s) : app/Livewire/Backend/CourrierList.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : app/Livewire/Backend/MesCourriers.php
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : lang/en.json
+Pourquoi : demande explicite de l'utilisateur ("remove the transfer page since it same with tous les courier") — entrée de menu et composant supprimés ; "Tous les courriers" reçoit le filtre statut "En cours (tous)" (CourrierList::STATUT_ACTIFS = statutsActifs()) ; /courriers/a-traiter redirige vers /courriers/rechercher?statut=actifs (liens existants intacts) ; "Voir tout" des Tâches du jour et la redirection post-validation DGA pointent sur ce filtre ; Dashboard::tachesDuJour() reprend la notion "à traiter" (visiblePar($user, false)) ; privilège courriers.voir_file_attente et CourrierPolicy::voirFileAttente() retirés (catalogue + vraie base) — tous ses anciens détenteurs ont déjà courriers.rechercher. Module 4/8, voir DECISIONS.md.
+
+## [2026-09-24 16:10] Tests — file d'attente reportée sur "Tous les courriers"
+Fichier(s) : tests/Feature/Courriers/WorkflowQueueTest.php (supprimé)
+Fichier(s) : tests/Feature/Courriers/CourrierListEnCoursTest.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Fichier(s) : tests/Feature/Courriers/SimulationParcoursReelTest.php
+Fichier(s) : tests/Feature/Courriers/VisibiliteListesTest.php
+Fichier(s) : tests/Feature/Courriers/ShowCourrierTest.php
+Fichier(s) : tests/Feature/DashboardTest.php
+Fichier(s) : tests/Feature/MenuPrivilegesTest.php
+Pourquoi : Règle n°7 — menus par profil : "Transferts" n'apparaît plus pour personne, "Tous les courriers" à la place (+ "Dossier surveillé" pour l'Administrateur) ; les 5 cas de WorkflowQueueTest (périmètre responsable/collaborateur/DGA/admin) repris sur CourrierList filtré "En cours", + redirection de l'ancienne adresse ; références à la page supprimée mises à jour.
+
+## [2026-09-24 16:40] Module 5 — chronomètre de traitement (délai fixé par le responsable)
+Fichier(s) : database/migrations/2026_09_24_160000_add_chronometre_to_courriers_table.php
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Services/WorkflowService.php
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/components/chronometre.blade.php
+Fichier(s) : resources/js/app.js
+Pourquoi : demande explicite de l'utilisateur ("how can a responsable set the delay… before affecting", "it should be as a chronometer", "it appear as chronometer in the sla detail") — colonnes chrono_debut_le/chrono_fin_le (indexée)/chrono_arrete_le ; WorkflowService::fixerDelai() (départ maintenant, echeance/date_limite synchronisées, historique 'delai_fixe'/'delai_modifie' avec motif) ; chronomètre figé à la clôture (traite/rejete, pli confidentiel remis) ; CourrierPolicy::fixerDelai() + privilège courriers.fixer_delai (Responsable de service) ; délai (jours/heures, prérempli avec le SLA) dans le formulaire "Affecter", "Modifier le délai" avec motif obligatoire ; composant <x-chronometre> (compte à rebours Alpine en direct, recalé sur l'heure serveur, jamais de wire:poll — Règle n°2) dans les détails SLA de la fiche. Module 5/6, voir DECISIONS.md.
+
+## [2026-09-24 16:50] Tâches du jour — échéance en chronomètre compact
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : même demande ("as a chronometer") — le badge J-N calculé côté serveur remplacé par <x-chronometre variante="compact"> (colonnes chrono ajoutées au select, tri secondaire par chrono_fin_le) ; traductions EN du chronomètre et du délai. Module 5/10.
+
+## [2026-09-24 16:50] Tests — chronomètre de traitement
+Fichier(s) : tests/Feature/Courriers/ChronometreTraitementTest.php
+Fichier(s) : tests/Feature/DashboardTest.php
+Pourquoi : Règle n°7 — délai fixé à l'affectation (36 h, historique, date_limite synchronisée), modification avec motif obligatoire, collaborateur refusé (403), chronomètre figé à la validation, aucun chronomètre pour un courrier clôturé sans heure d'arrêt ; Tâches du jour : chronomètres dans l'ordre d'urgence.
+
+## [2026-09-24 16:50] Données — vraie base : migration chronomètre + privilège courriers.fixer_delai
+Fichier(s) : (aucun fichier du dépôt — `php artisan migrate` + script ciblé dans le scratchpad, base `gec`)
+Pourquoi : seule la migration 2026_09_24_160000 était en attente ; clé ajoutée à Responsable de service + Administrateur sans rejouer PrivilegeSeeder complet.
+
+## [2026-09-24 17:10] Chronomètre — déplacé en en-tête de la fiche, format réduit "prop firm"
+Fichier(s) : resources/views/components/chronometre.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/js/app.js
+Pourquoi : retours de l'utilisateur (capture : "mais le plutôt en haut ici", puis "make it small search for propfirm on how they do their own") — nouvelle variante 'entete' : petit encart entre la référence et les boutons, tuiles jours/heures/min/sec avec unité, point d'état (pulsé en retard), fine barre de progression, échéance en info-bulle ; segments calculés dans le composant Alpine. Les détails SLA ne gardent qu'un rappel texte (origine du délai + échéance exacte). Module 5.
+
+## [2026-09-24 17:20] Chronomètre d'en-tête — carte retirée
+Fichier(s) : resources/views/components/chronometre.blade.php
+Pourquoi : demande explicite de l'utilisateur ("remove the card") — bordure, fond, ombre et marges internes de l'encart retirés, tuiles posées directement dans l'en-tête de la fiche (Module 5).
+
+## [2026-09-24 18:30] Aperçu du document — zoomer à la molette (Ctrl + molette)
+Fichier(s) : resources/js/document-preview.js
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : demande explicite de l'utilisateur ("why can[t] [i] zoom without the + sign") — nouvelle fonction partagée `activerZoomMolette()` (idempotente comme activerDeplacement()) : Ctrl/Cmd + molette zoome par pas de 10 (mêmes bornes 50-200 que les boutons +/-), preventDefault() pour ne pas déclencher AUSSI le zoom natif de la page ; la molette seule reste réservée au défilement normal (overflow-auto). Câblée sur les 8 endroits (4 pages × petit panneau + modale agrandie). Info-bulle "Cliquer-glisser pour déplacer • Ctrl + molette pour zoomer" ajoutée sur chaque zone de document pour la découvrabilité (aucune des deux interactions n'était annoncée nulle part dans l'UI). Module 2.
+
+## [2026-09-24 19:15] Pentest "Tous les courriers" — IDOR corrigé sur extraitTexteOcr()
+Fichier(s) : app/Livewire/Backend/CourrierList.php
+Fichier(s) : tests/Feature/Courriers/CourrierListTest.php
+Pourquoi : demande explicite de l'utilisateur ("now total courier go throughtly even pentest it") — extraitTexteOcr(Courrier $courrier) prenait un modèle Eloquent TYPÉ en paramètre d'action Livewire ; Livewire le résout lui-même via resolveRouteBinding() (Courrier::find($id) brut) AVANT d'entrer dans la méthode, sans jamais passer par Courrier::visiblePar() ni une policy — contrairement à courrierApercu()/supprimerCourrier() dans le même fichier, qui revérifient explicitement l'id reçu (Règle n°6). Conséquence réelle : un utilisateur avec courriers.voir_texte_ocr (Responsable de service par défaut) pouvait appeler extraitTexteOcr() avec l'id d'un courrier hors de son périmètre (service différent, confidentiel...) en contournant l'UI (ce courrier n'apparaît jamais dans son tableau) et lire jusqu'à ~120 caractères de son texte OCR. Corrigé en revérifiant CourrierPolicy::voirTexteOcr() (qui inclut déjà view(), donc confidentialité + accès dossier + périmètre de service) dans la méthode elle-même. Prouvé par un test qui échoue sur le code non corrigé (extrait lu) et passe après le correctif (null retourné) : test_extrait_texte_ocr_refuse_un_courrier_hors_du_perimetre_de_lutilisateur. Reste du composant audité (transfererSelection/classerSelection/supprimerCourrier/ouvrirApercu/resultats/statistiques) : tous re-vérifient déjà correctement — aucune autre faille trouvée. Module 8/9, Règle n°6.
+
+## [2026-09-24 19:20] Pentest — garde-fou fichier manquant harmonisé sur le téléchargement de pièce jointe
+Fichier(s) : app/Http/Controllers/PieceJointeDownloadController.php
+Pourquoi : audit du même déplacement que ci-dessus — ce contrôleur (atteignable depuis "Tous les courriers") n'avait pas le garde-fou "fichier absent du stockage → 404 + Log::warning" déjà appliqué le même jour à CourrierDocumentApercuController/CourrierDocumentDownloadController, laissant une pièce jointe manquante remonter en exception 500 brute au lieu d'un 404 propre et tracé. Pas une faille de sécurité (double Gate::authorize déjà correct), une incohérence de robustesse corrigée par cohérence. Module 1.
+
+## [2026-09-24 20:05] Pentest "Détail/Modifier le courrier" — IDOR corrigé sur EditForm::courrier()
+Fichier(s) : app/Livewire/Backend/EditForm.php
+Fichier(s) : tests/Feature/Courriers/EditFormTest.php
+Pourquoi : demande explicite de l'utilisateur ("have go throught the view/edit too") — suite du pentest de "Tous les courriers" appliquée aux fiches "Détail" (ShowCourrier) et "Modifier" (EditForm). ShowCourrier audité en entier : chaque action passe par courrierPour()/courrierModifiable() (authorize() à chaque appel), le panneau "Aperçu" (courrier()) revérifie déjà 'view' à chaque accès, le canal de diffusion privé courrier.{courrierId} (routes/channels.php) est déjà correctement gardé par $user->can('view', $courrier) — RAS. EditForm avait la même classe de faille que extraitTexteOcr() (CourrierList, plus tôt le même jour), par un mécanisme différent : $courrierId est une propriété publique SANS #[Locked], donc modifiable directement par une requête cliente forgée (Livewire\Features\SupportLockedProperties\BaseLocked confirmé en lisant le vendor — cet attribut n'existe QUE pour bloquer ce cas précis) ; mount() n'autorise ('update') qu'UNE FOIS au chargement initial, mais le #[Computed] courrier() (panneau "Aperçu" : expéditeur, statut, confidentialité, pièces jointes, numéro) rechargeait ensuite le courrier depuis $this->courrierId SANS jamais revérifier — contrairement à ShowCourrier::courrier(), qui fait exactement ce contrôle. Un utilisateur avec accès légitime à SA page d'édition pouvait reprogrammer courrierId vers un courrier hors de son périmètre et voir son détail dans le panneau, sans repasser par la policy (le chemin d'écriture enregistrerModification() restait lui protégé : il refait son propre findOrFail+authorize('update')). Corrigé en ajoutant $this->authorize('view', $courrier) dans courrier(), même pattern que ShowCourrier. Prouvé par un test qui échoue sur le code non corrigé (expéditeur/numéro d'un courrier hors périmètre visibles dans le HTML après ->set('courrierId', ...)) et passe après le correctif : test_le_panneau_apercu_refuse_un_courrier_hors_du_perimetre_apres_changement_did. Balayage du reste de app/Livewire (grep findOrFail($this->xId)/::find($this->xId)) : DossierClassementList, OrganisationIndex, ProfilList, ParametreSysteme, ScanForm, RegleList, UserList, RegistrationForm::brouillon() autorisent déjà correctement à chaque accès — aucune autre instance de cette faille trouvée. Module 1/4/8, Règle n°6.
+
+## [2026-09-24 20:40] Pentest "Enregistrement d'un courrier" — RAS, 2 garde-fous fichier manquant harmonisés
+Fichier(s) : app/Http/Controllers/BrouillonDocumentApercuController.php
+Fichier(s) : app/Http/Controllers/BrouillonDocumentDownloadController.php
+Pourquoi : suite du pentest ("ok next page") appliquée à RegistrationForm (Module 1, page d'enregistrement). Audit complet : brouillon() (#[Computed]) revérifie DÉJÀ 'utiliser' à chaque accès (le pattern correct, contrairement au bug trouvé plus tôt sur EditForm::courrier()) ; aucune action n'a de paramètre Eloquent typé ; numero_reference généré sous verrou de ligne (NumeroSequence::lockForUpdate()) ET protégé par une contrainte unique en base (migration 2026_09_03_100003, Règle n°3) ; CourrierBrouillonPolicy::utiliser()/telecharger() correctement scopés (créateur OU brouillons.utiliser_tout) ; BrouillonDocumentApercuController/DownloadController déjà correctement Gate::authorize()'d. Seul écart trouvé : ces deux contrôleurs n'avaient pas le garde-fou "fichier absent du stockage → 404 + Log::warning" déjà appliqué 3 fois plus tôt le même jour (CourrierDocumentApercu/Download, PieceJointeDownload) — pas une faille de sécurité, juste harmonisé par cohérence. Aucune vulnérabilité trouvée sur cette page. Module 1/2.
+
+## [2026-09-24 21:10] Pentest "Dossiers & Archives" — 2 fuites d'information corrigées (modale Partager)
+Fichier(s) : app/Livewire/Backend/DossierClassementList.php
+Fichier(s) : tests/Feature/Dossiers/DossierClassementListTest.php
+Pourquoi : suite du pentest ("next page then") appliquée à DossierClassementList (Module 3/9, "Dossiers & Archives"). ScanForm audité juste avant (RAS — numeriser() revérifie déjà 'renumeriser' sur chaque appel, pas de panneau exposant courrierId sans réautorisation, pas de x-data). Deux faiblesses réelles trouvées sur ce composant, toutes deux dans la modale "Partager" :
+(1) dossierAPartager() (#[Computed]) chargeait le dossier depuis $this->dossierAPartagerId (propriété publique SANS #[Locked], donc modifiable par requête cliente forgée — même mécanisme que EditForm::courrier() plus tôt le même jour) SANS jamais revérifier l'autorisation, contrairement à dossierSelectionne() juste au-dessus qui revérifie déjà 'view'. Comme les listes partageDisponibles/partageAssignes sont rendues SANS condition dans la vue, changer dossierAPartagerId suffisait à faire fuir noms+emails des bénéficiaires d'un dossier hors périmètre — sans jamais appeler ouvrirPartage(). Corrigé en revérifiant Auth::user()->can('partager', $dossier) dans le computed, comme dossierSelectionne() le fait déjà ; les 4 actions d'écriture (ajouterPartage/retirerPartage/ajouterSelectionPartage/retirerSelectionPartage) remplacent leur $this->authorize('partager', $dossier) — qui aurait planté sur un $dossier maintenant null — par un simple `if ($dossier === null) return;`, le computed portant déjà toute l'autorisation réelle.
+(2) EN CORRIGEANT (1), découverte d'un bug PRÉ-EXISTANT plus sérieux : partageDisponibles() n'avait pas le garde-fou "$dossier null → collect() vide" que partageAssignes() a juste en dessous — sans dossier sélectionné (dossierAPartagerId = null, l'état PAR DÉFAUT au premier chargement de la page, avant même d'ouvrir la modale une seule fois), cette méthode listait TOUS les utilisateurs de l'organisation (id/nom/email) sans aucun filtre. Combiné à (rendu sans condition dans la vue), ça faisait fuir le nom et l'email de CHAQUE utilisateur dans le HTML de CHAQUE chargement de "Dossiers & Archives", pour n'importe qui a juste dossiers_classement.voir (Agent/DGA/Responsable de service/Collaborateur — accordé largement), même sans le moindre droit de partage. Corrigé avec le même garde-fou que partageAssignes().
+Les deux prouvés par des tests qui échouent sur le code non corrigé et passent après (test_le_panneau_partager_refuse_un_dossier_hors_du_perimetre_apres_changement_did, test_aucun_utilisateur_nest_liste_dans_la_modale_partager_sans_dossier_selectionne). Reste du composant audité : tousLesDossiersAccessibles/arbre/courriersDuNoeud/courriersDisponiblesPourAjout scopés via Courrier::visiblePar()/dossiers_classement.gerer_tout correctement ; toutes les autres actions (creerDossier, renommerDossier, deplacerDossier, ajouterCourriersSelection, retirerCourrierDuDossier, supprimerDossier) revérifient déjà correctement — aucune autre faille trouvée. Module 3/9, Règle n°6.
+
+## [2026-09-24 21:40] Squelettes de chargement (tableaux/cartes/panneaux) — 3 composants ajoutés + correctif d'un bug réel introduit dans la même série
+Fichier(s) : resources/css/app.css
+Fichier(s) : resources/views/components/skeleton/card.blade.php
+Fichier(s) : resources/views/components/skeleton/table-rows.blade.php
+Fichier(s) : resources/views/components/skeleton/panel.blade.php
+Fichier(s) : resources/views/components/skeleton/list-items.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : tests/Feature/Courriers/CourrierListTest.php
+Pourquoi : demande explicite de l'utilisateur ("now i want loading animation on each table, cards, panels refreshing not the loading sp[inner]") — choix confirmé via AskUserQuestion : squelette "shimmer" (barres grises avec balayage lumineux), pas un simple spinner. Infrastructure réutilisable : animation @keyframes skeleton-shimmer dans app.css (respecte prefers-reduced-motion), 4 composants Blade (<x-skeleton.card>, <x-skeleton.table-rows :cols :rows>, <x-skeleton.panel :lignes>, <x-skeleton.list-items :items>). Câblé sur "Tous les courriers" (4 cartes KPI + tableau + panneau "Aperçu"), Dashboard (6 cartes KPI + tableau "Derniers courriers" + liste "Tâches du jour"), "Dossiers & Archives" (tableau "Contenu du dossier" + panneau "Détails du dossier") via wire:loading côté composant, wire:loading.remove côté contenu réel — nombre de cartes/colonnes squelettes toujours aligné sur le contenu réel (jamais un nombre fixe qui désynchroniserait la mise en page).
+BUG RÉEL trouvé par l'utilisateur (capture d'écran réelle, gecs.test/dashboard) : les squelettes de TABLEAU restaient affichés EN PERMANENCE, empilés au-dessus des vraies lignes, au lieu d'être cachés hors chargement. Cause trouvée en lisant vendor/livewire/livewire/src/Mechanisms/FrontendAssets/FrontendAssets.php : le `<style>` que Livewire injecte pour pré-cacher (display:none) les éléments `wire:loading.*` ne couvre qu'une liste FIXE de modificateurs (.block/.grid/.flex/.table/.inline/.list-item/.inline-block/.inline-flex/.delay...) — `wire:loading.table-row-group`, utilisé pour cacher un `<tbody>` squelette, n'en fait PAS partie, donc n'était JAMAIS caché par défaut. Corrigé en togglant une classe Tailwind "hidden" via `wire:loading.class.remove="hidden"` plutôt qu'une valeur de display — sidesteppe complètement la liste fixe de Livewire. Les cartes KPI (.grid) et panneaux (.block) N'AVAIENT PAS ce bug (.grid/.block sont bien dans la liste couverte). Prouvé par un nouveau test qui vérifie directement le HTML rendu (test_le_squelette_du_tableau_est_cache_par_defaut) plutôt que de supposer le comportement de Livewire. Module 2 (UX), aucune donnée métier concernée.
+
+## [2026-09-24 21:55] Squelette de chargement — panneau "Aperçu du courrier" de la fiche Détail
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : suite de l'entrée ci-dessus — ce panneau (contrairement à ceux d'EditForm/ScanForm, où le courrier affiché ne change jamais en cours de page) se recharge réellement EN DIRECT via les écouteurs temps réel existants du composant (statutChange()/ocrTermine()/classementPropose(), chacun fait unset($this->courrier)) quand un AUTRE utilisateur agit sur le même courrier pendant que cette fiche est ouverte — un cas réel de "panel refreshing", pas hypothétique. Même patron wire:loading.block/wire:loading.remove que les pages précédentes (le piège .table-row-group ne s'applique pas ici, .block est bien dans la liste couverte par Livewire). EditForm/ScanForm volontairement laissés SANS squelette (aucun déclencheur de rafraîchissement réel identifié sur ces pages — le courrier affiché n'y change jamais après le chargement initial). Module 1/2/4.
+
+## [2026-09-24 22:10] Barre de progression de navigation — couleur de marque + plus épaisse
+Fichier(s) : resources/css/app.css
+Pourquoi : retour utilisateur ("am not seeing animation when i refresh or switch pages") — clarifié via AskUserQuestion ("Both") : à la fois la navigation entre pages ET les squelettes en page ne semblaient donner aucun retour visuel. Pour la navigation (wire:navigate) : Livewire affiche DÉJÀ une barre de progression intégrée (NProgress, voir vendor/livewire/livewire/dist/livewire.js) à chaque clic sur un lien wire:navigate — aucun nouveau mécanisme à construire, elle existait déjà et fonctionnait, mais en gris-bleu générique (#29d) et 2px de haut seulement, assez discrète pour passer inaperçue. Personnalisée via la variable CSS officielle --livewire-progress-bar-color (couleur de marque) + hauteur 3px, sans toucher au mécanisme lui-même. Pour les squelettes en page (filtres/tri/pagination sur les pages déjà câblées) : le mécanisme est vérifié correct (état caché par défaut prouvé par test, voir l'entrée du bug .table-row-group ci-dessus) — l'explication la plus probable est qu'une requête Livewire locale (Herd) se termine en quelques millisecondes, trop vite pour qu'un humain perçoive une animation de 1,5s de cycle. Diagnostic demandé à l'utilisateur avant d'investir dans un mécanisme de durée minimale garantie (MutationObserver + Alpine, complexe et impossible à vérifier visuellement sans navigateur réel) : tester avec le throttling réseau de Chrome DevTools plutôt que de deviner. Module 2 (UX).
+
+## [2026-09-24 22:35] Squelettes — durée minimale d'affichage garantie (réponse "yes do it")
+Fichier(s) : resources/js/app.js
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/CourrierListTest.php
+Pourquoi : suite de l'entrée précédente, confirmation explicite de l'utilisateur ("yes do it") — mécanisme de durée minimale garantie pour les 9 squelettes déjà câblés (CourrierList : cartes/tableau/panneau ; Dashboard : cartes/tableau/liste ; DossierClassementList : tableau/panneau ; ShowCourrier : panneau). Nouveau composant Alpine réutilisable `squeletteMinimum(dureeMinimaleMs = 400)` dans app.js : observe une SENTINELLE invisible dédiée (`wire:loading.class.remove="hidden"` — même mécanisme par classe que le correctif du bug .table-row-group, jamais une valeur de display, pour rester sur un seul mécanisme fiable et uniforme) via MutationObserver sur l'attribut class, et pilote un état `visible` PARTAGÉ (x-show) entre le squelette et le contenu réel — retarde SEULEMENT la disparition du squelette d'au moins 400ms, jamais son apparition (donc aucun retard perçu sur une requête réellement longue). Chaque zone convertie du patron `wire:loading.X` / `wire:loading.remove` direct sur le squelette/contenu vers `x-data="squeletteMinimum()"` sur le conteneur englobant + sentinelle + `x-show="visible"`/`x-show="!visible"` sur les deux blocs. Contrainte HTML respectée pour les 3 tableaux (CourrierList/Dashboard/DossierClassementList) : la sentinelle et le x-data vivent sur le DIV qui enveloppe déjà `<table>` (jamais un DIV inséré À L'INTÉRIEUR de `<table>`, invalide — le fosterage HTML le sortirait du tableau) ; les deux `<tbody>` eux-mêmes portent directement `x-show`, ce qui reste valide. Test de régression du bug .table-row-group mis à jour pour vérifier la nouvelle architecture (sentinelle + x-show) au lieu de l'ancienne classe "hidden" posée directement sur le tbody squelette. Module 2 (UX).
+
+## [2026-09-28 09:15] Style "soft" (coins arrondis + ombres douces) — référence FundedNext
+Fichier(s) : resources/css/app.css
+Pourquoi : demande explicite de l'utilisateur avec deux captures d'écran (app.fundednext.com/accounts, versions claire et sombre) — "check fundednext style soft i want the same here". Analyse du style de référence : coins très arrondis partout (boutons quasi en pilule, grandes cartes ~16-20px de rayon), ombres très diffuses et légères plutôt que nettes, badges en pilule à fond pastel + texte foncé de la même teinte (déjà le cas dans ce projet, voir components/statut-badge.blade.php — rien à changer là). Palette de couleurs GEC volontairement INCHANGÉE (système de marque déjà calé avec l'utilisateur sur plusieurs itérations, voir DECISIONS.md "GEC Master Color System") — seule la FORME devient plus douce. Même technique que l'échelle typographique du 2026-09-18 : surcharge directe de l'échelle Tailwind par défaut (--radius-md/lg/xl/2xl, --shadow-sm) dans @theme, donc s'applique automatiquement à chaque usage existant de rounded-md/lg/xl/2xl et shadow-sm dans TOUTES les vues ET dans les boutons Flux eux-mêmes (vendor/livewire/flux/stubs/.../button/index.blade.php utilise rounded-lg pour la taille "base" — les stubs Flux sont scannés par le compilateur Tailwind de ce projet via @source, donc récupèrent directement la nouvelle valeur, aucun besoin de patcher le vendor). Vérifié dans le CSS compilé (public/build/assets/app-*.css) que les nouvelles valeurs sont bien présentes après rebuild. Changement purement visuel (CSS uniquement, aucun Blade/PHP touché) — suite de tests complète inchangée, aucune régression possible par construction. Retour visuel demandé à l'utilisateur (impossible à vérifier moi-même sans navigateur réel).
+
+## [2026-10-02 10:20] Chronomètre à côté du statut — partout où le badge de statut d'un courrier existe sans lui
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : demande explicite de l'utilisateur ("when the date is comming soon the colours should change right"), clarifiée via AskUserQuestion ("SLA deadline (date_limite) everywhere") — <x-chronometre> (composant déjà construit le 2026-09-24, voir DECISIONS.md "Chronomètre de traitement") n'était affiché qu'à DEUX endroits (en-tête ShowCourrier, "Tâches du jour" du tableau de bord) alors que <x-statut-badge> (simple statut de circuit, jamais d'indication de délai/urgence) apparaît dans beaucoup plus d'endroits. Plutôt que d'inventer un nouveau mécanisme de couleur, réutilisé tel quel le composant existant (déjà entièrement autonome — se fige silencieusement si aucune échéance n'existe, voir son @if interne, donc sûr à ajouter n'importe où un $courrier est disponible) à CHAQUE endroit où courrier->statut est affiché SANS lui : tableau "Tous les courriers" + son panneau Aperçu, tableau "Derniers courriers" du Dashboard, tableau "Contenu du dossier" de Dossiers & Archives, en-tête + champ "État actuel" de la page Modifier. Volontairement PAS ajouté : DossierClassementList ligne du statut du DOSSIER lui-même (pas un courrier, pas de délai SLA) ; ShowCourrier "Statut actuel hors du parcours standard" (redondant avec l'en-tête de la même page, qui l'affiche déjà juste au-dessus). Aucune modification du composant <x-chronometre> lui-même ni de sa logique de couleur (déjà correcte : vert/bleu "ok" → orange "risque" dans les dernières 24h ou le dernier quart du délai → rouge "retard" au-delà de l'échéance, voir resources/js/app.js). Les 5 suites de tests concernées + la suite complète confirmées sans régression. Module 5/10.
+
+## [2026-10-02 12:30] Chronomètre — badge "Bientôt en retard" explicite pendant l'état "risque"
+Fichier(s) : resources/views/components/chronometre.blade.php
+Pourquoi : retour utilisateur avec capture d'écran annotée (cercle rouge pointant un espace vide à côté du chronomètre) — "and bientot arreter should also appear there when the echance is approching only". Plutôt que d'ajouter un second badge dérivé de SlaCalculatorService::calculerStatutDelai() (qui tourne à la JOURNÉE près côté serveur, alors que le chronomètre tourne à la MINUTE près côté client — même décalage déjà documenté pour Courrier::scopeEnRetard(), voir DECISIONS.md "En retard (Module 5/10) : cohérence avec le chronomètre"), le second badge "Bientôt en retard" est dérivé du MÊME état Alpine `etat` que le compte à rebours — une seule source de vérité, jamais deux calculs susceptibles de se contredire visuellement l'un l'autre. Affiché UNIQUEMENT quand etat === 'risque' (x-show), jamais "ok"/"retard"/"fige*" comme demandé ("only"). Composant restructuré en wrapper `class="contents"` portant x-data + les data-* partagés, avec les deux badges comme enfants siblings (n'affecte jamais la mise en page des conteneurs flex déjà en place dans les 5 pages qui posent <x-chronometre>). Suite de tests complète + ChronometreTraitementTest confirmées sans régression. Module 5.
+
+## [2026-10-02 13:20] Chronomètre — badge "En retard" explicite pendant l'état "retard"
+Fichier(s) : resources/views/components/chronometre.blade.php
+Pourquoi : suite directe de l'entrée ci-dessus — "i want a badge beside the time contdown to appear only when the echaence date is reaching already". Troisième badge dans le même composant, même principe exactement symétrique au badge "Bientôt en retard" : dérivé du MÊME état Alpine `etat` (toujours une seule source de vérité), affiché UNIQUEMENT quand etat === 'retard' (x-show). "fige_retard" (courrier déjà clôturé après son échéance) volontairement exclu — ce n'est plus une échéance en train d'être dépassée MAINTENANT, juste un fait historique déjà résumé par son propre libellé du compte à rebours figé ("Traité en retard, en ..."), un badge "En retard" par-dessus serait redondant pour cet état précis. Suite de tests complète + ChronometreTraitementTest confirmées sans régression. Module 5.
+
+## [2026-10-02 14:05] Chronomètre — tic recalcule désormais à partir des data-* à CHAQUE appel, plus seulement à init()
+Fichier(s) : resources/js/app.js
+Pourquoi : retour utilisateur réel — sur "Tous les courriers" (plusieurs chronomètres sur la même page), les 4 lignes affichaient une courte fraction de seconde les bonnes valeurs (chacune distincte, correctes), PUIS "when i refrech it shows good data for 2sec then goes back to the wrong data time" — les 4 lignes affichaient ensuite TOUTES le même "+6 j ... En retard" (la valeur réelle d'UN SEUL courrier, GEC-2026-000005). Données serveur vérifiées directement (lecture seule sur la vraie base + rendu HTML réel de CourrierList) : chaque ligne reçoit bien un data-fin DISTINCT et correct dès le premier rendu — donc PAS un bug de calcul serveur, confirmé. Cause exacte non isolée avec certitude (aucune route de re-rendu Livewire automatique trouvée sur cette page — ni wire:poll, ni #[On(...)], ni Echo — le symptôme pointe donc vers le JS client). Seule faiblesse structurelle identifiée dans Alpine.data('chronometre', ...) : debut/fin/arret/textes n'étaient lus depuis this.$el.dataset qu'UNE SEULE FOIS dans init(), puis réutilisés tels quels par CHAQUE tic ultérieur de calculer() (déclenché par setInterval) — si l'assignation de ces propriétés d'instance se fait concurremment pour plusieurs composants Alpine qui s'initialisent dans la même frame (plusieurs <x-chronometre> sur la même page, exactement le cas ici), une contamination entre instances devient possible selon l'ordre d'exécution exact du navigateur. Corrigé en supprimant tout état caché pour debut/fin/arret : calculer() relit maintenant this.$el.dataset EN ENTIER à chaque appel (premier ET tous les suivants), donc chaque tic relit toujours les VRAIS attributs DOM de CET élément précis — rend ce type de contamination structurellement impossible, quel que soit le mécanisme exact en cause. Honnêteté : correctif best-effort sans navigateur réel pour reproduire/confirmer la cause exacte — ChronometreTraitementTest (vérifie uniquement le HTML serveur, pas le comportement JS runtime) ne pouvait de toute façon pas capturer ce bug ; suite complète confirmée sans régression, retour utilisateur demandé pour valider que le correctif tient dans le temps (pas seulement au premier rendu). Module 5.
+
+## [2026-10-02 14:30] Statut + chronomètre — positionnement explicite sur 2 lignes (nouveau composant <x-statut-avec-echeance>)
+Fichier(s) : resources/views/components/statut-avec-echeance.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : retour utilisateur avec capture d'écran ("find a good desing positioning for this") — dans une colonne de tableau étroite ("Statut"), le statut + le chronomètre + le badge "Bientôt en retard"/"En retard" (jusqu'à 3 pilules) se repliaient déjà sur 2 lignes, mais via un simple `flex-wrap` : la coupure n'était pas garantie au même endroit (dépend de la largeur exacte disponible, donc potentiellement incohérente selon zoom/résolution). Nouveau composant partagé `<x-statut-avec-echeance :courrier="...">` qui impose une coupure DÉLIBÉRÉE : le statut occupe toujours sa propre ligne, le chronomètre (+ son badge éventuel) occupe toujours la ligne suivante — remplace le bloc dupliqué `<div class="flex flex-wrap items-center gap-1"><x-statut-badge/><x-chronometre/></div>` dans les 4 endroits étroits (tableau "Tous les courriers" + son panneau Aperçu, tableau "Derniers courriers" du Dashboard, tableau "Contenu du dossier" de Dossiers & Archives, champ "État actuel" d'EditForm, panneau "Informations générales" de ShowCourrier — 6 emplacements au total). Les 2 en-têtes de page (ShowCourrier/EditForm, déjà assez larges pour 3 pilules sur une ligne) gardent volontairement leur disposition horizontale existante, non touchée. Suite complète confirmée sans régression. Module 5/10 (UX).
+
+## [2026-10-02 14:50] Chronomètre — badge compte à rebours visible retiré, seuls "Bientôt en retard"/"En retard" restent
+Fichier(s) : resources/views/components/chronometre.blade.php
+Fichier(s) : resources/js/app.js
+Pourquoi : demande explicite de l'utilisateur, conclusion de l'itération commencée plus tôt le même jour — "remove the time just leave the bientot and enretand". Retire le badge pilule avec l'icône horloge + les chiffres qui tournent (compte à rebours/dépassement en direct) ; ne reste que les DEUX badges d'état déjà construits ("Bientôt en retard" pendant "risque", "En retard" pendant "retard"), rien pour "ok"/"fige"/"fige_retard" (déjà le comportement voulu, confirmé par l'utilisateur : "if is not en reter or bientot enretter nothing is shown"). L'échéance exacte n'est pas perdue : accessible au survol (title) des badges restants, dérivée de data-echeance déjà présent. Nettoyage corrélé plutôt que de laisser du code mort : app.js ne calcule plus affichage/libelle/progression ni formater() (plus aucun appelant), seul `etat` reste calculé à chaque tic — même raisonnement que "pas d'abstraction au-delà du besoin réel" (CLAUDE.md). ChronometreTraitementTest (vérifie le mécanisme — délai fixé, figé à la clôture, 403 collaborateur — jamais le texte du compte à rebours lui-même) + suite complète confirmés sans régression. Module 5.
+
+## [2026-10-02 15:10] Correctif de portée — retrait du compte à rebours RÉSERVÉ à "Tous les courriers", pas global
+Fichier(s) : resources/views/components/chronometre.blade.php
+Fichier(s) : resources/views/components/statut-avec-echeance.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/js/app.js
+Fichier(s) : tests/Feature/Courriers/CourrierListTest.php
+Pourquoi : demande explicite de l'utilisateur, correction de portée sur l'entrée précédente — "only on the tout les courier page the rest shouldn't change". Le retrait du badge compte à rebours (icône horloge + chiffres) avait été appliqué GLOBALEMENT dans <x-chronometre> (toutes les pages qui le posent), alors qu'il n'était voulu que sur "Tous les courriers". Revert complet de app.js (affichage/libelle/progression/formater() restaurés tels quels, en gardant le correctif "relit this.$el.dataset à chaque tic" du 2026-10-02 plus tôt — celui-là reste valable indépendamment de cette portée) et de chronometre.blade.php (badge compte à rebours restauré). Nouveau prop optionnel `:masquer-temps="true"` sur <x-chronometre> (par défaut false = comportement normal partout), propagé par le nouveau composant partagé <x-statut-avec-echeance> (prop du même nom, même défaut) — activé UNIQUEMENT sur les deux usages de CourrierList (tableau + panneau Aperçu). ShowCourrier/Dashboard/Dossiers & Archives/EditForm continuent d'afficher le compte à rebours normalement, aucun changement sur ces pages. Nouveau test de régression (CourrierListTest) qui vérifie les deux côtés à la fois sur le MÊME courrier en retard : absent sur "Tous les courriers" (pas de "tabular-nums"), toujours présent sur la fiche courrier (ShowCourrier) — empêche qu'une future édition ne recasse cette portée précise. Suite complète confirmée sans régression. Module 5/10 (UX).
+
+## [2026-10-02 15:25] Compte à rebours également masqué sur le Tableau de bord
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : tests/Feature/DashboardTest.php
+Pourquoi : demande explicite de l'utilisateur, extension directe de l'entrée précédente — "remove on the dashboard too". `:masquer-temps="true"` ajouté aux DEUX usages de <x-chronometre> sur cette page : le tableau "Derniers courriers enregistrés" (via <x-statut-avec-echeance>, même mécanisme que "Tous les courriers") ET la liste "Tâches du jour" (usage autonome, sans statut-badge associé — conservé identique ailleurs, seul le compte à rebours visible disparaît). Le composant Alpine reste actif (etat toujours calculé côté client, x-data="chronometre" toujours présent) — seuls les badges "Bientôt en retard"/"En retard" restent visibles, rien pour les autres états. ShowCourrier/Dossiers & Archives/EditForm non touchés (toujours le compte à rebours normal). Nouveau test de régression vérifiant l'absence de "tabular-nums" sur le Dashboard tout en confirmant que le composant chronomètre est bien monté. Suite complète confirmée sans régression. Module 5/10 (UX).
+
+## [2026-10-02 15:45] Fiche courrier — champ "Dossier" ajouté dans "Informations générales"
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : tests/Feature/Courriers/ShowCourrierTest.php
+Pourquoi : retour utilisateur avec capture d'écran — "where does it represent here that this courier is inside a folder". Vérifié sur un vrai courrier de la base réelle (GEC-2026-000003, dossier_classement_id=3) que l'information existait déjà et était correcte, mais seulement dans deux endroits SOUS LE PREMIER ÉCRAN visible sans défiler ("Dossier lié" dans "Détails complémentaires", "Dossier de classement" dans "Actions rapides") — d'où la confusion. Clarifié avec l'utilisateur (AskUserQuestion) qu'il voulait l'ajouter au panneau "Informations générales" (toujours visible, comme le reste de cette discussion sur la visibilité du chronomètre) plutôt que simplement documenter où elle se trouve déjà. Nouveau champ "Dossier" dans la 3e colonne de ce panneau, même source de données que les deux autres ($courrier->dossierClassement?->nom ?? "Non classé"), jamais une 3e logique dupliquée. Relation dossierClassement ajoutée à l'eager loading de ShowCourrier::courrier() (Règle n°3 — elle était déjà utilisée par le reste de la page sans y être, chargement à la demande mis en cache après le premier accès, mais l'ajout explicite reste correct). Deux tests de régression : le nom du dossier doit apparaître exactement 4 fois sur la page (Informations générales + Détails complémentaires + Actions rapides + option de la modale "Classer" — compté précisément pour détecter si ce nouvel endroit cesse de rendre) ; "Non classé" s'affiche proprement dans ce nouveau champ quand aucun dossier n'est assigné. Suite complète confirmée sans régression. Module 3/9.
+
+## [2026-10-02 16:00] Fiche courrier — dossier aussi mentionné dans l'en-tête (ligne de sous-titre)
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/ShowCourrierTest.php
+Pourquoi : suite directe de l'entrée précédente, retour utilisateur avec une nouvelle capture d'écran (recadrée sur l'en-tête : numéro/statut/sous-titre expéditeur·service·date) — "i want it somewhere there". Ajouté "· Dossier : {{ nom }}" à la fin de la ligne de sous-titre de l'en-tête (`<flux:subheading>`), l'endroit le plus visible de toute la page (visible sans la moindre interaction, au-dessus même du panneau "Informations générales"). Affiché UNIQUEMENT si classé — "Non classé" n'y apparaît jamais, réservé au panneau "Informations générales" en dessous (même logique que le numéro de tampon détecté juste en dessous dans l'en-tête, qui ne s'affiche que s'il y a quelque chose à signaler). Tests de régression mis à jour : le nom du dossier doit désormais apparaître 5 fois sur la page (en-tête + les 4 endroits de l'entrée précédente) ; nouveau test confirmant que l'en-tête ne montre RIEN ("Dossier :" absent) quand le courrier n'est pas classé, pendant que "Informations générales" continue d'afficher "Non classé" normalement. Suite complète confirmée sans régression. Module 3/9. **SUPERSÉDÉ par l'entrée suivante (même jour, 16:30).**
+
+## [2026-10-02 16:30] Fiche courrier — dossier déplacé dans la rangée de badges de l'en-tête, au format "Dossier/Numéro"
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/ShowCourrierTest.php
+Pourquoi : retour utilisateur sur l'entrée précédente, via une capture d'écran recadrée sur la SEULE rangée de badges (icône enveloppe + "GEC-2026-000003" + badge vert "Archivé") et le mot "here" — ce qu'il voulait n'était pas le texte en ligne du sous-titre mais un badge pilule dans cette rangée, au même niveau visuel que x-statut-badge/x-chronometre. Retiré "· Dossier : {{ nom }}" du `<flux:subheading>` ; ajouté `<span class="... bg-brand-blue-pale ... text-brand-blue">` (même couleur que le badge "Type" plus bas sur la même page) avec icône dossier, à l'intérieur de la rangée de badges du haut. Deuxième retour immédiat ("i want this isnstead dossier name/courier name") : le badge a affiché un instant "{{ dossierClassement->nom }}/{{ numero_reference }}" (ex. "Offre Promotionnel/GEC-2026-000003"). Troisième retour, capture annotée (coche sur le badge dossier, croix rouge sur le suffixe "/GEC-2026-000003" ET sur le numéro déjà présent dans le titre juste à côté) — "check not there but there" : le numéro était désormais dupliqué (titre de la page ET badge), alors qu'il est déjà bien visible dans `<flux:heading level="1">` juste à gauche du badge sur la même ligne. Suffixe retiré, le badge affiche de nouveau uniquement le nom du dossier. "Non classé" reste exclu de l'en-tête, réservé à "Informations générales". Nombre d'occurrences du nom du dossier inchangé (5, le badge ne contient qu'UNE fois le nom à chaque version testée). 27/27 tests ShowCourrierTest verts. Module 3/9.
+
+## [2026-10-02 17:15] Correctif réel — ParseError "unexpected else" sur la fiche courrier (bug Blade latent, pas une régression de session)
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : rapport utilisateur, capture d'écran montrant "syntax error, unexpected token "else", expecting end of file" sur la page Détail du courrier (page cassée, 500). Cause isolée avec un repro minimal autonome (hors app) : `@php($courrier = $this->courrier)` tout en haut du fichier (forme raccourcie, une seule expression) N'EST PAS traité comme un cas spécial par le compilateur Blade — `BladeCompiler::storePhpBlocks()` matche `@php` avec la regex `/(?<!@)@php(.*?)@endphp/s`, qui ne distingue pas le raccourci `@php(...)` de la forme bloc `@php ... @endphp`. Elle a donc cherché le PREMIER `@endphp` trouvé n'importe où plus loin dans le fichier (il y en a plusieurs, legitimes : `@php $statutDelai = ...; @endphp`, `@php $peutTelecharger = ...; @endphp`, etc.) et avalé TOUT le texte entre les deux comme un unique bloc PHP brut, jamais compilé — y compris de vrais `@if`/`@else`/`@endif` du template, laissés tels quels en texte littéral. Résultat : un `@else` sans son `@if` correspondant (compilé, lui, séparément plus loin) → ParseError PHP pur, indépendant de Blaze/Livewire (confirmé en désactivant complètement Blaze et en compilant directement via `Blade::compileString()`+`php -l`, hors HTTP). Ce bug était LATENT dans le fichier depuis longtemps (`@php(...)` est une forme valide EN GÉNÉRAL — le piège ne se déclenche que si le même fichier contient AUSSI un `@php ... @endphp` plus loin), pas introduit par les changements de cette session — il a probablement commencé à se manifester car la compilation en cache a été invalidée/régénérée (`view:clear`) pendant cette session de débogage. Corrigé en convertissant LES 5 occurrences de `@php(expr)` du fichier (début de fichier, derniereEntreeHistorique, statutDelai, peutTelecharger, affectationCourante) vers la forme explicite `@php expr; @endphp`, qui n'a pas cette ambiguïté. Vérifié par repro minimal isolé (avant/après), compilation directe du vrai fichier (`Blade::compileString` + `php -l`, propre), puis `ShowCourrierTest` (26/27 sur un run concurrent à une autre session éditant le même fichier — l'unique échec changeait de nature d'un run à l'autre, signe de collision d'édition, pas de régression réelle). Fichiers de diagnostic temporaires (`debug_*.php`) créés puis supprimés du dépôt. Règle à retenir pour ce fichier (et tout fichier Blade qui mélange les deux formes) : ne plus jamais utiliser le raccourci `@php(expr)` ici, toujours `@php expr; @endphp`.
+
+## [2026-10-05 17:30] Module 9 — "Décharge" (reçu d'emprunt de l'original physique archivé)
+Fichier(s) : database/migrations/2026_10_05_030000_create_decharges_table.php
+Fichier(s) : app/Models/Decharge.php
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Services/WorkflowService.php
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/DechargeTest.php
+Pourquoi : demande explicite de l'utilisateur ("MODULE 9 NOW"), dernière lacune connue du Module 9 (specifications-modules-GEC.md, point 5 : "quand quelqu'un emprunte/consulte un document original physique archivé, le système génère une « décharge » — un reçu avec un numéro de référence qui indique où et par qui le document a été emprunté"). Nouveau modèle `Decharge` (jamais supprimée, Règle n°5) avec numéro de reçu `DECH-{année}-{id}` généré après insertion à partir de l'id auto-incrémenté (pas de table de séquence dédiée, contrairement au numéro de courrier — un simple reçu secondaire n'a pas besoin de repartir à 1 chaque année). `WorkflowService::emettreDecharge()`/`marquerDechargeRendue()` : un seul emprunt actif à la fois par courrier (vérifié par une requête fraîche, PAS la relation Eloquent en mémoire — un vrai bug trouvé en testant : deux appels successifs sur la même instance `$courrier` réutilisaient un cache de relation à "null" posé avant la création de la 1ère décharge), uniquement sur un courrier déjà archivé, chaque émission/retour tracé dans `courrier_historiques` (règle métier explicite du PRD). `lieu_rangement` capturé en instantané à l'emprunt (`dossierClassement.reference_localisation_physique`, déjà existant) plutôt qu'une FK — un dossier déplacé plus tard ne doit pas réécrire un reçu déjà imprimé/remis en main propre. Nouveau privilège `courriers.emettre_decharge` (Responsable de service par défaut + Administrateur). UI dans "Actions rapides" de la fiche courrier (bouton "Emprunter l'original" / indicateur "Original emprunté" + "Marquer rendu" selon l'état), modale de saisie (emprunteur + motif optionnel), mêmes trois portes que `view()` (niveau/dossier/périmètre) plus le privilège dédié dans la Policy. 14 nouveaux tests (génération du numéro, traçabilité, double-emprunt refusé, retour, Policy, intégration Livewire bout-en-bout, Règle n°6). Migration écrite mais PAS appliquée sur la vraie base par l'agent (`php artisan migrate` à faire par l'utilisateur). Avec cette entrée, Module 9 est complet pour la phase 1.
+
+## [2026-10-05 16:30] Tableau de bord — la carte "Notifications" affiche désormais un vrai aperçu (retrait du placeholder "Bientôt disponible.")
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : tests/Feature/DashboardTest.php
+Fichier(s) : tests/Feature/SimulationDashboardTest.php
+Pourquoi : retour utilisateur, capture d'écran de la carte "Notifications" du tableau de bord montrant encore "Bientôt disponible." ("this one too", suite directe de la cloche de l'en-tête et du badge de sidebar ajoutés dans les entrées précédentes). Ce placeholder était délibéré tant que le Module 7 n'existait pas (voir SimulationDashboardTest, constat n°4, "INTENTIONNEL... pas une donnée fabriquée") — désormais obsolète puisque le centre de notifications est construit. Nouveau `Dashboard::notificationsRecentes()` (les 3 dernières, scopées à `auth()->user()->notifications()` — même principe que la cloche, aucune policy séparée nécessaire car toujours les notifications du SEUL utilisateur connecté) ; la carte liste ces 3 notifications (icône ronde colorée retard/risque, même patron que la page `/notifications`), affiche l'état vide honnête "Aucune notification pour l'instant." si aucune, et un lien "Voir toutes les notifications" si au moins une. Carte "Calendrier" adjacente non touchée (fonctionnalité réelle déjà complète, aucun rapport avec les notifications). `SimulationDashboardTest` (constat n°4) mis à jour pour vérifier l'ABSENCE du placeholder au lieu de sa présence. 3 nouveaux tests dans `DashboardTest.php` (aperçu réel, état vide honnête, jamais les notifications d'un autre utilisateur — Règle n°6). 20/20 tests dashboard concernés verts. Module 7/10.
+
+## [2026-10-05 16:00] Sidebar — badge compteur de notifications + animation ; correctif réel — ParseError/fuite de libellé réintroduits 2x dans le même <script>
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Fichier(s) : resources/views/livewire/frontend/notification-bell.blade.php
+Fichier(s) : resources/views/livewire/frontend/notifications-index.blade.php
+Fichier(s) : resources/css/app.css
+Pourquoi : demande explicite de l'utilisateur ("it should also shows notif on the sidebar (number counts)") — l'item "Notifications" de la sidebar n'avait jusqu'ici aucun indicateur de compteur, contrairement à la cloche de l'en-tête. Ajout d'un badge natif `<flux:sidebar.item :badge="...">` (rouge, id stable `sidebar-notifications-badge`), calculé une fois dans le bloc `@php` déjà présent (même limite que `:current`, voir commentaire existant du fichier : la sidebar est `@persist`, jamais recalculée après le 1er chargement) — resynchronisé ensuite via JS à chaque `wire:navigate` ET à chaque action "marquer comme lu" (nouvel événement Livewire `dispatch()`-é par NotificationBell/NotificationsIndex), en lisant la valeur toujours fraîche de la cloche de l'en-tête (elle, hors du bloc persistant). Page `/notifications` et dropdown de la cloche restylés ("make it to look atleast presentable") : icône dans un rond de couleur pleine (même patron que l'en-tête de showCourrier), ligne non lue distinguée par un fond teinté + bordure gauche de marque plutôt que l'opacité inversée précédente. Puis, demande explicite ("add animations on them those counts" puis "it should it self automatically like going in and out") : animation CSS `badge-notif-pop` en boucle continue (respiration scale 1→1.18→1, `prefers-reduced-motion` respecté) sur les deux badges — après un premier essai en "pop" ponctuel à l'apparition (nécessitant un `wire:key` sur la cloche + un hack JS retrait/reflow/réajout de classe sur le badge de sidebar), simplifié en animation CSS pure `infinite` sur retour utilisateur, qui a aussi permis de retirer ce JS devenu inutile.
+**Deux bugs réels trouvés et corrigés pendant ce travail, LE MÊME PIÈGE RÉINTRODUIT DEUX FOIS** (voir memory livewire_flux_gotchas, nouvelle Règle 14) : (1) un commentaire JS dans le `<script>` partagé de la sidebar contenant le mot littéral `@persist` (sans intention d'invoquer la directive) a été lu par Blade comme le début réel de la directive — `Too few arguments to function e(), 0 passed`, cassant TOUTE page de l'app (la sidebar est le layout commun). Corrigé une première fois (reformulé sans le `@`), puis EXACTEMENT LE MÊME MOT réintroduit dans un NOUVEAU commentaire quelques minutes plus tard en documentant le hack d'animation — re-signalé par l'utilisateur avec le même message d'erreur, re-corrigé. (2) séparément, le libellé capitalisé `"Notifications"` écrit dans un commentaire JS du même script (rendu pour tout utilisateur, privilège ou non) a cassé `MenuPrivilegesTest::test_sans_privilege_seuls_parametres_et_deconnexion_restent` (`assertDontSee('Notifications')`) — un `<script>` est envoyé tel quel au navigateur, commentaires inclus, aucune protection de privilège serveur ne s'applique à son contenu textuel. Les deux corrections + les deux règles mémorisées pour éviter une 3e récidive. Suite complète confirmée sans régression (673/673) après le premier correctif ; nouvelle vérification lancée après la simplification de l'animation. `npm run build` relancé à chaque changement CSS. Module 7.
+
+## [2026-10-05 14:30] Correctif — badge de notification mal dégrossi (débordait, se fondait dans l'en-tête)
+Fichier(s) : resources/views/livewire/frontend/notification-bell.blade.php
+Pourquoi : retour utilisateur, capture d'écran de la cloche de l'en-tête — "make it beautifull it ugly". Le badge rouge (offset `-top-1 -end-1`, aucune bordure) flottait trop loin du coin de l'icône et se fondait visuellement avec le reste de l'en-tête au lieu de paraître "posé dessus". Corrigé avec le patron standard d'un badge de notification : offset réduit (`-top-0.5 -end-0.5`, reste collé au coin de l'icône), `ring-2 ring-white dark:ring-zinc-900` (même couleur que le fond de l'en-tête) pour le détacher proprement, `pointer-events-none` pour ne jamais voler le clic au bouton. `npm run build` relancé (changement CSS pur). Module 7.
+
+## [2026-10-05 13:00] Module 7 — centre de notifications in-app + escalade SLA configurable
+Fichier(s) : database/migrations/2026_10_05_010000_create_notifications_table.php
+Fichier(s) : database/migrations/2026_10_05_020000_add_sla_escalade_columns.php
+Fichier(s) : app/Notifications/CourrierEnRetardNotification.php
+Fichier(s) : app/Jobs/SendMailAlertJob.php
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Models/Parametre.php
+Fichier(s) : app/Livewire/Backend/NotificationBell.php
+Fichier(s) : resources/views/livewire/frontend/notification-bell.blade.php
+Fichier(s) : app/Livewire/Backend/NotificationsIndex.php
+Fichier(s) : resources/views/livewire/frontend/notifications-index.blade.php
+Fichier(s) : app/Livewire/Backend/ParametreSysteme.php
+Fichier(s) : resources/views/livewire/frontend/parametreSysteme.blade.php
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Fichier(s) : routes/web.php
+Fichier(s) : tests/Feature/Jobs/SendMailAlertJobTest.php
+Fichier(s) : tests/Feature/NotificationBellTest.php
+Fichier(s) : tests/Feature/NotificationsIndexTest.php
+Pourquoi : demande explicite de l'utilisateur ("do all") de construire ce qui manquait au Module 7 (identifié lors de l'audit de statut des modules) : (1) un vrai centre de notifications in-app — jusqu'ici la cloche de l'en-tête affichait un placeholder statique "Aucune notification pour l'instant.", les alertes SLA ne partaient que par email. `CourrierEnRetardNotification` étendait déjà la classe Notification native de Laravel (pas un Mailable isolé), donc l'ajout du canal `database` natif a suffi (table `notifications` standard, `toDatabase()` ajouté) — pas de système maison à inventer. Nouveau composant `NotificationBell` (cloche de l'en-tête, badge de compteur, liste des 8 dernières, marquer comme lu) volontairement placé HORS du bloc `@persist('app-sidebar')` de la sidebar : il est donc remonté à chaque `wire:navigate`, ce qui rafraîchit le compteur sans jamais utiliser `wire:poll` (interdit par la Règle n°2). Nouvelle page complète `/notifications` (paginée, Règle n°3) derrière l'entrée sidebar "Notifications" (jusque-là "Bientôt"). (2) Escalade SLA configurable par niveau de retard (specifications-modules-GEC.md, Module 7, règle métier explicite) — jusqu'ici l'escalade au responsable de service se déclenchait uniformément dès le dépassement, sans second palier. Ajout de `Parametre::sla_escalade_jours` (nullable = désactivé par défaut, configurable sur "Paramètres système") : au-delà de ce nombre de jours de retard, une alerte "escalade" (déclenchée UNE SEULE FOIS par échéance, jamais répétée comme la relance) notifie en plus le responsable du NIVEAU HIÉRARCHIQUE SUPÉRIEUR, résolu via `App\Models\OrganizationUnit` (module "Organisation" déjà existant) en remontant l'organigramme depuis le nœud ponté au service du courrier. Comme la majorité des services ne sont pas encore pontés à l'organigramme (voir memory module_status_audit), l'escalade reste alors silencieuse sur ce destinataire supplémentaire plutôt que d'échouer — comportement couvert par un test dédié. Toujours soumis à `CourrierPolicy::view()` comme tout destinataire d'alerte (Règle n°6) : testé explicitement, un "Responsable de service" générique d'un autre service n'y suffit pas, il lui faut `courriers.voir_tout` pour recevoir une escalade. Nouvelle colonne `courriers.alerte_escalade_le` (anti-doublon, même patron que `alerte_risque_le`/`alerte_retard_le`, ré-armée par `Courrier::booted()` quand `date_limite` change). 16/16 tests SendMailAlertJobTest (dont 6 nouveaux sur l'escalade) + 10/10 nouveaux tests notifications, suite complète en cours de vérification. Migrations écrites mais PAS appliquées sur la vraie base par l'agent (`php artisan migrate` à faire par l'utilisateur, voir memory never_migrate_fresh_real_db). Module 7.
+
+## [2026-10-05 11:00] Audit Module 5 (SLA) + nettoyage — table/modèle sla_regles morts supprimés, seeder placeholder ajouté
+Fichier(s) : database/migrations/2026_10_05_000000_drop_sla_regles_table.php
+Fichier(s) : app/Models/SlaRegle.php (supprimé)
+Fichier(s) : database/seeders/ParametreSeeder.php
+Pourquoi : demande explicite de l'utilisateur d'auditer l'état réel du Module 5 (SLA). Audit de code confirmé : `SlaCalculatorService`, `Parametre::sla_par_type` + UI `/admin/parametres`, calcul automatique de `date_limite` (Courrier::booted()), `SendMailAlertJob` planifié (bootstrap/app.php withSchedule) et l'historique append-only sont tous RÉELLEMENT opérationnels, pas des stubs. Deux lacunes trouvées et traitées : (1) la table `sla_regles` + le modèle `SlaRegle` (conception Phase 1 d'origine du 2026-09-03, délai en HEURES par type) ont été entièrement supplantés le 2026-09-23 par `Parametre::sla_par_type` (délai en JOURS, ligne singleton) mais jamais supprimés — confirmé par grep qu'aucun contrôleur/Livewire/service/seeder ne les lit ni ne les écrit nulle part dans `app/` ; supprimés via une NOUVELLE migration (`down()` recrée la table à l'identique si rollback nécessaire) plutôt que d'éditer la migration de création déjà appliquée sur la vraie base (voir memory never_migrate_fresh_real_db) — modèle supprimé directement (aucune référence restante hors des 2 fichiers de migration eux-mêmes). (2) `sla_par_type` ship vide par défaut et aucun seeder ne le remplissait — chaque type de courrier retombait sur le seul délai par défaut (10 jours) tant qu'un administrateur ne configurait pas `/admin/parametres` à la main ; ajouté `ParametreSeeder` avec des valeurs PLACEHOLDER par type (ex. Sinistre/Réclamation 5j, Lettre/Demande 10j, Contrat ou avenant 20j — en attente des VRAIS chiffres Nsia), idempotent et non destructeur (ne remplit QUE les types encore absents, n'écrase jamais une valeur déjà configurée par un administrateur), PAS appelé automatiquement depuis `DatabaseSeeder` (exécution manuelle `php artisan db:seed --class=ParametreSeeder` sur décision de l'utilisateur, jamais sur la vraie base sans son accord explicite). Suite de tests ciblée (SlaCalculatorServiceTest/ParametreTest/ParametreSystemeTest, 29/29) + suite complète confirmées sans régression. Module 5.
+Reste à faire PAR L'UTILISATEUR (hors de portée du code) : exécuter `php artisan migrate` (nouvelle migration de suppression) et, s'il le souhaite, `php artisan db:seed --class=ParametreSeeder` sur la vraie base `gec` — jamais fait automatiquement par l'agent sur cette base, voir memory never_migrate_fresh_real_db.
+
+## [2026-10-05 09:30] Correctif réel — libellés de sidebar coupés net (sans "…") au lieu d'être tronqués, titre de groupe qui repassait à la ligne
+Fichier(s) : resources/css/app.css
+Pourquoi : retour utilisateur, capture d'écran de la sidebar — "Enregistrer un courrier" et "Traitement & Réponse" coupés brutalement (pas de "…" visible), "Dossiers & Archives" retombant sur 2 lignes. Cause du premier problème : le DIV de texte d'un `<flux:sidebar.item>` (`data-content`, vendor Flux) a déjà `truncate` (overflow:hidden + text-overflow:ellipsis) MAIS c'est un enfant `flex-1` d'une ligne flex sans `min-width:0` — par défaut un item flex a `min-width: auto`, ce qui l'empêche de rétrécir en dessous de la largeur de son propre contenu, donc son `truncate` ne s'active JAMAIS ; c'est en réalité `[data-flux-sidebar] { overflow-x: hidden }` (correctif déjà en place depuis le 2026-09-18 pour la barre de défilement horizontale parasite) qui coupait tout net en dernier recours, sans le "…" prévu — un bug présent depuis ce correctif, simplement jamais remarqué avant des libellés aussi longs. Cause du second problème : le `<span>` du titre dans `sidebar/group.blade.php` (vendor) n'a ni `truncate` ni `whitespace-nowrap` du tout, donc le texte retombe à la ligne par défaut dès qu'il dépasse avec son icône/chevron. Corrigé en CSS uniquement (jamais de patch vendor) : `[data-flux-sidebar-item] [data-content] { min-width: 0 }` débloque enfin la vraie troncature avec ellipsis déjà voulue ; `[data-flux-sidebar-group] > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }` applique la même troncature aux titres de groupe. `npm run build` relancé (changement CSS pur, voir memory livewire_flux_gotchas Règle 1). Pas de test automatisé (rendu visuel CSS pur, pas de logique serveur) — à confirmer visuellement par l'utilisateur.
+
+## [2026-10-02 12:50] Correctif réel — 500 en récupérant un document (Storage::exists() peut LEVER, pas seulement retourner false)
+Fichier(s) : app/Http/Controllers/CourrierDocumentApercuController.php
+Fichier(s) : app/Http/Controllers/CourrierDocumentDownloadController.php
+Fichier(s) : app/Http/Controllers/PieceJointeDownloadController.php
+Fichier(s) : app/Http/Controllers/BrouillonDocumentApercuController.php
+Fichier(s) : app/Http/Controllers/BrouillonDocumentDownloadController.php
+Fichier(s) : tests/Feature/Courriers/CourrierDocumentApercuTest.php
+Pourquoi : capture d'écran réelle de l'utilisateur (panneau "Aperçu du courrier", fiche GEC-2026-000004) montrant "Réponse HTTP 500 en récupérant le document." — bug trouvé en lisant storage/logs/laravel.log : League\Flysystem\UnableToCheckFileExistence ("Unable to check existence for: courriers/2026/SANTE/GEC-2026-000004.pdf"), levée par Storage::disk('s3')->exists(...). Confirmé que le disque S3/MinIO local (AWS_ENDPOINT=http://127.0.0.1:9000, voir .env) n'est tout simplement PAS joignable sur cette machine en ce moment (Test-NetConnection sur le port 9000 : échec) — ce n'est pas un bug de configuration du code, le serveur MinIO local n'est pas démarré.
+Le VRAI bug corrigé ici : le garde-fou "fichier absent → 404" ajouté le 2026-09-24 (voir pentest de ce jour) supposait à tort que Storage::exists() ne pouvait QUE retourner false pour un fichier absent — il peut aussi LEVER une exception quand le disque lui-même est injoignable (panne réseau, service arrêté...), ce qui redonnait la même 500 brute que le garde-fou était censé éliminer. Corrigé dans les 5 contrôleurs de document : exists() + l'opération de lecture (response()/download()) sont maintenant dans un try/catch(League\Flysystem\FilesystemException), qui convertit en 503 (Service Unavailable) + Log::error, clairement distinct du 404 (Log::warning) du cas "fichier réellement absent". Prouvé par un test qui échoue avec la 500 brute reproduite EXACTEMENT (même message "Unable to check existence for...") quand le try/catch est retiré, et passe (503) une fois restauré — vérification à l'identique du protocole déjà utilisé pour les autres correctifs de cette session. Suite complète confirmée sans régression.
+Reste à faire PAR L'UTILISATEUR (hors de portée du code) : démarrer le serveur MinIO local pour que les documents réels redeviennent consultables — ce correctif rend l'échec PROPRE et explicite (503, message clair), il ne fait pas réapparaître les documents eux-mêmes tant que MinIO n'est pas relancé. Module 2/4.
+
+## [2026-09-24 19:45] Correctif — "En retard" cohérent avec le chronomètre (3e constat de l'audit du tableau de bord)
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : tests/Feature/SimulationDashboardTest.php
+Pourquoi : décision de l'utilisateur ("fixed all as you see fit") sur le constat ouvert précédent — Courrier::scopeEnRetard() compare désormais chrono_fin_le à la minute près quand un responsable a fixé un délai (comme le badge chronomètre), au lieu d'une comparaison à la journée qui pouvait contredire ce même badge sur la même page. Comportement STRICTEMENT INCHANGÉ pour un courrier sans délai fixé (l'ancienne comparaison équivalait déjà exactement au nouveau calcul par défaut) — donc aucun effet sur SendMailAlertJob (Module 7) pour la grande majorité des courriers, seulement pour ceux utilisant le chronomètre. Voir DECISIONS.md. Module 5/7/10.
+
+## [2026-09-24 19:30] Audit du tableau de bord — 2 correctifs verrouillés, 1 constat ouvert
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : app/Jobs/RefreshDashboardStatsJob.php
+Fichier(s) : tests/Feature/SimulationDashboardTest.php
+Pourquoi : demande explicite de l'utilisateur ("go through the dashboard page and find for bugs, static information that not been taking from the database and also simulate it") — simulation avec 8 courriers réalistes à travers WorkflowService/RefreshDashboardStatsJob et plusieurs comptes réels (Administrateur, Responsable de service, Collaborateur, Agent), rapport dans storage/logs/simulation-dashboard.md. Trouvé et corrigé : (1) Dashboard::tachesDuJour() ajoutait `orderBy('chrono_fin_le')` APRÈS `limit(5)` dans la chaîne — Laravel l'acceptait sans erreur mais le critère devenait sans effet réel, contrairement au commentaire "triées par ÉCHÉANCE" ; déplacé avant limit() comme tie-break entre date_limite et date_mouvement. (2) RefreshDashboardStatsJob::handle() ne lisait que l'action 'validation_acceptee' dans l'historique — un pli confidentiel clôturé via WorkflowService::cloturerConfidentiel() (action 'confidentiel_remis', ajoutée plus tôt aujourd'hui) n'était jamais compté dans "Délai moyen de traitement" ; whereIn() des deux actions. Aucune donnée statique/fabriquée trouvée ("Bientôt disponible" sur la carte Notifications est un placeholder INTENTIONNEL, Module 7 pas encore construit — conforme à la règle du projet). Un 3e constat (KPI "En retard" à la journée près vs chronomètre à la minute près) reste OUVERT, voir DECISIONS.md — touche aussi SendMailAlertJob, pas corrigé sans confirmation. Module 10.
+
+## [2026-09-24 19:00] Correctif — grand espace vide sous la page à cause de la modale "Agrandir" fermée
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : retour de l'utilisateur (capture d'écran, grand espace vide sous "Tous les courriers") — le correctif de hauteur de la modale "Agrandir" (17h30) avait forcé `display: flex` (`flex!`) sur la balise `<flux:modal variant="bare">` elle-même ; cette règle `!important` écrasait la règle par défaut du navigateur qui cache un popover fermé (`display: none`), laissant la modale réserver ses 88vh de hauteur EN PERMANENCE dans le flux normal de la page, qu'elle soit ouverte ou fermée. Retiré `flex!`/`flex-col!` de la balise `<flux:modal>` (la hauteur explicite `h-[88vh]! max-h-[88vh]!` suffit — une hauteur en pourcentage sur l'enfant `h-full` ne dépend pas du display du parent) ; la mise en page en colonne reste sur le DIV intérieur, qui n'a d'effet qu'une fois la modale réellement affichée. Module 2.
+
+## [2026-09-24 18:45] Correctif CRITIQUE — code JS visible comme texte sur la page (guillemet droit dans un commentaire x-data)
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/CourrierListTest.php
+Fichier(s) : tests/Feature/Courriers/ShowCourrierTest.php
+Fichier(s) : tests/Feature/Courriers/EditFormTest.php
+Fichier(s) : tests/Feature/Courriers/RegistrationFormTest.php
+Pourquoi : retour réel de l'utilisateur (captures d'écran répétées : le panneau "Aperçu du courrier" affichait du code JS brut à la place du document, sur "Tous les courriers" ET "Modifier") — le commentaire du zoom à la molette citait les mots de l'utilisateur entre guillemets DROITS (`"why can[t] i zoom without the + sign"`) à l'intérieur de `x-data="{...}"`, lui-même délimité par des guillemets droits : le navigateur referme l'attribut HTML au premier guillemet rencontré, et tout le reste du JS fuit comme texte visible sur la page réelle (invisible depuis le serveur/PHP, d'où plusieurs allers-retours de diagnostic avant de le trouver via une extraction directe du HTML rendu). Présent sur les 8 endroits ajoutés aujourd'hui (4 pages × petit panneau + modale agrandie) ; guillemets remplacés par des guillemets français «» (et une seconde occurrence du MÊME piège dans le commentaire d'avertissement lui-même, corrigée aussi). 4 tests de non-régression ajoutés (un par page) qui extraient le bloc x-data du panneau et vérifient l'absence de tout guillemet droit — vérifiés en réintroduisant le bug temporairement (le test échoue bien) puis en le retirant. Nouvelle règle 10 dans memory livewire_flux_gotchas. Module 2.
+
+## [2026-09-24 18:15] Correctif — même bug "plein écran natif minuscule" sur "Tous les courriers" et "Modifier"
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Pourquoi : retour de l'utilisateur ("no in the tous les courier") — ces 2 pages avaient encore l'ancienne API Fullscreen native du navigateur (pleinEcran()) sur leur panneau "Aperçu du courrier", jamais corrigées lors du 1er passage (seules ShowCourrier et RegistrationForm l'avaient été). Même remplacement que les 2 autres : vraie modale flux:modal (nom indexé sur l'id du courrier), hauteur imposée sur la balise elle-même, corps flex-1 min-h-0, cliquer-glisser (activerDeplacement) déjà câblé. Les 6 surfaces de prévisualisation de l'app utilisent désormais toutes le même patron. Module 2.
+
+## [2026-09-24 18:00] Aperçu du document — cliquer-glisser (pan) pour se déplacer une fois zoomé
+Fichier(s) : resources/js/document-preview.js
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Pourquoi : demande explicite de l'utilisateur ("why can i move it like click move without having to schrolling", puis "here too" sur le panneau "Aperçu du courrier" de "Tous les courriers") — nouvelle fonction partagée `activerDeplacement()` dans document-preview.js (Pointer Events + setPointerCapture, idempotente via `_panActif` car les conteneurs sont `wire:ignore`) : cliquer-glisser fait défiler le document zoomé, curseur grab/grabbing, jamais sur un bouton/lien/la couche de texte (sélection au clic-glisser normal préservée pour la recherche/le copier-coller). Câblée sur les 6 endroits de l'application qui utilisent document-preview.js : petit panneau ET modale agrandie de la fiche courrier, petit panneau ET modale agrandie du formulaire d'enregistrement, panneau de "Tous les courriers", panneau de "Modifier". Module 2.
+
+## [2026-09-24 17:45] Correctif — modale "Agrandir" réduite à son en-tête (document minuscule)
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Pourquoi : retour de l'utilisateur avec capture d'écran (modale ouverte mais réduite à la hauteur de sa barre d'outils, document rendu en icône minuscule) — `variant="bare"` (qualifiée de "legacy" par la doc officielle Flux) ne garantit aucune hauteur propre à la modale ; donner `h-[85vh]`/`h-[70vh]` seulement à un DIV intérieur ne suffisait pas à faire grandir la balise `<flux:modal>` elle-même, qui se dimensionnait alors sur son seul en-tête — pdf.js mesurait ensuite un `boite.clientHeight` quasi nul et rendait un canvas proportionnellement minuscule (limiterHauteur=true dans document-preview.js). Corrigé sur les 2 modales concernées (fiche courrier ET brouillon) : hauteur imposée avec `!` (suffixe important Tailwind v4, même idiome que `max-w-2xl!` déjà dans ce fichier) directement sur `<flux:modal>`, corps en `flex-1 min-h-0` pour occuper tout l'espace restant sous l'en-tête/la pagination/la recherche au lieu de redemander sa propre unité vh indépendante ; largeur augmentée au passage (max-w-6xl / max-w-4xl) pour la lisibilité demandée. Module 2. Non re-vérifié en navigateur réel après ce correctif (pas d'outil de test JS dans ce projet) — à confirmer par l'utilisateur.
+
+## [2026-09-24 17:30] Fiche courrier — "Voir en plein écran" devient une vraie modale agrandie
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : retour de l'utilisateur (captures : plein écran natif du navigateur affichant le petit panneau minuscule au milieu d'un écran vide, comparé à un lecteur PDF large et lisible façon OneDrive) — remplace l'API Fullscreen native (pleinEcran(), qui ne faisait qu'agrandir le petit panneau tel quel) par le même patron "Agrandir" déjà existant sur RegistrationForm (modale flux:modal séparée, instance pdf.js dédiée, navigation/zoom/recherche/téléchargement), en plus grand (max-w-5xl, hauteur 85vh) pour rester lisible sur un document scanné dense. Module 2.
+
+## [2026-09-24 17:35] Chronomètre — badge à côté du statut, cohérent avec le design
+Fichier(s) : resources/views/components/chronometre.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : resources/js/app.js
+Pourquoi : demande explicite de l'utilisateur ("find a good place up there… it should be consistent with the design") — le chronomètre devient un badge de même gabarit et mêmes couleurs de marque que <x-statut-badge>, placé juste à côté du statut sur la ligne du titre (plus d'élément flottant entre le titre et les boutons) ; échéance exacte en info-bulle. Variantes 'entete' et 'grand' devenues inutilisées retirées (composant réduit au badge), segments JS associés retirés. Module 5.
+
 ## [2026-09-22 10:00] Correctif — le NIU ne reconnaissait que "Cont[r]. N°", pas l'ordre inversé "N° Cont[r]."
 Fichier(s) : app/Jobs/ProcessDocumentOcr.php (`extraireExpediteurNiu()` — nouveau repli `/\bN°\s*Cont(?:r)?\.?\s*:?\s*([\w]{5,20})/iu`, entre le repli "Cont[r]. N°" du 09h35 et le repli générique "N°" seul)
 Fichier(s) : tests/Feature/Jobs/ProcessDocumentOcrTest.php (nouveau test `test_le_niu_est_extrait_quand_etiquete_n_degre_cont_dans_lordre_inverse`)
@@ -3408,4 +4005,35 @@ Fichier(s) : resources/views/pdf/bordereau.blade.php (le bordereau imprimait la 
 Fichier(s) : lang/en.json (traduction "Transféré — à affecter")
 Fichier(s) : tests/Feature/Courriers/ShowCourrierTest.php (assertion du badge mise à jour + test du nouveau libellé)
 Pourquoi : Module 4/5 — question de l'utilisateur "pourquoi le statut passe de en cours de transfert à enregistré quand la DGA transfère au service". Comportement voulu (le 3e sous-statut "Transféré" du SRS est la valeur existante 'enregistre', décision du 2026-09-15 de ne pas ajouter de valeur d'enum — voir WorkflowService), mais le badge affichait la valeur brute "Enregistre", comme un retour en arrière. Option retenue par l'utilisateur : corriger l'affichage uniquement (aucune migration, aucun changement de workflow). 618/618 tests, Pint propre.
+
+## [2026-10-02 17:37] Restyle de l'aperçu document (chrome Office + panneau "correspondance") sur les 4 pages qui l'utilisent
+Fichier(s) : resources/views/components/apercu/barre-outils.blade.php (nouveau — chrome restylé : ligne d'accent bleue, bandeau fichier, actions recherche/zoom/imprimer/télécharger/agrandir-fermer, pagination/recherche en ligne secondaire ; purement présentatiel, référence les propriétés Alpine du x-data parent sans en déclarer de nouvelles)
+Fichier(s) : resources/views/components/apercu/visionneuse.blade.php (nouveau — zone document : fond gris, page blanche centrée, barre d'état "Page X sur Y" ; adressage par id, pas x-ref, pour servir aussi bien le panneau compact que les modales "Agrandir")
+Fichier(s) : resources/views/components/apercu/panneau-correspondance.blade.php (nouveau — volet latéral "correspondance" des modales "Agrandir" : objet, expéditeur/destinataire/date réels, pièce jointe ; pas de corps de message simulé, aucun champ équivalent n'existe sur Courrier)
+Fichier(s) : resources/views/components/apercu/signature-expediteur.blade.php (nouveau — carte expéditeur : nom/fonction/organisation/adresse/téléphone/email réels + logo NSIA)
+Fichier(s) : public/images/apercu/nsia-logo.png (nouveau — logo NSIA Assurances extrait de la maquette fournie par l'utilisateur, seul élément graphique de la maquette réutilisé tel quel)
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php, resources/views/livewire/frontend/courrierList.blade.php, resources/views/livewire/frontend/editForm.blade.php, resources/views/livewire/frontend/registrationForm.blade.php (panneau compact + modale "Agrandir" de chacune des 8 instances de l'aperçu document basculées sur les 4 composants ci-dessus ; boîte/conteneur pdf.js adressés par id plutôt que x-ref pour un contrat uniforme ; modale "Agrandir" passée en deux colonnes dès 900px (document | correspondance), empilées en dessous ; bouton "Voir en plein écran" du panneau de showCourrier retiré car devenu redondant avec celui du nouveau chrome)
+Pourquoi : demande explicite de l'utilisateur, maquette replica.html fournie (capture d'un aperçu de pièce jointe Outlook/Word) comme source de vérité visuelle (couleurs/typo/rayons compris) pour le chrome, tout en remplaçant le contenu d'exemple par les données réelles du courrier/brouillon (jamais de texte de la maquette conservé). Avatar/bandeau personnel de la maquette volontairement NON repris (photo d'un collaborateur réel sur l'e-mail d'exemple) — `<flux:avatar>` à initiales utilisé à la place, même convention que le reste de l'app (voir resources/views/components/desktop-user-menu.blade.php) ; seul le logo NSIA (actif de marque de l'entreprise elle-même) a été extrait en image. Bug de compilation Blade rencontré en cours de route sur showCourrier.blade.php (`@php($courrier = ...)` shorthand avalant les directives `@if/@else` suivantes jusqu'au premier `@endphp` du fichier) — diagnostiqué et corrigé par une session Claude Code parallèle (gecs-57) sur ce même poste, coordination faite via message direct pour éviter un conflit d'édition. 148/148 tests (ShowCourrier/CourrierList/CourrierListEnCours/EditForm/RegistrationForm/RegistrationFormConfidentiel) + 5/5 CourrierDocumentApercuTest, `npm run build` OK.
+
+## [2026-10-05 08:30] Aperçu document — 2 régressions du restyle corrigées (cliquer-glisser cassé, haut du document inatteignable au zoom)
+Fichier(s) : resources/views/components/apercu/visionneuse.blade.php (overflow de la zone document : retour à `overflow-auto` inconditionnel au lieu du `x-bind:class` selon le zoom ajouté par erreur en uniformisant les 8 instances — seul registrationForm l'avait avant ; `items-center justify-center` retiré du conteneur défilant, remplacé par `m-auto` sur l'enfant (piège CSS connu : centrage par flexbox + overflow:auto rend la partie qui dépasse en haut/à gauche inatteignable au défilement))
+Pourquoi : retours utilisateur successifs avec capture d'écran — "why can't i mave [move] the document when i zoom it" puis "check i can't even see the top after i zoom". Les deux étaient des régressions introduites par la factorisation des 8 panneaux/modales en un seul composant partagé (voir entrée précédente), pas des bugs préexistants. 148/148 tests, `npm run build` OK.
+
+## [2026-10-05 08:59] Aperçu document — retrait de la recherche dans le document, barres de défilement natives masquées
+Fichier(s) : resources/views/components/apercu/barre-outils.blade.php (bouton loupe + barre de recherche retirés) ; resources/views/components/apercu/visionneuse.blade.php (scrollbars natives masquées sur la zone document — `overflow-auto` reste actif, seul le rendu visuel de la barre système est caché, replica.html ne montre que de fins nubs décoratifs non natifs)
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php, resources/views/livewire/frontend/courrierList.blade.php, resources/views/livewire/frontend/editForm.blade.php, resources/views/livewire/frontend/registrationForm.blade.php (`rechercheOuverte`/`requeteRecherche`/`nbResultats`/`basculerRecherche()`/`rechercher()` retirés des 8 x-data d'aperçu, devenus inutilisables sans bouton pour les déclencher)
+Pourquoi : demande explicite de l'utilisateur ("remove the research functionality" puis "i don't want to see those scrolling bars", avec capture d'écran montrant les barres de défilement natives de Windows). La couche de texte pdf.js (TextLayer, `avecTexte` dans document-preview.js) est volontairement CONSERVÉE : elle sert aussi à la sélection/au copier-coller du texte du document, pas seulement à la recherche — seule l'interface de recherche (bouton + champ + méthode `rechercher()` de `ApercuDocument`, inchangée côté JS) a été retirée côté UI. 153/153 tests, `npm run build` OK.
+
+## [2026-10-05 09:02] Aperçu document — retrait du padding autour de la page
+Fichier(s) : resources/views/components/apercu/visionneuse.blade.php (padding de 16px retiré de la zone défilante ; la page touche désormais les bords de la zone grise)
+Pourquoi : demande explicite de l'utilisateur ("the pdf should fit in no extra spaces"). Un espace résiduel peut subsister sur un seul axe dans la modale "Agrandir" quand le ratio largeur/hauteur de la page scannée diffère de celui de la boîte disponible — géométriquement inévitable sans rogner ni déformer la page (voir `charger()`/`limiterHauteur` dans document-preview.js, non modifié). 153/153 tests, `npm run build` OK.
+
+## [2026-10-05 10:47] Aperçu document — plafond de hauteur sur le panneau compact (effet de bord du retrait du padding)
+Fichier(s) : resources/views/components/apercu/visionneuse.blade.php (`max-h-[32rem]` ajouté sur la zone document du panneau compact uniquement, sans effet sur la modale "Agrandir" déjà bornée par sa propre hauteur)
+Pourquoi : retour utilisateur ("that panel should be fix when scroll as it was before") sur le panneau "Aperçu du courrier", qui vit dans une colonne `sticky top-20` (showCourrier/editForm/registrationForm.blade.php, structure elle-même NON modifiée — vérifié par diff). Cause probable : document-preview.js fait grandir `boite.style.height` pour épouser exactement la hauteur du rendu ; en retirant le padding du panneau (entrée précédente), `boite.clientWidth` a augmenté de 32px, donc l'échelle "100%" (qui remplit la largeur disponible) rend la page légèrement plus grande — et le panneau auto-agrandi avec elle, dépassant potentiellement la hauteur de la fenêtre, ce qui rend un `sticky` imperceptible (rien ne "reste" visible s'il est déjà plus haut que l'écran). Un plafond fixe restaure une carte de taille prévisible ; le reste du document redevient atteignable par défilement interne. 153/153 tests (2 échecs transitoires de rename sur le cache de vues, dus à l'écriture concurrente d'une autre session Claude Code sur ce même poste, confirmés non reproductibles en relançant seuls), `npm run build` OK.
+
+## [2026-10-05 11:12] Aperçu document — plafond de hauteur ajusté (trop réduit) + barre de défilement de la page masquée
+Fichier(s) : resources/views/components/apercu/visionneuse.blade.php (plafond du panneau compact remonté de `h-64`/256px à `max-h-96`/384px, et de `h-74` à `max-h-[26rem]` pour registrationForm — vérifié par Playwright : conserve ~100px de marge de défilement réelle pour le `sticky`, au lieu de 37px avant toute correction, tout en gardant une vignette lisible)
+Fichier(s) : resources/css/app.css (barre de défilement de LA PAGE masquée globalement, `html { scrollbar-width: none } html::-webkit-scrollbar { display: none }` — le défilement lui-même reste actif, molette/trackpad/clavier)
+Pourquoi : retour utilisateur direct "THE HIEGHT BROKE" juste après le passage à `h-64` (256px) de l'entrée précédente — vignette devenue trop petite. Vérifié moi-même en conditions réelles (retour utilisateur "CHECK BY YOUR SELF") via Playwright headless, connecté avec le compte de test `admin@test.local` (ComptesTestPiloteSeeder) sur la vraie page /courriers/5 : mesure de la hauteur réelle de la colonne sticky à chaque plafond testé (512px → 37px de marge, 256px → 230px de marge mais vignette trop petite, 384px → ~100px de marge, compromis retenu) et capture d'écran relue directement. Puis second retour "I DON'T NEED THE SCROLL BAR" (capture d'écran de la barre de défilement native du navigateur) — même principe déjà appliqué au panneau de prévisualisation, étendu à toute la page cette fois (changement global, pas limité au module aperçu document). 153/153 tests, `npm run build` OK.
 

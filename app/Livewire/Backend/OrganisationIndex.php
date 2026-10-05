@@ -67,6 +67,11 @@ class OrganisationIndex extends Component
 
     public string $roleUtilisateurAAjouter = '';
 
+    // Édition en ligne de la fonction d'un membre (voir modifierFonction()).
+    public ?int $membreFonctionEditionId = null;
+
+    public string $fonctionEdition = '';
+
     public function mount(): void
     {
         $this->authorize('viewAny', OrganizationUnit::class);
@@ -153,6 +158,7 @@ class OrganisationIndex extends Component
     {
         $this->noeudId = $id;
         $this->ongletDetail = 'utilisateurs';
+        $this->annulerFonction();
         $this->resetPage();
     }
 
@@ -210,6 +216,43 @@ class OrganisationIndex extends Component
         $this->reset('utilisateurAAjouterId', 'roleUtilisateurAAjouter');
         unset($this->utilisateursDuNoeud, $this->utilisateursDisponiblesPourAjout, $this->tousLesNoeuds, $this->arbre, $this->noeudSelectionne);
         Flux::toast(variant: 'success', text: __('Utilisateur rattaché.'));
+    }
+
+    // 2026-09-24 (retour de l'utilisateur pendant la simulation manuelle) —
+    // la fonction d'un membre n'était saisissable qu'au rattachement, jamais
+    // corrigeable ensuite. Édition en ligne dans la table, ids revérifiés
+    // (Règle n°6 : le membre doit réellement appartenir au nœud).
+    public function modifierFonction(int $userId): void
+    {
+        $noeud = $this->noeudSelectionne;
+        $this->authorize('manageUsers', $noeud);
+
+        $membre = $noeud->utilisateurs()->where('users.id', $userId)->firstOrFail();
+
+        $this->membreFonctionEditionId = $membre->id;
+        $this->fonctionEdition = (string) $membre->pivot->role_in_unit;
+        $this->resetValidation('fonctionEdition');
+    }
+
+    public function enregistrerFonction(): void
+    {
+        $noeud = $this->noeudSelectionne;
+        $this->authorize('manageUsers', $noeud);
+
+        $this->validate(['fonctionEdition' => ['nullable', 'string', 'max:255']], [], ['fonctionEdition' => __('fonction')]);
+
+        abort_unless($this->membreFonctionEditionId && $noeud->utilisateurs()->where('users.id', $this->membreFonctionEditionId)->exists(), 404);
+
+        $noeud->utilisateurs()->updateExistingPivot($this->membreFonctionEditionId, ['role_in_unit' => trim($this->fonctionEdition) ?: null]);
+
+        $this->annulerFonction();
+        unset($this->utilisateursDuNoeud);
+        Flux::toast(variant: 'success', text: __('Fonction mise à jour.'));
+    }
+
+    public function annulerFonction(): void
+    {
+        $this->reset('membreFonctionEditionId', 'fonctionEdition');
     }
 
     public function retirerUtilisateur(int $userId): void

@@ -357,22 +357,52 @@ class DossierClassementList extends Component
 
     // ===== Partager (deux boîtes — même forme que UserList::destinataires*) =====
 
+    // PENTEST (2026-09-24) — $dossierAPartagerId est une propriété publique
+    // SANS #[Locked] : Livewire accepte de la modifier directement depuis
+    // une requête cliente forgée. La modale "Partager" (partageDisponibles/
+    // partageAssignes ci-dessous) est rendue SANS condition dans la vue —
+    // sans revérifier 'partager' ICI, comme dossierSelectionne() le fait
+    // déjà juste au-dessus pour 'view', ce panneau pouvait faire fuir noms
+    // et emails des bénéficiaires d'un dossier hors du périmètre de
+    // l'utilisateur au prochain rendu, sans jamais passer par ouvrirPartage().
     #[Computed]
     public function dossierAPartager(): ?DossierClassement
     {
-        return $this->dossierAPartagerId
-            ? DossierClassement::with('utilisateursAutorises:id,name,email')->find($this->dossierAPartagerId)
-            : null;
+        if ($this->dossierAPartagerId === null) {
+            return null;
+        }
+
+        $dossier = DossierClassement::with('utilisateursAutorises:id,name,email')->find($this->dossierAPartagerId);
+
+        return ($dossier !== null && Auth::user()->can('partager', $dossier)) ? $dossier : null;
     }
 
+    // PENTEST (2026-09-24) — trouvé en corrigeant dossierAPartager()
+    // ci-dessus : sans dossier sélectionné/autorisé (dossierAPartagerId
+    // null par défaut à CHAQUE chargement de page, avant même d'ouvrir la
+    // modale "Partager"), le ->when($dossier, ...) ci-dessous ne
+    // s'appliquait tout simplement pas — cette méthode listait alors TOUS
+    // les utilisateurs de l'organisation (id/nom/email) sans aucun filtre.
+    // La modale étant rendue sans condition dans la vue (voir
+    // dossierAPartager()), ça faisait fuir le nom et l'email de CHAQUE
+    // utilisateur dans le HTML de CHAQUE chargement de "Dossiers &
+    // Archives", pour quiconque a juste dossiers_classement.voir (accordé
+    // largement : Agent/DGA/Responsable de service/Collaborateur), même
+    // sans le moindre droit de partage. partageAssignes() ci-dessous avait
+    // déjà le bon garde-fou (retourne collect() vide sans dossier) ; celui-
+    // ci ne l'avait pas.
     #[Computed]
     public function partageDisponibles()
     {
         $dossier = $this->dossierAPartager;
 
+        if ($dossier === null) {
+            return collect();
+        }
+
         $utilisateurs = User::query()->orderBy('name')->get(['id', 'name', 'email'])
-            ->reject(fn (User $candidat) => $dossier && $candidat->id === $dossier->cree_par_id)
-            ->when($dossier, fn ($u) => $u->whereNotIn('id', $dossier->utilisateursAutorises->pluck('id')));
+            ->reject(fn (User $candidat) => $candidat->id === $dossier->cree_par_id)
+            ->whereNotIn('id', $dossier->utilisateursAutorises->pluck('id'));
 
         return $this->filtrerUtilisateurs($utilisateurs, $this->recherchePartageDisponibles)->values();
     }
@@ -416,10 +446,16 @@ class DossierClassementList extends Component
         Flux::modal('dossier-partage')->show();
     }
 
+    // dossierAPartager() revérifie déjà 'partager' (voir son commentaire
+    // pentest ci-dessus) — un retour null ici signifie donc "non trouvé OU
+    // non autorisé", jamais fait confiance implicitement.
     public function ajouterPartage(int $userId): void
     {
         $dossier = $this->dossierAPartager;
-        $this->authorize('partager', $dossier);
+
+        if ($dossier === null) {
+            return;
+        }
 
         $dossier->utilisateursAutorises()->syncWithoutDetaching([$userId]);
 
@@ -436,7 +472,10 @@ class DossierClassementList extends Component
     public function retirerPartage(int $userId): void
     {
         $dossier = $this->dossierAPartager;
-        $this->authorize('partager', $dossier);
+
+        if ($dossier === null) {
+            return;
+        }
 
         $dossier->utilisateursAutorises()->detach($userId);
 
@@ -453,9 +492,8 @@ class DossierClassementList extends Component
     public function ajouterSelectionPartage(): void
     {
         $dossier = $this->dossierAPartager;
-        $this->authorize('partager', $dossier);
 
-        if ($this->selectionPartageDisponibles === []) {
+        if ($dossier === null || $this->selectionPartageDisponibles === []) {
             return;
         }
 
@@ -467,9 +505,8 @@ class DossierClassementList extends Component
     public function retirerSelectionPartage(): void
     {
         $dossier = $this->dossierAPartager;
-        $this->authorize('partager', $dossier);
 
-        if ($this->selectionPartageAssignes === []) {
+        if ($dossier === null || $this->selectionPartageAssignes === []) {
             return;
         }
 

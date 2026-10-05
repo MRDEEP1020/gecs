@@ -84,9 +84,9 @@
                 $menu = [
                     'tableau_de_bord' => $u->hasPrivilege('dashboard.voir'),
                     'courriers_tous' => $u->can('rechercher', App\Models\Courrier::class),
+                    'courriers_calendrier' => $u->can('calendrier', App\Models\Courrier::class),
                     'courriers_nouveau' => $u->can('create', App\Models\Courrier::class),
                     'courriers_numeriser' => $u->can('numeriser', App\Models\Courrier::class),
-                    'courriers_transferts' => $u->can('voirFileAttente', App\Models\Courrier::class),
                     'courriers_affectations' => $u->hasPrivilege('courriers.affecter_tout') || $u->hasPrivilege('courriers.affecter_service'),
                     'courriers_traitement' => $u->hasPrivilege('courriers.traiter_tout') || $u->hasPrivilege('courriers.traiter_affecte'),
                     'dossiers_tous' => $u->can('viewAny', App\Models\DossierClassement::class),
@@ -98,6 +98,7 @@
                     'admin_automatisation' => $u->hasPrivilege('administration.automatisation'),
                     'admin_workflows' => $u->hasPrivilege('administration.workflows'),
                     'admin_sla' => $u->hasPrivilege('administration.sla'),
+                    'admin_dossier_surveille' => $u->hasPrivilege('administration.dossier_surveille'),
                     'admin_audit' => $u->hasPrivilege('administration.audit'),
                     'stats_dashboard' => $u->hasPrivilege('statistiques.consulter'),
                     'stats_rapports' => $u->hasPrivilege('statistiques.rapports'),
@@ -107,6 +108,14 @@
                 // "Archives" est un nœud de la page Dossiers : il faut aussi y avoir accès.
                 $menu['dossiers_archives'] = $menu['dossiers_tous'] && $u->hasPrivilege('dossiers_classement.archives');
                 $groupe = fn (string $prefixe) => collect($menu)->filter(fn ($visible, $cle) => str_starts_with($cle, $prefixe) && $visible)->isNotEmpty();
+
+                // Module 7 (2026-10-05) — compteur affiché UNE FOIS au tout premier
+                // rendu (même piège que :current ci-dessus : ce bloc est
+                // @persist, jamais réévalué côté serveur après le premier chargement
+                // complet) ; resynchronisé ensuite à chaque wire:navigate par le
+                // script en bas de ce fichier, à partir de la cloche de l'en-tête
+                // (elle, hors du bloc persistant, donc toujours fraîche).
+                $compteurNotificationsNonLues = $menu['notifications'] ? $u->unreadNotifications()->count() : 0;
             @endphp
             <flux:sidebar.nav>
                 @if ($menu['tableau_de_bord'])
@@ -133,10 +142,15 @@
                      l'utilisateur et survit à toute navigation ultérieure. --}}
                 <ui-disclosure-group exclusive>
                 @if ($groupe('courriers_'))
-                <flux:sidebar.group :heading="__('Courriers')" expandable :expanded="request()->routeIs(['courriers.rechercher', 'courriers.nouveau', 'courriers.numeriser-nouveau', 'courriers.a-traiter']) && request()->query('sens') === null" icon="envelope" class="grid">
+                <flux:sidebar.group :heading="__('Courriers')" expandable :expanded="request()->routeIs(['courriers.rechercher', 'courriers.nouveau', 'courriers.numeriser-nouveau', 'courriers.calendrier']) && request()->query('sens') === null" icon="envelope" class="grid">
                     @if ($menu['courriers_tous'])
                         <flux:sidebar.item icon="list-bullet" :href="route('courriers.rechercher')" :current="request()->routeIs('courriers.rechercher') && request()->query('sens') === null" wire:navigate>
                             {{ __('Tous les courriers') }}
+                        </flux:sidebar.item>
+                    @endif
+                    @if ($menu['courriers_calendrier'])
+                        <flux:sidebar.item icon="calendar-days" :href="route('courriers.calendrier')" :current="request()->routeIs('courriers.calendrier')" wire:navigate>
+                            {{ __('Calendrier') }}
                         </flux:sidebar.item>
                     @endif
                     @if ($menu['courriers_nouveau'])
@@ -151,16 +165,10 @@
                             {{ __('Numérisation & OCR') }}
                         </flux:sidebar.item>
                     @endif
-                    {{-- "Transferts" (maquette) : même page que la file
-                         d'attente du circuit de validation déjà construite
-                         (Module 4, WorkflowQueue) — c'est littéralement là
-                         que les transferts se font, pas une page séparée à
-                         inventer. --}}
-                    @if ($menu['courriers_transferts'])
-                        <flux:sidebar.item icon="inbox-stack" :href="route('courriers.a-traiter')" :current="request()->routeIs('courriers.a-traiter')" wire:navigate>
-                            {{ __('Transferts') }}
-                        </flux:sidebar.item>
-                    @endif
+                    {{-- "Transferts" (file d'attente WorkflowQueue) retiré le
+                         2026-09-24 à la demande de l'utilisateur : doublon de
+                         "Tous les courriers", qui a désormais le filtre
+                         "En cours (tous)". --}}
                     {{-- "Affectations"/"Traitement & Réponse" (maquette) :
                          aucune page dédiée distincte — l'affectation et le
                          traitement se font aujourd'hui depuis la fiche d'un
@@ -223,7 +231,7 @@
                          privilèges lui-même est désormais fixe (plus de
                          création/suppression de définition), voir
                          CHANGELOG-AGENT.md. --}}
-                    <flux:sidebar.group :heading="__('Administration')" expandable :expanded="request()->routeIs(['admin.utilisateurs', 'admin.profils', 'admin.regles', 'admin.organisation', 'admin.parametres'])" icon="cog-6-tooth" class="grid">
+                    <flux:sidebar.group :heading="__('Administration')" expandable :expanded="request()->routeIs(['admin.utilisateurs', 'admin.profils', 'admin.regles', 'admin.organisation', 'admin.parametres', 'admin.dossier-surveille'])" icon="cog-6-tooth" class="grid">
                         {{-- utilisateurs.gerer / privileges.gerer séparés le 2026-09-23. --}}
                         @if ($menu['admin_utilisateurs'])
                             <flux:sidebar.item icon="users" :href="route('admin.utilisateurs')" :current="request()->routeIs('admin.utilisateurs')" wire:navigate>
@@ -267,6 +275,14 @@
                                 {{ __('Paramètres système') }}
                             </flux:sidebar.item>
                         @endif
+                        {{-- Configuration du dossier surveillé (2026-09-24, demande
+                             explicite de l'utilisateur) — déplacée depuis la page
+                             Numérisation, qui ne fait plus qu'importer. --}}
+                        @if ($menu['admin_dossier_surveille'])
+                            <flux:sidebar.item icon="folder-open" :href="route('admin.dossier-surveille')" :current="request()->routeIs('admin.dossier-surveille')" wire:navigate>
+                                {{ __('Dossier surveillé') }}
+                            </flux:sidebar.item>
+                        @endif
                         @if ($menu['admin_audit'])
                             <x-sidebar-item-a-venir icon="shield-check">{{ __('Sécurité & Audit') }}</x-sidebar-item-a-venir>
                         @endif
@@ -293,12 +309,24 @@
 
                 {{-- "Notifications" (nouvelle spécification 2026-09-18) : groupe
                      de premier niveau à part entière plutôt que seulement la
-                     cloche de la navbar existante (voir plus bas). Les alertes
-                     SLA partent par email (Module 7) ; pas encore de centre de
-                     notifications dans l'application, donc "Bientôt". --}}
+                     cloche de la navbar existante (voir plus bas). Centre de
+                     notifications réel depuis le 2026-10-05 (Module 7) — la
+                     cloche de l'en-tête donne un aperçu rapide, cette page
+                     liste tout l'historique avec pagination. --}}
                 @if ($menu['notifications'])
                     <flux:sidebar.group :heading="__('Notifications')" icon="bell" class="grid">
-                        <x-sidebar-item-a-venir icon="bell">{{ __('Notifications') }}</x-sidebar-item-a-venir>
+                        <flux:sidebar.item
+                            icon="bell"
+                            :href="route('notifications.index')"
+                            :current="request()->routeIs('notifications.index')"
+                            wire:navigate
+                            :badge="(string) $compteurNotificationsNonLues"
+                            badge-color="red"
+                            badge:id="sidebar-notifications-badge"
+                            badge:class="badge-notif-pop {{ $compteurNotificationsNonLues > 0 ? '' : 'hidden' }}"
+                        >
+                            {{ __('Notifications') }}
+                        </flux:sidebar.item>
                     </flux:sidebar.group>
                 @endif
 
@@ -361,6 +389,40 @@
             }
 
             document.addEventListener('livewire:navigated', synchroniserLienSidebarActif);
+
+            // Même raison que ci-dessus (sidebar persistante, jamais recalculée
+            // côté serveur après le 1er chargement) — resynchronise le badge
+            // du menu notifs de la sidebar à partir du compteur toujours
+            // frais de la cloche de l'en-tête (resources/views/livewire/
+            // frontend/notification-bell.blade.php, HORS du bloc persistant).
+            // ATTENTION (2026-10-05, voir memory livewire_flux_gotchas) — tout
+            // CE SCRIPT part tel quel dans le HTML envoyé au navigateur, MÊME
+            // pour un compte sans le privilège associé à ce menu : jamais y
+            // écrire le nom exact (capitalisé) de ce menu en clair, sous peine
+            // de casser les tests "un tel privilège absent => ce libellé
+            // absent de la page" qui cherchent ce nom littéralement.
+            function synchroniserBadgeNotifsSidebar() {
+                const cloche = document.querySelector('[data-notifications-non-lues]');
+                const badge = document.getElementById('sidebar-notifications-badge');
+
+                if (!cloche || !badge) {
+                    return;
+                }
+
+                const nombre = parseInt(cloche.dataset.notificationsNonLues, 10) || 0;
+
+                badge.textContent = nombre > 9 ? '9+' : String(nombre);
+                badge.classList.toggle('hidden', nombre === 0);
+            }
+
+            document.addEventListener('livewire:navigated', synchroniserBadgeNotifsSidebar);
+            // Dispatché par les composants de notifs (voir app/Livewire/Backend/)
+            // juste après un "marquer comme lu" — la cloche de l'en-tête s'est
+            // déjà rafraîchie à ce moment-là (listener Livewire côté serveur),
+            // il ne reste qu'à relire sa nouvelle valeur une fois le DOM mis à
+            // jour (microtask, d'où le setTimeout à délai nul plutôt qu'un
+            // appel synchrone trop tôt).
+            window.addEventListener('notifications-mises-a-jour', () => setTimeout(synchroniserBadgeNotifsSidebar));
         </script>
 
         <!-- Mobile User Menu -->
@@ -415,14 +477,13 @@
                 <flux:text class="text-sm">{{ now()->translatedFormat('l j F Y') }} · {{ now()->format('H:i') }}</flux:text>
             </div>
 
-            {{-- Mêmes privilèges que les menus Notifications/Aide de la sidebar (2026-09-23). --}}
+            {{-- Mêmes privilèges que les menus Notifications/Aide de la sidebar (2026-09-23).
+                 Centre de notifications réel depuis le 2026-10-05 (Module 7) — ce composant
+                 vit volontairement HORS du bloc @persist('app-sidebar') ci-dessus : il est donc
+                 remonté à chaque wire:navigate, ce qui rafraîchit le compteur/la liste à chaque
+                 changement de page sans scrutation (jamais de wire:poll, Règle n°2). --}}
             @if (auth()->user()->hasPrivilege('general.notifications'))
-                <flux:dropdown position="bottom" align="end">
-                    <flux:button variant="ghost" icon="bell" size="sm" square :aria-label="__('Notifications')" />
-                    <flux:menu>
-                        <flux:text class="px-3 py-2 text-zinc-500">{{ __('Aucune notification pour l\'instant.') }}</flux:text>
-                    </flux:menu>
-                </flux:dropdown>
+                <livewire:backend.notification-bell />
             @endif
 
             @if (auth()->user()->hasPrivilege('general.aide'))

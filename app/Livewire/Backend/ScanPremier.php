@@ -8,7 +8,7 @@ use App\Services\BrouillonScanService;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Renderless;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -35,9 +35,24 @@ class ScanPremier extends Component
     // bien qu'un DGA/Responsable/Collaborateur voyait une page dont le
     // bouton échouait systématiquement). Privilège distinct de
     // courriers.creer depuis le même jour (menus pilotés par privilège).
+    // Même raison que RegistrationForm::$agentId : placeholder {agentId} de
+    // l'écouteur echo-private ci-dessous, jamais null.
+    public int $agentId = 0;
+
     public function mount(): void
     {
         $this->authorize('numeriser', Courrier::class);
+
+        $this->agentId = (int) Auth::id();
+    }
+
+    // 2026-09-24 — fin d'OCR d'un de SES brouillons (BrouillonOcrTermine,
+    // canal privé par agent) : le statut OCR du tableau se met à jour sans
+    // recharger la page (Règle n°2 : événement diffusé, jamais wire:poll).
+    #[On('echo-private:App.Models.User.{agentId},.brouillon.ocr.termine')]
+    public function brouillonOcrTermine(): void
+    {
+        unset($this->importsDossierSurveille);
     }
 
     // Vidé à chaque changement de recherche pour ne jamais rester bloqué sur
@@ -84,7 +99,13 @@ class ScanPremier extends Component
     // DECISIONS.md "Watcher automatique sur le formulaire
     // d'enregistrement") — le partage passe par BrouillonScanService, pas
     // par une dépendance entre les deux composants Livewire.
-    #[Renderless]
+    //
+    // 2026-09-24 — PLUS #[Renderless] (retour de l'utilisateur : "why
+    // doesn't it take automatically without i actualising it") : le tableau
+    // "Documents importés" ci-dessous ne se mettait jamais à jour après un
+    // import automatique. Même choix que RegistrationForm::numeriserAutomatique(),
+    // déjà confirmé en navigateur réel : le composant Alpine garde son état
+    // au re-rendu (morph), et ne réaccède jamais à this.$wire (Livewire.find(id)).
     public function numeriserAutomatique(): array
     {
         $this->authorize('numeriser', Courrier::class);

@@ -124,6 +124,11 @@ class UserList extends Component
 
     public ?int $editionUniteSelectionneeId = null;
 
+    // Cascade telle que préremplie à l'ouverture (2026-09-24) — permet à
+    // enregistrerEdition() de savoir si l'administrateur l'a réellement
+    // touchée (voir son commentaire).
+    public array $editionCascadeInitiale = [];
+
     public ?int $editionProfilId = null;
 
     public int $editionNiveauConfidentialite = 1;
@@ -173,6 +178,13 @@ class UserList extends Component
     public function mount(): void
     {
         $this->authorize('gererUtilisateurs', Privilege::class);
+
+        // 2026-09-24 — "Gérer cet utilisateur" (page Organisation) ouvre
+        // directement la modale de CE compte (?modifier={id}) au lieu de la
+        // seule liste ; ouvrirEdition() revérifie les droits sur le compte.
+        if ($id = request()->integer('modifier')) {
+            $this->ouvrirEdition($id);
+        }
     }
 
     // Sans privileges.gerer, un compte qui le détient (ou un Administrateur)
@@ -436,22 +448,37 @@ class UserList extends Component
         return $noeud?->service_id;
     }
 
-    // Même patron que ShowCourrier::preselectionnerCascadeDepuisService() —
-    // retrouve, à partir du service_id déjà enregistré sur l'utilisateur, le
-    // nœud organization_units ponté et remonte ses ancêtres pour préremplir
-    // la cascade d'édition. Aucun nœud ponté trouvé = cascade vide (service
-    // réel pas encore représenté dans l'organigramme, voir
-    // departementLabelParServiceId()) — jamais de donnée fabriquée.
-    private function preselectionnerCascadeEditionDepuisService(?int $serviceId): void
+    // Préremplit la cascade d'édition avec la MÊME position que la colonne
+    // "Département" de la table (2026-09-24, demande explicite de
+    // l'utilisateur : "make the all modify modal to show the correct
+    // informations") — même ordre que departementLabelDe() : entité dont il
+    // est responsable, puis rattachement de travail (principal d'abord),
+    // puis pont service_id. Auparavant seul le pont service_id était lu :
+    // un responsable ou un utilisateur rattaché depuis la page Organisation
+    // voyait une cascade vide alors que la table affichait son département.
+    // Aucune position trouvée = cascade vide — jamais de donnée fabriquée.
+    private function preselectionnerCascadeEdition(User $user): void
     {
         $this->reset('editionSiteSelectionneId', 'editionDepartementSelectionneId', 'editionUniteSelectionneeId');
 
-        if ($serviceId === null) {
-            return;
-        }
+        $membre = $user->organizationUnits->firstWhere('pivot.is_primary', true) ?? $user->organizationUnits->first();
 
-        $courant = OrganizationUnit::where('service_id', $serviceId)->first();
+        $courant = OrganizationUnit::where('responsible_user_id', $user->id)->first()
+            ?? ($membre ? OrganizationUnit::find($membre->id) : null)
+            ?? ($user->service_id ? OrganizationUnit::where('service_id', $user->service_id)->first() : null);
 
+        $this->remplirCascadeEditionDepuis($courant);
+    }
+
+    private function cascadeEdition(): array
+    {
+        return [$this->editionSiteSelectionneId, $this->editionDepartementSelectionneId, $this->editionUniteSelectionneeId];
+    }
+
+    // Remonte $courant PUIS ses ancêtres (même patron que
+    // ShowCourrier::preselectionnerCascadeDepuisService()).
+    private function remplirCascadeEditionDepuis(?OrganizationUnit $courant): void
+    {
         while ($courant !== null) {
             match ($courant->type) {
                 OrganizationUnit::TYPE_SUB_SERVICE, OrganizationUnit::TYPE_SERVICE => $this->editionUniteSelectionneeId = $courant->id,
@@ -556,7 +583,8 @@ class UserList extends Component
         $this->editionEmail = $user->email;
         $this->editionTelephone = $user->telephone ?? '';
         $this->editionPoste = $user->poste ?? '';
-        $this->preselectionnerCascadeEditionDepuisService($user->service_id);
+        $this->preselectionnerCascadeEdition($user);
+        $this->editionCascadeInitiale = $this->cascadeEdition();
         $this->editionProfilId = $user->profil_id;
         $this->editionNiveauConfidentialite = $user->niveau_confidentialite;
         $this->editionActif = $user->actif;
@@ -598,12 +626,22 @@ class UserList extends Component
 
         // Nullable — même raison que ajouter() ci-dessus ; résolu via la
         // cascade Département/Service-Unité (2026-09-23).
+        // 2026-09-24 — cascade NON touchée qui ne résout aucun service réel
+        // (service pas encore dans l'organigramme, ex. agent "AC", ou entité
+        // affichée non reliée à un service) : le service actuel est conservé.
+        // Auparavant, corriger un simple téléphone effaçait ce service.
+        $serviceResolu = $this->resoudreServiceDepuisCascade($this->editionUniteSelectionneeId, $this->editionDepartementSelectionneId);
+
+        if ($serviceResolu === null && $this->cascadeEdition() === $this->editionCascadeInitiale) {
+            $serviceResolu = $user->service_id;
+        }
+
         $user->update([
             'name' => trim("{$data['editionNom']} {$data['editionPrenom']}"),
             'email' => $data['editionEmail'],
             'telephone' => $data['editionTelephone'] ?: null,
             'poste' => $data['editionPoste'] ?: null,
-            'service_id' => $this->resoudreServiceDepuisCascade($this->editionUniteSelectionneeId, $this->editionDepartementSelectionneId),
+            'service_id' => $serviceResolu,
             'profil_id' => $data['editionProfilId'],
             'niveau_confidentialite' => $data['editionNiveauConfidentialite'],
             'actif' => $this->editionActif,
@@ -661,7 +699,7 @@ class UserList extends Component
     public function utilisateurEnEdition(): ?User
     {
         return $this->utilisateurEditionId
-            ? User::with(['profil.privileges', 'privilegesDirectes', 'destinatairesTransfert:id', 'organizationUnitsPerimetre:id', 'organizationUnits'])->find($this->utilisateurEditionId)
+            ? User::with(['profil.privileges', 'privilegesDirectes', 'destinatairesTransfert:id', 'organizationUnitsPerimetre:id', 'organizationUnits', 'service'])->find($this->utilisateurEditionId)
             : null;
     }
 

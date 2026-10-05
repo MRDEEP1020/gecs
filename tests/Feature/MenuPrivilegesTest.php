@@ -50,21 +50,23 @@ class MenuPrivilegesTest extends TestCase
                 'voit' => ['Tableau de bord', 'Tous les courriers', 'Enregistrer un courrier', 'Numérisation & OCR', 'Tous les dossiers', 'Archives', 'Recherche avancée', 'Notifications', 'Aide / Documentation'],
                 'pas' => ['Transferts', 'Affectations', 'Créer un dossier', 'Administration', 'Statistiques & Rapports'],
             ],
+            // "Transferts" retiré pour tous le 2026-09-24 (page supprimée,
+            // doublon de "Tous les courriers" que ces profils voient déjà).
             'Collaborateur' => [
-                'voit' => ['Tableau de bord', 'Transferts', 'Traitement & Réponse', 'Créer un dossier', 'Archives'],
-                'pas' => ['Enregistrer un courrier', 'Numérisation & OCR', 'Affectations', 'Administration', 'Statistiques & Rapports'],
+                'voit' => ['Tableau de bord', 'Tous les courriers', 'Traitement & Réponse', 'Créer un dossier', 'Archives'],
+                'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Affectations', 'Administration', 'Statistiques & Rapports'],
             ],
             'Responsable de service' => [
-                'voit' => ['Transferts', 'Affectations', 'Statistiques & Rapports', 'Rapports'],
-                'pas' => ['Enregistrer un courrier', 'Numérisation & OCR', 'Administration'],
+                'voit' => ['Tous les courriers', 'Affectations', 'Statistiques & Rapports', 'Rapports'],
+                'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Administration'],
             ],
             'DGA' => [
-                'voit' => ['Transferts', 'Statistiques & Rapports'],
-                'pas' => ['Enregistrer un courrier', 'Numérisation & OCR', 'Affectations', 'Administration'],
+                'voit' => ['Tous les courriers', 'Statistiques & Rapports'],
+                'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Affectations', 'Administration'],
             ],
             'Administrateur' => [
-                'voit' => ['Administration', 'Utilisateurs & Accès', 'Profils', 'Organisation', 'Référentiels (règles de classement)', 'Automatisation', 'Workflows', 'Paramètres système', 'Sécurité & Audit', 'Numérisation & OCR'],
-                'pas' => [],
+                'voit' => ['Administration', 'Utilisateurs & Accès', 'Profils', 'Organisation', 'Référentiels (règles de classement)', 'Automatisation', 'Workflows', 'Paramètres système', 'Dossier surveillé', 'Sécurité & Audit', 'Numérisation & OCR'],
+                'pas' => ['Transferts'],
             ],
         ];
 

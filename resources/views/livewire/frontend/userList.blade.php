@@ -427,6 +427,19 @@
                                         </flux:select>
                                     @endif
                                 </div>
+                                {{-- 2026-09-24 — service réel actuellement enregistré
+                                     (utilisé pour l'affectation des courriers), affiché
+                                     tel quel : un service pas encore représenté dans
+                                     l'organigramme n'apparaît dans aucun sélecteur
+                                     ci-dessus et paraissait sinon absent. --}}
+                                @if ($serviceActuel = $this->utilisateurEnEdition?->service)
+                                    <flux:text class="text-sm">
+                                        {{ __('Service actuel : :nom (:code)', ['nom' => $serviceActuel->nom, 'code' => $serviceActuel->code]) }}
+                                        @unless (isset($this->departementLabelParServiceId[$serviceActuel->id]))
+                                            — {{ __('hors organigramme, conservé tant que vous ne choisissez pas de département.') }}
+                                        @endunless
+                                    </flux:text>
+                                @endif
                                 <flux:select wire:model="editionProfilId" :label="__('Profil')" required :disabled="! $peutGererAcces">
                                     @foreach ($this->profils as $profil)
                                         <flux:select.option value="{{ $profil->id }}">{{ $profil->nom }}</flux:select.option>

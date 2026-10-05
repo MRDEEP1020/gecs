@@ -40,6 +40,109 @@ class CourrierListTest extends TestCase
         ], $attributs));
     }
 
+    // 2026-09-24 — retour réel de l'utilisateur (capture d'écran) :
+    // "Aperçu du courrier" affichait le CODE JS DU PANNEAU comme texte
+    // visible sur la page. Cause trouvée : un commentaire à l'intérieur de
+    // l'attribut x-data="{ ... }" (délimité par des guillemets DROITS)
+    // contenait lui-même un guillemet droit — pour le navigateur, ce
+    // guillemet referme prématurément l'attribut HTML, et tout le reste du
+    // JS (jusqu'au prochain guillemet droit trouvé par accident) fuit comme
+    // texte de page. Règle : AUCUN guillemet droit " dans un commentaire ou
+    // une chaîne à l'intérieur d'un x-data="..." — guillemets français «»
+    // uniquement (voir memory livewire_flux_gotchas). Ce test extrait le
+    // bloc x-data du panneau d'aperçu et vérifie qu'il n'en contient aucun.
+    public function test_lattribut_xdata_du_panneau_apercu_ne_contient_aucun_guillemet_droit(): void
+    {
+        $admin = $this->utilisateur('Administrateur');
+        $service = Service::factory()->create(['code' => 'TST']);
+        $courrier = $this->courrier($service, ['fichier_path' => 'courriers/2026/TST/GEC-TEST.pdf']);
+        $this->actingAs($admin);
+
+        $html = Livewire::test(CourrierList::class)
+            ->call('ouvrirApercu', $courrier->id)
+            ->html();
+
+        $ancrage = strpos($html, 'activerDeplacement');
+        $this->assertNotFalse($ancrage, 'Le panneau "Aperçu du courrier" ne s\'est pas affiché.');
+
+        $debut = strrpos(substr($html, 0, $ancrage), 'x-data="{');
+        $finAttribut = strpos($html, '}"', $ancrage);
+        $bloc = substr($html, $debut + strlen('x-data="'), $finAttribut - ($debut + strlen('x-data="')) + 1);
+
+        $this->assertStringNotContainsString('"', $bloc, 'Un guillemet droit dans le bloc x-data casse l\'attribut HTML.');
+        $this->assertSame(1, substr_count($html, 'Voir en plein écran'), 'Le bouton de la modale agrandie ne s\'est pas rendu correctement.');
+    }
+
+    // 2026-10-02 — demande explicite de l'utilisateur ("remove the time
+    // just leave the bientot and enretand", puis précisé "only on the tout
+    // les courier page the rest shouldn't change") : <x-chronometre> cache
+    // désormais son badge compte à rebours (icône horloge + chiffres) SUR
+    // CETTE PAGE SEULEMENT, via :masquer-temps="true" — ne garde que les
+    // badges d'état "Bientôt en retard"/"En retard". Les autres pages
+    // (ShowCourrier, Dashboard, Dossiers & Archives, EditForm) continuent
+    // d'afficher le compte à rebours normalement (non touchées). Ce test
+    // vérifie les deux côtés à la fois : absent ici, toujours présent sur
+    // ShowCourrier pour le MÊME courrier.
+    public function test_le_compte_a_rebours_est_masque_ici_mais_pas_sur_la_fiche_courrier(): void
+    {
+        $admin = $this->utilisateur('Administrateur');
+        $service = Service::factory()->create(['code' => 'TST']);
+        $courrier = $this->courrier($service, [
+            'statut' => 'affecte',
+            'chrono_debut_le' => now()->subDays(10),
+            'chrono_fin_le' => now()->subDay(),
+        ]);
+        $this->actingAs($admin);
+
+        $htmlListe = Livewire::test(CourrierList::class)->html();
+        $this->assertStringContainsString(__('En retard'), $htmlListe);
+        $this->assertStringNotContainsString('tabular-nums', $htmlListe, 'Le compte à rebours ne doit pas apparaître sur "Tous les courriers".');
+
+        $htmlFiche = Livewire::test(\App\Livewire\Backend\ShowCourrier::class, ['courrierId' => $courrier->id])->html();
+        $this->assertStringContainsString('tabular-nums', $htmlFiche, 'Le compte à rebours doit rester affiché sur la fiche courrier.');
+    }
+
+    // 2026-09-24 — retour réel de l'utilisateur (capture d'écran) : le
+    // squelette de chargement du tableau ("loading animation... not the
+    // loading sp[inner]") restait affiché EN PERMANENCE, empilé au-dessus
+    // des vraies lignes, au lieu d'être caché hors chargement. Cause
+    // trouvée en lisant vendor/livewire/livewire/src/Mechanisms/
+    // FrontendAssets/FrontendAssets.php : wire:loading.table-row-group
+    // n'est pas un modificateur que Livewire reconnaît — son <style> injecté
+    // ne pré-cache (display:none) qu'une liste FIXE de valeurs
+    // (.block/.grid/.flex/.table/.inline/...), jamais .table-row-group.
+    // Corrigé une première fois avec une classe "hidden" directement sur le
+    // <tbody>, PUIS remplacé le 2026-09-24 (même jour, "am not seeing
+    // animation... in page") par le mécanisme définitif : une SENTINELLE
+    // dédiée (jamais affichée elle-même) que resources/js/app.js observe
+    // via MutationObserver pour piloter un état Alpine `visible` PARTAGÉ
+    // (x-show) avec durée minimale garantie — une requête locale trop
+    // rapide ne laissait sinon aucune chance de percevoir le balayage du
+    // squelette. Ce test vérifie que la sentinelle existe bien, porte
+    // "hidden" par défaut et le bon wire:loading, et que le <tbody>
+    // squelette est piloté par x-show (jamais par un wire:loading direct
+    // avec un modificateur non reconnu comme table-row-group).
+    public function test_le_squelette_du_tableau_est_cache_par_defaut(): void
+    {
+        $service = Service::factory()->create(['code' => 'TST']);
+        $this->courrier($service);
+        $this->actingAs($this->utilisateur('Administrateur'));
+
+        $html = Livewire::test(CourrierList::class)->html();
+
+        $posSentinelle = strpos($html, 'x-ref="sentinelle"');
+        $this->assertNotFalse($posSentinelle, 'La sentinelle du squelette de tableau doit exister.');
+
+        $blocSentinelle = substr($html, max(0, $posSentinelle - 150), 300);
+        $this->assertStringContainsString('class="hidden"', $blocSentinelle, 'La sentinelle doit porter la classe "hidden" par défaut.');
+        $this->assertStringContainsString('wire:loading.class.remove="hidden"', $blocSentinelle, 'La sentinelle doit révéler son état pendant le chargement via wire:loading.class.remove, pas un modificateur de display non reconnu par Livewire (ex. table-row-group).');
+
+        $this->assertStringNotContainsString('wire:loading.table-row-group', $html, 'wire:loading.table-row-group n\'est pas reconnu par Livewire — le squelette resterait affiché en permanence.');
+
+        $posTbodySquelette = strpos($html, 'x-show="visible" x-cloak class="divide-y divide-zinc-200');
+        $this->assertNotFalse($posTbodySquelette, 'Le <tbody> squelette doit être piloté par x-show="visible" (état partagé avec la sentinelle), pas par un wire:loading direct.');
+    }
+
     // Module 3/8 — "résultats filtrés selon les droits d'accès de
     // l'utilisateur", même périmètre que CourrierPolicy::view().
 
@@ -213,6 +316,39 @@ class CourrierListTest extends TestCase
             ->assertDontSee($sansRapport->numero_reference)
             // Extrait affiché pour confirmer pourquoi ce courrier remonte.
             ->assertSee('990 000 FCFA');
+    }
+
+    // PENTEST (2026-09-24, "now total courier go throughtly even pentest
+    // it") — extraitTexteOcr() prend un Courrier TYPÉ en paramètre d'action
+    // Livewire : Livewire le résout via resolveRouteBinding() (un simple
+    // Courrier::find($id)), JAMAIS via Courrier::visiblePar() ni une
+    // policy — contrairement à courrierApercu()/supprimerCourrier()
+    // ci-dessus, qui revérifient explicitement l'ID reçu (Règle n°6). Un
+    // Responsable de service (courriers.voir_texte_ocr par défaut, voir
+    // PrivilegeSeeder) pouvait donc appeler extraitTexteOcr() directement
+    // avec l'id d'un courrier HORS de son service — en contournant
+    // entièrement l'UI, qui ne l'affiche jamais dans le tableau — et lire
+    // un extrait de son texte OCR (potentiellement confidentiel). La
+    // policy avait déjà la bonne habileté pour ça (voirTexteOcr(), qui
+    // inclut view()) ; elle n'était simplement pas appelée ici.
+    public function test_extrait_texte_ocr_refuse_un_courrier_hors_du_perimetre_de_lutilisateur(): void
+    {
+        $responsable = $this->utilisateur('Responsable de service');
+        Service::factory()->create(['responsable_id' => $responsable->id, 'code' => 'TST']);
+        $autreService = Service::factory()->create(['code' => 'AUT']);
+
+        $horsPerimetre = $this->courrier($autreService, [
+            'texte_ocr' => 'Un secret confidentiel appartenant à un autre service.',
+        ]);
+
+        $this->actingAs($responsable);
+
+        $composant = Livewire::test(CourrierList::class)->set('contenu', 'secret confidentiel');
+
+        $this->assertNull(
+            $composant->instance()->extraitTexteOcr($horsPerimetre),
+            'Un utilisateur a pu lire un extrait du texte OCR d\'un courrier hors de son périmètre.'
+        );
     }
 
     public function test_le_filtre_type_document_fonctionne(): void

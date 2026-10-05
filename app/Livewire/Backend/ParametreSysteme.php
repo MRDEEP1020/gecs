@@ -45,6 +45,13 @@ class ParametreSysteme extends Component
 
     public int $slaRelanceJours = 2;
 
+    // Nullable = escalade désactivée (2026-10-05, Module 7, "escalade...
+    // configurable selon le niveau de retard") — contrairement aux 3
+    // réglages SLA ci-dessus, obligatoires, celui-ci est un champ vide
+    // valide (Rule n°2 — primitif, jamais un objet, une chaîne vide reste
+    // un primitif comme les autres).
+    public string $slaEscaladeJours = '';
+
     // Un champ par type de document RÉEL (CourrierForm::typesDocument(),
     // Group B ci-dessous — désormais une vraie liste gérée depuis cette
     // page, plus une constante figée). Valeur vide = pas de délai
@@ -87,6 +94,7 @@ class ParametreSysteme extends Component
         $this->slaJoursDefaut = $parametres->sla_jours_defaut;
         $this->slaSeuilRisqueJours = $parametres->sla_seuil_risque_jours;
         $this->slaRelanceJours = $parametres->sla_relance_jours;
+        $this->slaEscaladeJours = $parametres->sla_escalade_jours !== null ? (string) $parametres->sla_escalade_jours : '';
         $this->niveauConfidentialiteMax = $parametres->niveau_confidentialite_max;
         $this->scanResolutionMinimale = $parametres->scan_resolution_minimale;
         $this->ocrConfianceMinimale = $parametres->ocr_confiance_minimale;
@@ -153,6 +161,7 @@ class ParametreSysteme extends Component
             'slaJoursDefaut' => ['required', 'integer', 'min:1', 'max:365'],
             'slaSeuilRisqueJours' => ['required', 'integer', 'min:0', 'max:30'],
             'slaRelanceJours' => ['required', 'integer', 'min:1', 'max:30'],
+            'slaEscaladeJours' => ['nullable', 'integer', 'min:1', 'max:365'],
             'slaParType' => ['array'],
             'slaParType.*' => ['nullable', 'integer', 'min:1', 'max:365'],
             'niveauConfidentialiteMax' => ['required', 'integer', 'min:1', 'max:20'],
@@ -166,6 +175,7 @@ class ParametreSysteme extends Component
             'slaJoursDefaut' => __('délai par défaut'),
             'slaSeuilRisqueJours' => __('seuil de risque'),
             'slaRelanceJours' => __('délai de relance'),
+            'slaEscaladeJours' => __('délai avant escalade'),
             'niveauConfidentialiteMax' => __('niveau de confidentialité maximum'),
             'scanResolutionMinimale' => __('résolution minimale'),
             'ocrConfianceMinimale' => __('confiance OCR minimale'),
@@ -187,6 +197,7 @@ class ParametreSysteme extends Component
             'sla_jours_defaut' => $data['slaJoursDefaut'],
             'sla_seuil_risque_jours' => $data['slaSeuilRisqueJours'],
             'sla_relance_jours' => $data['slaRelanceJours'],
+            'sla_escalade_jours' => $data['slaEscaladeJours'] !== null && $data['slaEscaladeJours'] !== '' ? (int) $data['slaEscaladeJours'] : null,
             'sla_par_type' => $parType,
             'niveau_confidentialite_max' => $data['niveauConfidentialiteMax'],
             'scan_resolution_minimale' => $data['scanResolutionMinimale'],

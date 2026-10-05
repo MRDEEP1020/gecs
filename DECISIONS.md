@@ -3965,3 +3965,347 @@ seul formulaire sous-jacent : "Enregistrer" (placé sous la nav, toujours
 visible) soumet toutes les catégories d'un coup, quel que soit l'onglet
 actuellement affiché à l'écran — pas de sauvegarde partielle par
 catégorie, pour rester cohérent avec la ligne singleton unique en base.
+
+## [2026-09-24] Courrier confidentiel : accès et clôture par le destinataire
+Contexte : la simulation du parcours réel (tests/Feature/Courriers/
+SimulationParcoursReelTest.php, demandée par l'utilisateur) a montré qu'un
+pli enregistré via RegistrationFormConfidentiel était une impasse : envoyé
+"directement" à la DGA (statut `enregistre`, sans service), il lui était
+refusé (403) — la branche `voir_dga` de CourrierPolicy::view() ne couvre
+que `en_cours_de_transfert` —, n'apparaissait dans aucune liste, n'offrait
+aucune action et n'était donc jamais archivé. L'utilisateur a demandé de
+corriger ("fix all of them").
+Décision :
+- Colonne explicite `courriers.confidentiel_direct` (posée par
+  RegistrationFormConfidentiel, rattrapage des plis existants dans la
+  migration) plutôt que de déduire ce cas de service_id null +
+  destinataire_transfert_id + statut, trop fragile.
+- Le DESTINATAIRE désigné (et lui seul) consulte le pli, quel que soit son
+  statut (il le garde après archivage) — privilège de portée
+  `courriers.voir_confidentiel_recu`, miroir dans Courrier::scopeVisiblePar()
+  (le pli apparaît donc dans sa file "À traiter"). Le niveau de
+  confidentialité reste vérifié : un destinataire de niveau insuffisant
+  reste bloqué (l'administrateur doit relever son niveau).
+- Bouton "Marquer comme remis" (privilège `courriers.cloturer_confidentiel`)
+  → `WorkflowService::cloturerConfidentiel()` : `enregistre` → `traite` +
+  historique `confidentiel_remis`, puis archivage automatique habituel.
+- Défaut des 2 clés : DGA + Responsable de service (destinataires typiques
+  cités par le spec Module 1 : DGA/ADJ DGA, RH).
+Alternatives envisagées : ajouter `enregistre` → `traite` dans
+WorkflowService::TRANSITIONS (écarté : valider() permettrait alors à un
+responsable de clore un courrier normal sans affectation ni traitement —
+"un courrier ne peut pas sauter une étape") ; faire affecter le pli par
+le destinataire (écarté : le spec dit que le pli n'entre dans aucun
+circuit ni service, seul son destinataire l'ouvre).
+
+## [2026-09-24] Dossier de classement : les acteurs du circuit gardent l'accès
+Contexte : même simulation — dès qu'un collaborateur rangeait un courrier
+dans son dossier personnel, le responsable du service ET l'agent qui
+l'avait enregistré perdaient l'accès (application stricte de "les trois se
+cumulent", 2026-09-16) : un collaborateur pouvait ainsi masquer un courrier
+à son propre responsable, et le responsable ne pouvait plus le valider.
+Décision (amende la décision du 2026-09-16) : le gate dossier ne
+s'applique pas aux personnes directement impliquées dans CE courrier —
+`Courrier::impliqueUtilisateur()` : son créateur, le collaborateur
+actuellement affecté, le responsable de son service, le destinataire de
+son transfert. Miroir exact dans le bloc dossier de scopeVisiblePar().
+Cette exemption ne DONNE aucun accès : les privilèges de portée de view()
+et le niveau de confidentialité s'appliquent toujours ensuite. Le dossier
+continue de restreindre tous les autres utilisateurs.
+Alternatives envisagées : n'exempter que le responsable du service
+(écarté : l'agent créateur et le collaborateur affecté par la suite
+seraient bloqués de la même façon) ; interdire de classer un courrier
+encore en circuit (écarté : "Classer dans un dossier" est volontairement
+disponible à tout moment, voir 2026-09-22).
+
+## [2026-09-24] Dossier surveillé : configuration dans l'administration
+Contexte : pendant la simulation manuelle, l'utilisateur a déposé deux scans
+dans le dossier surveillé ; ils ont bien été importés et lus par l'OCR en
+~20 s, mais la page Numérisation ne les montrait qu'après rechargement
+(`ScanPremier::numeriserAutomatique()` était `#[Renderless]` et la page
+n'écoutait pas `brouillon.ocr.termine`). Il a aussi demandé de déplacer
+"Démarrer la surveillance" dans le menu Administration, comme un réglage.
+Décision :
+- Nouvelle page **Administration › Dossier surveillé** (privilège
+  `administration.dossier_surveille`, Administrateur par défaut) :
+  choisir le dossier, démarrer/arrêter, réautoriser l'accès, retirer.
+- `scan-watcher.js` a deux modes : `config` (cette page — ne fait jamais
+  d'import) et `execution` (Numérisation, Nouveau courrier — importe, sans
+  aucun bouton de configuration). Drapeau `actif` persistant dans
+  IndexedDB ; un changement fait dans un onglet est appliqué aux autres
+  via BroadcastChannel, sans rechargement.
+- La configuration RESTE dans le navigateur (par poste, par profil
+  Chrome/Edge) : l'API File System Access n'autorise un dossier que sur
+  l'ordinateur où il a été choisi. La page le dit explicitement — l'admin
+  fait le réglage sur le poste de la réception.
+- Numérisation : `#[Renderless]` retiré (même choix que RegistrationForm,
+  déjà validé en navigateur) + écouteur echo-private de fin d'OCR.
+Alternatives envisagées : stocker le chemin du dossier en base et importer
+côté serveur par une tâche planifiée (écarté pour l'instant : le serveur ne
+voit pas le disque du poste de la réception, il faudrait un partage réseau
+— à reconsidérer au déploiement si le scanner peut écrire sur un partage
+accessible au serveur) ; laisser le bouton aussi sur Numérisation (écarté :
+demande explicite de l'utilisateur d'en faire un réglage d'administration).
+
+## [2026-09-24] DGA : consultation des courriers transférés
+Contexte : demande explicite de l'utilisateur ("dga doesn't see all the
+courier he transfered"). Depuis le 2026-09-08, la DGA ne voyait un courrier
+que pendant l'étape `en_cours_de_transfert` ("périmètre = ce qui la
+concerne actuellement") : dès le service validé, il disparaissait de toutes
+ses listes et sa fiche lui était refusée.
+Décision (amende 2026-09-08) : nouveau privilège de portée
+`courriers.voir_transferes` (DGA par défaut) — la DGA garde la CONSULTATION
+de tout courrier qu'elle a transféré : destinataire du transfert, ou auteur
+de la validation du service dans l'historique (couvre les courriers
+antérieurs à `destinataire_transfert_id`). Lecture seule : aucune autre
+ability ne s'appuie dessus ; `validerService` exige désormais aussi le
+statut `en_cours_de_transfert`. Ces courriers restent HORS de sa file
+"À traiter" (`visiblePar($user, false)` dans WorkflowQueue) : ils ne
+l'attendent plus.
+Alternatives envisagées : réutiliser `courriers.voir_dga` sans condition de
+statut (écarté : mélangerait "à traiter" et "historique", et la file de la
+DGA se remplirait de courriers traités par les services) ; lui donner
+`courriers.voir_tout` (écarté : bien plus large que ce qu'elle a transféré,
+et sans rapport avec la demande).
+
+## [2026-09-24] Suppression de la page "Transferts" (file d'attente)
+Contexte : demande explicite de l'utilisateur ("remove the transfer page
+since it same with tous les courier"). La file WorkflowQueue (menu
+"Transferts", /courriers/a-traiter) affichait le même périmètre que "Tous
+les courriers" (Courrier::scopeVisiblePar()), seulement restreint aux
+statuts encore en circuit.
+Décision : page, composant et privilège `courriers.voir_file_attente`
+supprimés. "Tous les courriers" reçoit une option de statut "En cours
+(tous)" (`statut=actifs`) qui reproduit exactement ce filtre ; l'ancienne
+adresse redirige dessus. La DGA retrouve ce qui attend sa validation via
+le filtre "En cours de transfert" (ou Courriers enregistrés), et suit ses
+transferts via l'onglet "Suivi". La notion "à traiter pour moi" reste dans
+les Tâches du jour du tableau de bord (`visiblePar($user, false)`).
+Alternatives envisagées : garder la page sans l'entrée de menu (écarté :
+code mort) ; rediriger sans ajouter de filtre (écarté : la redirection
+aurait montré aussi les courriers clôturés, perdant le seul apport réel de
+l'ancienne page).
+
+## [2026-09-24] "En retard" (Module 5/10) : cohérence avec le chronomètre
+Décision : tranchée par l'utilisateur ("fixed all as you see fit") — voir
+l'entrée précédente pour le contexte complet du constat. Choix retenu :
+(b), `scopeEnRetard()` reflète désormais EXACTEMENT ce que
+`Courrier::chronoFin()` affiche sur le badge chronomètre (chrono_fin_le à
+la minute près quand un délai a été fixé par le responsable, sinon
+comportement STRICTEMENT INCHANGÉ — la comparaison à la journée équivalait
+déjà exactement à `date_limite->endOfDay()`, le cas par défaut de
+chronoFin()). Justification : le chronomètre est une fonctionnalité
+délibérément précise à la minute (demande explicite de l'utilisateur plus
+tôt le même jour) ; laisser la carte KPI et les alertes SLA en retard
+d'un jour entier sur ce que le responsable a lui-même fixé contredit
+l'intention même de donner un délai précis. Effet de bord assumé :
+`SendMailAlertJob` peut désormais alerter dans l'heure suivant un délai
+fixé par le responsable plutôt qu'au plus tôt le lendemain — pour les
+courriers SANS délai fixé (l'immense majorité, SLA classique par type),
+aucun changement de comportement.
+
+## [2026-09-24] (contexte du constat ci-dessus) "En retard" à la journée près, chronomètre à la minute près
+Contexte : audit du tableau de bord demandé par l'utilisateur ("find bugs
+... and simulate it"), simulation avec un courrier dont le délai a été
+fixé par le responsable il y a 3 h (donc affiché "EN RETARD" par son
+propre chronomètre, voir plus haut "Chronomètre de traitement") : la carte
+KPI "En retard" du tableau de bord ne le compte PAS, car
+`Courrier::scopeEnRetard()` compare `whereDate('date_limite', '<',
+today())` — une comparaison à la JOURNÉE près, alors que `date_limite` est
+recalculée à la journée même quand le responsable a fixé une échéance
+précise à l'heure près. Les deux indicateurs (badge chronomètre sur une
+fiche, carte KPI du tableau de bord) peuvent donc afficher des messages
+contradictoires pour le MÊME courrier, le même jour.
+**Pas corrigé automatiquement** : `scopeEnRetard()` est aussi utilisé par
+`SendMailAlertJob` (Module 7, alertes SLA) — le rendre plus strict
+(granularité à l'heure) changerait aussi À QUELLE HEURE une alerte de
+retard part, pas seulement l'affichage du tableau de bord. Décision à
+prendre avec l'utilisateur :
+- (a) garder la granularité JOUR pour "en retard" partout (le
+  chronomètre, plus précis, resterait le seul indicateur fin — la carte
+  KPI et les alertes gardent une tolérance jusqu'à minuit) ;
+- (b) faire de `scopeEnRetard()` un reflet exact du chronomètre
+  (`chrono_fin_le` si fixé, sinon fin de journée de `date_limite`),
+  cohérent partout, mais des alertes SLA potentiellement envoyées en plein
+  après-midi au lieu du lendemain.
+
+## [2026-09-24] Chronomètre de traitement
+Contexte : demande explicite de l'utilisateur — le responsable de service
+ne pouvait pas fixer le délai d'un courrier (la page "Modifier" exige
+`modifier_propre/tout`, qu'il n'a pas) ; le délai venait seulement du SLA
+par type (Paramètres système). Précisions : "it should be as a
+chronometer", "it appear as chronometer in the sla detail".
+Décision :
+- Le responsable fixe le délai DANS le formulaire "Affecter" (jours ou
+  heures, prérempli avec le SLA actuel), puis peut le modifier en cours de
+  circuit avec un motif obligatoire. Privilège d'action
+  `courriers.fixer_delai` (Responsable de service), cumulé avec la portée
+  d'affectation (CourrierPolicy::fixerDelai()).
+- Nouvelles colonnes `chrono_debut_le` / `chrono_fin_le` (indexée) /
+  `chrono_arrete_le` : `date_limite` reste une DATE (SLA quotidien,
+  alertes, tris) et SUIT la fin du chronomètre via `echeance` — une seule
+  vérité pour les listes et les alertes, la minute près pour l'affichage.
+- Le chronomètre part quand le délai est fixé (sinon il s'appuie sur la
+  date limite SLA, fin de journée), compte le dépassement au-delà, et se
+  FIGE à la clôture (traité/rejeté/pli confidentiel remis) sur le temps
+  réellement passé.
+- Affichage : composant `<x-chronometre>` dans les détails SLA de la fiche
+  (grand) et dans les Tâches du jour (compact). Compte à rebours 100 %
+  navigateur (Alpine), recalé sur l'heure du serveur — aucune requête par
+  seconde, jamais de wire:poll (Règle n°2).
+Alternatives envisagées : passer `date_limite` en datetime (écarté :
+touche le SLA quotidien, les alertes, les index et une migration de
+rattrapage pour un gain d'affichage) ; ouvrir la page "Modifier" au
+responsable (écarté : donnerait accès à tous les champs de
+l'enregistrement, pas seulement au délai) ; mettre le chronomètre en pause
+pendant "en attente d'information" (hors périmètre phase 1, déjà noté dans
+SlaCalculatorService).
+
+## [2026-09-24] Pentest "Tous les courriers" — IDOR sur extraitTexteOcr()
+Contexte : demande explicite de l'utilisateur ("now total courier go
+throughtly even pentest it") — revue de sécurité ciblée du composant
+`CourrierList` (module 8/9). Faille réelle trouvée : `extraitTexteOcr(Courrier
+$courrier)` type-hintait un modèle Eloquent en paramètre d'action Livewire ;
+Livewire résout ce genre de paramètre via `resolveRouteBinding()` (un simple
+`Courrier::find($id)`) AVANT d'entrer dans la méthode, sans jamais passer par
+`Courrier::visiblePar()` ni une policy — contrairement à toutes les autres
+méthodes du même fichier (`courrierApercu()`, `supprimerCourrier()`,
+`transfererSelection()`, `classerSelection()`), qui revérifient explicitement
+tout id reçu du client (Règle n°6 de CLAUDE.md). Un utilisateur disposant de
+`courriers.voir_texte_ocr` (Responsable de service par défaut, voir
+PrivilegeSeeder) pouvait donc appeler cette méthode directement avec l'id
+d'un courrier hors de son périmètre (autre service, confidentiel...) — en
+contournant entièrement l'UI, qui ne l'affiche jamais dans son tableau — et
+lire jusqu'à ~120 caractères de son texte OCR.
+Décision : revérifier `CourrierPolicy::voirTexteOcr()` (qui inclut déjà
+`view()`, donc confidentialité + accès dossier + périmètre de service) au
+début de `extraitTexteOcr()`, au lieu du seul `peutRechercherContenu`
+(privilège global, insuffisant seul). Prouvé par un test qui échoue sur le
+code non corrigé (extrait effectivement lu) puis passe après le correctif.
+Reste du composant audité à la même occasion (chaque action de masse, le
+scope de `resultats()`/`statistiques()`, le tri whitelisté, les recherches
+LIKE/FULLTEXT paramétrées) : aucune autre faille trouvée, tout revérifie déjà
+correctement côté serveur. Voir aussi la correction de cohérence apportée à
+`PieceJointeDownloadController` le même jour (garde-fou fichier manquant, pas
+une faille — juste harmonisé avec les deux autres contrôleurs de document).
+
+## [2026-09-24] Pentest "Détail/Modifier" — IDOR sur EditForm::courrier()
+Contexte : suite directe du pentest ci-dessus, demande explicite de
+l'utilisateur ("have go throught the view/edit too") — même méthodologie
+appliquée à ShowCourrier (fiche "Détail") et EditForm (fiche "Modifier").
+ShowCourrier : RAS, chaque action revérifie déjà l'autorisation via
+`courrierPour()`/`courrierModifiable()`, le panneau "Aperçu" (`courrier()`)
+revérifie déjà `view` à chaque accès, et le canal Echo privé
+`courrier.{courrierId}` (routes/channels.php) est déjà gardé par
+`$user->can('view', $courrier)`.
+EditForm : faille réelle trouvée, même classe que celle d'extraitTexteOcr()
+(CourrierList, plus tôt le même jour) mais par un mécanisme différent.
+`$courrierId` est une propriété publique SANS `#[Locked]` — confirmé en
+lisant `Livewire\Features\SupportLockedProperties\BaseLocked` dans le
+vendor : cet attribut n'existe QUE pour empêcher un client de modifier une
+propriété publique directement depuis une requête forgée, et n'était posé
+sur aucun `courrierId` du projet. `mount()` n'autorise `update` qu'UNE FOIS
+au chargement initial de la page ; le `#[Computed] courrier()` qui alimente
+ensuite le panneau "Aperçu" (expéditeur, statut, confidentialité, pièces
+jointes, numéro) rechargeait le courrier depuis `$this->courrierId` à
+CHAQUE accès SANS jamais revérifier l'autorisation — contrairement à
+`ShowCourrier::courrier()`, qui applique exactement ce contrôle sur la même
+page sœur. Un utilisateur ayant légitimement accès à SA page d'édition
+pouvait donc reprogrammer `courrierId` vers un courrier hors de son
+périmètre et voir son détail dans le panneau, sans repasser par la policy
+(le chemin d'écriture `enregistrerModification()` restait, lui, protégé —
+il refait son propre `findOrFail()` + `authorize('update')`).
+Décision : ajouter `$this->authorize('view', $courrier)` dans `courrier()`,
+exactement le même correctif que `ShowCourrier::courrier()` applique déjà —
+pas une nouvelle convention, l'alignement d'un oubli sur un pattern déjà
+correct ailleurs dans le même module. Prouvé par un test qui échoue sur le
+code non corrigé puis passe après le correctif.
+Balayage de tout `app/Livewire` (grep `findOrFail($this->xId)`/
+`::find($this->xId)`) effectué à cette occasion : DossierClassementList,
+OrganisationIndex, ProfilList, ParametreSysteme, ScanForm, RegleList,
+UserList, `RegistrationForm::brouillon()` autorisent déjà correctement à
+chaque accès — aucune autre instance de cette faille trouvée dans le
+projet.
+
+**Correction (2026-09-24, plus tard le même jour)** : ce balayage était
+incomplet — le pattern `::find($this->xId)` ne capture qu'un appel STATIQUE ;
+`DossierClassementList::dossierAPartager()` utilisait
+`->find($this->dossierAPartagerId)` chaîné après `->with(...)`, une forme que
+le grep ne matchait pas, et contenait bien la même faille (voir entrée
+"Pentest 'Dossiers & Archives'" plus bas). Leçon retenue : un grep sur un
+motif syntaxique précis ne remplace pas une lecture complète page par page —
+utile pour une première passe, jamais suffisant seul pour clore un audit.
+
+## [2026-09-24] Pentest "Dossiers & Archives" — 2 fuites dans la modale Partager
+Contexte : suite du pentest page par page ("next page then"), après
+ScanForm (RAS). Deux faiblesses trouvées dans `DossierClassementList`,
+toutes deux dans la modale "Partager" (deux boîtes, noms/emails).
+**(1) IDOR, même mécanisme que EditForm::courrier()** — `dossierAPartager()`
+chargeait le dossier depuis `$this->dossierAPartagerId` (propriété publique
+sans `#[Locked]`) sans jamais revérifier l'autorisation, contrairement à
+`dossierSelectionne()` juste au-dessus qui revérifie déjà `view`. La modale
+étant rendue sans condition dans la vue, changer cette propriété suffisait
+à faire fuir les bénéficiaires d'un dossier hors périmètre.
+**(2) Fuite plus large, PRÉ-EXISTANTE, découverte en corrigeant (1)** —
+`partageDisponibles()` n'avait pas le garde-fou "`$dossier` null → liste
+vide" que `partageAssignes()` a pourtant juste en dessous. Résultat : sans
+dossier sélectionné — l'état PAR DÉFAUT au tout premier chargement de la
+page, avant même d'avoir cliqué une seule fois sur "Partager" — cette
+méthode listait TOUS les utilisateurs de l'organisation (nom + email) sans
+filtre. Combinée au rendu sans condition de la modale, cette fuite touchait
+CHAQUE chargement de "Dossiers & Archives", pour quiconque a seulement
+`dossiers_classement.voir` (accordé largement : Agent/DGA/Responsable de
+service/Collaborateur) — aucun droit de partage nécessaire pour la
+déclencher. C'est la fuite la plus sérieuse trouvée dans cette série de
+pentests : aucune action du client n'était même requise.
+Décision : `dossierAPartager()` revérifie désormais
+`Auth::user()->can('partager', $dossier)`, comme `dossierSelectionne()` le
+fait déjà pour `view` ; `partageDisponibles()` reçoit le même garde-fou
+"`$dossier` null → `collect()` vide" que `partageAssignes()`. Les 4 actions
+d'écriture (ajouterPartage/retirerPartage/ajouterSelectionPartage/
+retirerSelectionPartage) remplacent leur `$this->authorize('partager',
+$dossier)` — qui aurait échoué bruyamment sur un `$dossier` maintenant
+`null` pour le cas non autorisé — par un simple `if ($dossier === null)
+return;`, puisque le computed porte désormais toute l'autorisation réelle.
+Les deux prouvés par des tests qui échouent sur le code non corrigé et
+passent après. Reste du composant (arborescence, contenu du dossier,
+création/renommage/déplacement/suppression, ajout de courriers) déjà
+correctement scopé — aucune autre faille trouvée.
+
+## [2026-10-02] Restyle de l'aperçu document — chrome de la maquette repris littéralement, contenu de la maquette jamais repris
+Demande explicite de l'utilisateur : restyler les 8 instances existantes de
+l'aperçu document (showCourrier/courrierList/editForm/registrationForm,
+panneau compact + modale "Agrandir" de chacune) pour qu'elles ressemblent à
+`replica.html`, une maquette capturée d'un aperçu de pièce jointe Outlook/
+Word réel, avec ses couleurs/polices/rayons comme source de vérité visuelle
+pour ce composant précis — volontairement différents de la palette
+`--color-brand-*` du reste de l'application (voir dashboard_module10 dans la
+mémoire), scopés aux 4 nouveaux composants `resources/views/components/
+apercu/*.blade.php` (barre-outils, visionneuse, panneau-correspondance,
+signature-expediteur), jamais propagés ailleurs.
+Deux écarts volontaires par rapport à la demande, décidés sans bloquer sur
+une confirmation (jugés non ambigus) :
+- **Avatar/bandeau personnels de la maquette NON réutilisés.** L'e-mail
+  d'exemple de `replica.html` est un VRAI e-mail d'un VRAI collaborateur
+  NSIA (nom, photo, signature complète) capturé tel quel. Les réutiliser
+  comme image "par défaut" affichée pour N'IMPORTE QUEL courrier de
+  N'IMPORTE QUEL expéditeur, pour toute l'entreprise, aurait détourné la
+  photo d'une personne réelle de son contexte sans rapport avec le
+  courrier affiché. `<flux:avatar>` à initiales est utilisé à la place
+  (même convention que `resources/views/components/desktop-user-menu.blade.php`).
+  Seul le logo NSIA (`public/images/apercu/nsia-logo.png`) a été extrait —
+  actif de marque de l'entreprise elle-même, propriétaire de cet outil.
+- **Pas de "corps de message" dans le panneau "correspondance".** Un
+  courrier GEC n'est pas un e-mail : aucun champ du modèle Courrier ne
+  correspond à un texte d'accompagnement (`texte_ocr` est le texte DU
+  DOCUMENT scanné lui-même, pas un message séparé — l'afficher comme corps
+  de message aurait été trompeur). Le panneau affiche donc uniquement objet/
+  expéditeur/destinataire/date/pièce jointe réels, plus une carte
+  "signature" (nom/fonction/organisation/adresse/téléphone/email de
+  l'expéditeur), qui est la correspondance la plus proche des champs
+  réellement saisis sur un courrier.
+Effet de bord découvert en re-testant : le bouton "Voir en plein écran" du
+panneau compact de showCourrier (texte visible, hors du nouveau chrome)
+faisait doublon avec l'icône "agrandir" du nouveau chrome — supprimé, seule
+l'icône du chrome subsiste (même patron que les 3 autres pages, qui
+n'avaient jamais eu ce bouton texte séparé).

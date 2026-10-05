@@ -91,7 +91,26 @@
          (voir CourrierList::statistiques()) — la rangée entière ne
          s'affiche que si au moins une carte l'est. --}}
     @if ($this->statistiques !== [])
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    {{-- Squelette (2026-09-24, "loading animation on each table, cards,
+         panels refreshing not the loading sp[inner]") — même nombre de
+         cartes que $this->statistiques (déjà connu du rendu précédent
+         pendant une requête en cours, wire:loading ne détruit rien), pour
+         ne jamais afficher un nombre de squelettes différent du nombre de
+         cartes réelles qui les remplaceront. Durée minimale d'affichage
+         (2026-09-24, "am not seeing animation... in page") via
+         squeletteMinimum() (resources/js/app.js) — une requête locale peut
+         se terminer trop vite pour que le balayage du shimmer soit
+         perceptible ; la sentinelle (jamais affichée, voir son
+         aria-hidden) sert uniquement de signal fiable à Alpine, indépendant
+         de tout modificateur de display. --}}
+    <div x-data="squeletteMinimum()">
+        <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
+        <div x-show="visible" x-cloak class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            @for ($i = 0; $i < count($this->statistiques); $i++)
+                <x-skeleton.card />
+            @endfor
+        </div>
+        <div x-show="!visible" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         @foreach ([
             ['cle' => 'total', 'label' => __('Total courriers'), 'icon' => 'inbox', 'couleur' => 'blue'],
             ['cle' => 'enTraitement', 'label' => __('En traitement'), 'icon' => 'arrow-path', 'couleur' => 'warning'],
@@ -126,6 +145,7 @@
                 </div>
             @endif
         @endforeach
+        </div>
     </div>
     @endif
 
@@ -169,6 +189,7 @@
 
             <flux:select wire:model.live="statut" :label="__('Statut')">
                 <flux:select.option value="">{{ __('Tous les statuts') }}</flux:select.option>
+                <flux:select.option value="{{ \App\Livewire\Backend\CourrierList::STATUT_ACTIFS }}">{{ __('En cours (tous)') }}</flux:select.option>
                 @foreach (array_keys(\App\Models\Courrier::LIBELLES_STATUT) as $valeurStatut)
                     <flux:select.option value="{{ $valeurStatut }}">{{ \App\Models\Courrier::libelleStatut($valeurStatut) }}</flux:select.option>
                 @endforeach
@@ -330,7 +351,8 @@
             @if ($this->resultats->isEmpty())
                 <flux:text class="text-zinc-500">{{ __('Aucun courrier ne correspond à ces critères.') }}</flux:text>
             @else
-                <div class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <div x-data="squeletteMinimum()" class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                     <table class="w-full text-sm">
                         <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                             <tr>
@@ -359,7 +381,24 @@
                                 <th class="py-3 pr-4">{{ __('Actions') }}</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                        {{-- Squelette (2026-09-24) — même nombre de colonnes
+                             que l'en-tête ci-dessus (8, +1 si la colonne
+                             "Extrait" est affichée), pour ne jamais
+                             désaligner les bordures de colonnes pendant le
+                             chargement. Visibilité pilotée par l'état
+                             `visible` de squeletteMinimum() (x-data posé sur
+                             le DIV englobant ci-dessus) — durée minimale
+                             garantie, voir son commentaire dans
+                             resources/js/app.js (2026-09-24, "am not seeing
+                             animation... in page"). wire:loading.table-row-group
+                             N'EST PAS un modificateur reconnu par Livewire
+                             (bug réel constaté en capture d'écran le même
+                             jour) — plus aucun wire:loading direct ici,
+                             seule la sentinelle ci-dessus en porte un. --}}
+                        <tbody x-show="visible" x-cloak class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                            <x-skeleton.table-rows :cols="$this->contenu !== '' && $this->peutRechercherContenu ? 9 : 8" />
+                        </tbody>
+                        <tbody x-show="!visible" class="divide-y divide-zinc-200 dark:divide-zinc-700">
                             @foreach ($this->resultats as $courrier)
                                 <tr
                                     wire:key="ligne-{{ $courrier->id }}"
@@ -397,7 +436,12 @@
                                     @endif
                                     <td class="py-3 pr-3 text-zinc-600">{{ $courrier->date_mouvement->format('d/m/Y') }}</td>
                                     <td class="py-3 pr-3">
-                                        <x-statut-badge :statut="$courrier->statut" />
+                                        {{-- Chronomètre à côté du statut (2026-09-28, "when the date
+                                             is comming soon the colours should change") — même badge
+                                             que ShowCourrier/Dashboard, se fige automatiquement si
+                                             aucune échéance n'existe (voir son @if interne). Empilé
+                                             sur 2 lignes (2026-10-02, positionnement revu). --}}
+                                        <x-statut-avec-echeance :courrier="$courrier" :masquer-temps="true" />
                                     </td>
                                     <td class="py-3 pr-4" wire:click.stop>
                                         <flux:dropdown position="bottom" align="end">
@@ -440,40 +484,70 @@
                  brouillons.apercu. wire:key sur l'id du courrier : changer
                  de courrier doit recharger un NOUVEAU document, jamais
                  réutiliser l'instance pdf.js du précédent. --}}
-            <div wire:key="panneau-apercu-{{ $courrier->id }}" class="self-start rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <div wire:key="panneau-apercu-{{ $courrier->id }}" x-data="squeletteMinimum()" class="self-start rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 {{-- Panneau désormais TOUJOURS affiché (demande explicite de
                      l'utilisateur, 2026-09-18 : "those cards panel should
                      always be shown not mask") — plus de bouton "Fermer"/X,
                      qui n'aurait plus de sens : il n'y a plus d'état "masqué"
                      vers lequel revenir. --}}
+                <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                 <div class="flex items-center gap-2 border-b border-brand-border p-4 dark:border-zinc-700">
                     <flux:icon.information-circle class="size-4 text-brand-blue" />
                     <flux:heading level="3">{{ __('Aperçu du courrier') }}</flux:heading>
                 </div>
 
-                <div class="p-4">
+                {{-- Squelette (2026-09-24) — changer de ligne
+                     (ouvrirApercu) ou de filtre (qui peut changer le
+                     courrier par défaut du panneau) redéclenche une requête
+                     Livewire sur TOUT le composant ; ce panneau doit lui
+                     aussi montrer un état de chargement pendant ce court
+                     instant, pas rester figé sur l'ancien courrier. Durée
+                     minimale garantie via squeletteMinimum() (2026-09-24,
+                     "am not seeing animation... in page"). --}}
+                <div x-show="visible" x-cloak>
+                    <x-skeleton.panel />
+                </div>
+
+                <div x-show="!visible" class="p-4">
                     @if ($courrier->fichier_path)
+                        @php $telechargerUrlListe = auth()->user()->can('telecharger', $courrier) ? route('courriers.document', $courrier) : null; @endphp
                         <div
                             wire:ignore
                             x-data="{
                                 erreur: null,
                                 zoom: 100,
-                                rechercheOuverte: false,
-                                requeteRecherche: '',
-                                nbResultats: 0,
+                                pageActuelle: 1,
+                                numPages: 1,
                                 url: @js(route('courriers.document.apercu', $courrier)),
                                 instance() {
                                     const apercu = window.DocumentPreview.obtenir(this.url + ':liste');
-                                    apercu.boite = this.$refs.corps;
-                                    apercu.conteneur = this.$refs.conteneurPdf;
+                                    apercu.boite = document.getElementById('apercu-liste-{{ $courrier->id }}-corps');
+                                    apercu.conteneur = document.getElementById('apercu-liste-{{ $courrier->id }}-conteneur');
 
                                     return apercu;
                                 },
                                 async init() {
                                     try {
                                         const apercu = this.instance();
+                                        // Cliquer-glisser (2026-09-24) — plutôt
+                                        // que de devoir viser la barre de
+                                        // défilement une fois zoomé au-delà
+                                        // de 100 %.
+                                        window.DocumentPreview.activerDeplacement(apercu.boite);
+                                        // Molette pour zoomer (2026-09-24, retour utilisateur :
+                                        // « why can[t] i zoom without the + sign ») — Ctrl/Cmd +
+                                        // molette, même bornes que zoomIn()/zoomOut() ci-dessous.
+                                        // ATTENTION — jamais de guillemet droit dans un commentaire
+                                        // à l'intérieur d'un attribut x-data (délimité par des
+                                        // guillemets droits) : ça referme l'attribut HTML en plein
+                                        // milieu et fait fuir tout le reste comme texte visible sur
+                                        // la page (bug réel trouvé le 2026-09-24, voir memory
+                                        // livewire_flux_gotchas — guillemets français «» seulement).
+                                        window.DocumentPreview.activerZoomMolette(apercu.boite, (pas) => this.zoomer(Math.min(Math.max(this.zoom + pas, 50), 200)));
                                         await apercu.charger(this.url, apercu.boite, apercu.conteneur);
                                         this.zoom = Math.round((apercu.echelle / apercu.echelleBase) * 100);
+                                        this.pageActuelle = apercu.pageActuelle;
+                                        this.numPages = apercu.numPages;
                                     } catch (e) {
                                         console.error('[aperçu courrier liste]', e);
                                         this.erreur = e.message ?? String(e);
@@ -491,45 +565,159 @@
                                 },
                                 zoomIn() { this.zoomer(Math.min(this.zoom + 25, 200)); },
                                 zoomOut() { this.zoomer(Math.max(this.zoom - 25, 50)); },
-                                basculerRecherche() {
-                                    this.rechercheOuverte = ! this.rechercheOuverte;
-
-                                    if (! this.rechercheOuverte) {
-                                        this.requeteRecherche = '';
-                                        this.rechercher();
+                                async pageSuivante() {
+                                    try {
+                                        const apercu = this.instance();
+                                        await apercu.pageSuivante();
+                                        this.pageActuelle = apercu.pageActuelle;
+                                    } catch (e) {
+                                        console.error('[aperçu courrier liste] page suivante', e);
+                                        this.erreur = e.message ?? String(e);
                                     }
                                 },
-                                rechercher() {
-                                    this.nbResultats = this.instance().rechercher(this.requeteRecherche);
+                                async pagePrecedente() {
+                                    try {
+                                        const apercu = this.instance();
+                                        await apercu.pagePrecedente();
+                                        this.pageActuelle = apercu.pageActuelle;
+                                    } catch (e) {
+                                        console.error('[aperçu courrier liste] page précédente', e);
+                                        this.erreur = e.message ?? String(e);
+                                    }
                                 },
-                                pleinEcran() { this.$refs.corps.requestFullscreen?.(); },
                             }"
                             x-init="init()"
                         >
-                            <div class="mb-2 flex items-center justify-between gap-1">
-                                <flux:button size="sm" variant="ghost" icon="magnifying-glass" x-on:click="basculerRecherche()" :aria-label="__('Rechercher dans le document')" />
-                                <div class="flex items-center gap-1">
-                                    <flux:button size="sm" variant="ghost" icon="minus" x-on:click="zoomOut()" :aria-label="__('Zoom -')" />
-                                    <span class="w-10 text-center text-xs text-zinc-500" x-text="zoom + '%'"></span>
-                                    <flux:button size="sm" variant="ghost" icon="plus" x-on:click="zoomIn()" :aria-label="__('Zoom +')" />
-                                    <flux:button size="sm" variant="ghost" icon="arrows-pointing-out" x-on:click="pleinEcran()" :aria-label="__('Plein écran')" />
-                                    @can('telecharger', $courrier)
-                                        <flux:button size="sm" variant="ghost" icon="arrow-down-tray" :href="route('courriers.document', $courrier)" :aria-label="__('Télécharger')" />
-                                    @endcan
+                            <x-apercu.barre-outils
+                                variant="panneau"
+                                :nom-fichier="basename($courrier->fichier_path)"
+                                :agrandir-evenement="'apercu-liste-agrandi-'.$courrier->id"
+                                :telecharger-url="$telechargerUrlListe"
+                            />
+                            <x-apercu.visionneuse id="apercu-liste-{{ $courrier->id }}" />
+                        </div>
+
+                        {{-- Modale "Agrandir" — même patron corrigé que ShowCourrier/
+                             RegistrationForm (voir leur commentaire : hauteur imposée
+                             EXPLICITEMENT sur <flux:modal> lui-même, variant="bare" ne
+                             garantit aucune hauteur propre ; corps en flex-1 min-h-0).
+                             Nom de modale indexé sur l'id du courrier : plusieurs
+                             lignes de la liste partagent la même page, chacune doit
+                             pouvoir ouvrir SA propre modale sans collision. Instance
+                             pdf.js séparée du petit panneau ci-dessus. --}}
+                        <div
+                            wire:key="apercu-liste-agrandi-{{ $courrier->id }}"
+                            wire:ignore
+                            x-data="{
+                                erreur: null,
+                                zoom: 100,
+                                url: @js(route('courriers.document.apercu', $courrier)),
+                                pageActuelle: 1,
+                                numPages: 1,
+                                instance() {
+                                    const apercu = window.DocumentPreview.obtenir(this.url + ':liste-agrandi');
+                                    apercu.boite = document.getElementById('apercu-liste-agrandi-{{ $courrier->id }}-corps');
+                                    apercu.conteneur = document.getElementById('apercu-liste-agrandi-{{ $courrier->id }}-conteneur');
+
+                                    return apercu;
+                                },
+                                async rendre() {
+                                    try {
+                                        const apercu = this.instance();
+                                        window.DocumentPreview.activerDeplacement(apercu.boite);
+                                        // Molette pour zoomer (2026-09-24, retour utilisateur :
+                                        // « why can[t] i zoom without the + sign ») — Ctrl/Cmd +
+                                        // molette, même bornes que zoomIn()/zoomOut() ci-dessous.
+                                        // ATTENTION — jamais de guillemet droit dans un commentaire
+                                        // à l'intérieur d'un attribut x-data (délimité par des
+                                        // guillemets droits) : ça referme l'attribut HTML en plein
+                                        // milieu et fait fuir tout le reste comme texte visible sur
+                                        // la page (bug réel trouvé le 2026-09-24, voir memory
+                                        // livewire_flux_gotchas — guillemets français «» seulement).
+                                        window.DocumentPreview.activerZoomMolette(apercu.boite, (pas) => this.zoomer(Math.min(Math.max(this.zoom + pas, 50), 200)));
+                                        await apercu.charger(this.url, apercu.boite, apercu.conteneur, true, true);
+                                        this.zoom = Math.round((apercu.echelle / apercu.echelleBase) * 100);
+                                        this.pageActuelle = apercu.pageActuelle;
+                                        this.numPages = apercu.numPages;
+                                    } catch (e) {
+                                        console.error('[aperçu liste agrandi]', e);
+                                        this.erreur = e.message ?? String(e);
+                                    }
+                                },
+                                async zoomer(nouveauZoom) {
+                                    this.zoom = nouveauZoom;
+
+                                    try {
+                                        await this.instance().zoomer(this.zoom);
+                                    } catch (e) {
+                                        console.error('[aperçu liste agrandi] zoom', e);
+                                        this.erreur = e.message ?? String(e);
+                                    }
+                                },
+                                zoomIn() { this.zoomer(Math.min(this.zoom + 25, 200)); },
+                                zoomOut() { this.zoomer(Math.max(this.zoom - 25, 50)); },
+                                async pageSuivante() {
+                                    try {
+                                        const apercu = this.instance();
+                                        await apercu.pageSuivante();
+                                        this.pageActuelle = apercu.pageActuelle;
+                                    } catch (e) {
+                                        console.error('[aperçu liste agrandi] page suivante', e);
+                                        this.erreur = e.message ?? String(e);
+                                    }
+                                },
+                                async pagePrecedente() {
+                                    try {
+                                        const apercu = this.instance();
+                                        await apercu.pagePrecedente();
+                                        this.pageActuelle = apercu.pageActuelle;
+                                    } catch (e) {
+                                        console.error('[aperçu liste agrandi] page précédente', e);
+                                        this.erreur = e.message ?? String(e);
+                                    }
+                                },
+                            }"
+                            x-on:modal-show.document="if ($event.detail.name === 'apercu-liste-agrandi-{{ $courrier->id }}') { rendre(); }"
+                        >
+                            {{-- 2026-09-24 (retour utilisateur : grand espace vide sous
+                                 "Tous les courriers") — SANS "display: flex" forcé (`flex!`)
+                                 ICI : ça écrasait la règle par défaut du navigateur qui cache
+                                 un popover fermé (`display: none`), laissant la modale
+                                 réserver ses 88vh de hauteur EN PERMANENCE dans le flux de la
+                                 page, même fermée. La mise en page en colonne reste sur le DIV
+                                 intérieur juste en dessous (flex h-full flex-col, sans !),
+                                 qui n'a d'effet qu'une fois la modale réellement affichée. --}}
+                            <flux:modal name="apercu-liste-agrandi-{{ $courrier->id }}" variant="bare" class="h-[88vh]! max-h-[88vh]! w-full! max-w-7xl! overflow-hidden! rounded-xl! bg-white! p-0! shadow-lg! dark:bg-zinc-900!">
+                                <div class="flex h-full min-h-0 flex-col">
+                                    <x-apercu.barre-outils
+                                        variant="modale"
+                                        :nom-fichier="basename($courrier->fichier_path)"
+                                        :numero-reference="$courrier->numero_reference"
+                                        :telecharger-url="$telechargerUrlListe"
+                                        :fermer-modale="'apercu-liste-agrandi-'.$courrier->id"
+                                    />
+
+                                    <div class="flex min-h-0 flex-1 flex-col min-[900px]:flex-row">
+                                        <x-apercu.visionneuse id="apercu-liste-agrandi-{{ $courrier->id }}" grandir />
+                                        <div class="h-64 shrink-0 min-[900px]:h-auto min-[900px]:w-90">
+                                            <x-apercu.panneau-correspondance
+                                                :objet="$courrier->objet"
+                                                :numero-reference="$courrier->numero_reference"
+                                                :expediteur-nom="$courrier->expediteur_nom"
+                                                :expediteur-organisation="$courrier->expediteur_organisation"
+                                                :expediteur-fonction="$courrier->expediteur_fonction"
+                                                :expediteur-adresse="$courrier->expediteur_adresse"
+                                                :expediteur-telephone="$courrier->expediteur_telephone"
+                                                :expediteur-email="$courrier->expediteur_email"
+                                                :destinataire="$courrier->destinataire"
+                                                :date="$courrier->date_mouvement"
+                                                :nom-fichier="basename($courrier->fichier_path)"
+                                                :telecharger-url="$telechargerUrlListe"
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-
-                            <div x-show="rechercheOuverte" x-cloak class="mb-2 flex items-center gap-2">
-                                <flux:input size="sm" x-model="requeteRecherche" x-on:input.debounce.300ms="rechercher()" placeholder="{{ __('Rechercher…') }}" />
-                                <flux:text class="shrink-0 text-xs text-zinc-500" x-show="requeteRecherche">
-                                    <span x-text="nbResultats"></span> {{ __('résultat(s)') }}
-                                </flux:text>
-                            </div>
-
-                            <div x-ref="corps" class="flex h-64 w-full items-center justify-center overflow-auto rounded-lg border border-brand-border bg-white dark:border-zinc-700">
-                                <p x-show="erreur" x-text="erreur" class="p-2 text-sm text-brand-danger"></p>
-                                <div x-ref="conteneurPdf"></div>
-                            </div>
+                            </flux:modal>
                         </div>
                     @else
                         <div class="flex h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-brand-border bg-brand-surface-soft text-center">
@@ -568,7 +756,7 @@
                         </div>
                         <div>
                             <dt class="text-zinc-500">{{ __('Statut') }}</dt>
-                            <dd class="mt-1"><x-statut-badge :statut="$courrier->statut" /></dd>
+                            <dd class="mt-1"><x-statut-avec-echeance :courrier="$courrier" :masquer-temps="true" /></dd>
                         </div>
                         @if ($courrier->piecesJointes->isNotEmpty() && auth()->user()->can('voirPiecesJointes', $courrier))
                             <div class="flex items-start gap-2">

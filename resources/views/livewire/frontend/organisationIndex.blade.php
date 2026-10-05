@@ -156,7 +156,18 @@
                                             @forelse ($this->utilisateursDuNoeud as $u)
                                                 <tr wire:key="membre-{{ $u->id }}">
                                                     <td class="py-2 pl-3 pr-2 font-medium">{{ $u->name }}</td>
-                                                    <td class="py-2 pr-2 text-zinc-500">{{ $u->pivot->role_in_unit ?? '—' }}</td>
+                                                    <td class="py-2 pr-2 text-zinc-500">
+                                                        @if ($membreFonctionEditionId === $u->id)
+                                                            <form wire:submit="enregistrerFonction" class="flex items-center gap-1">
+                                                                <flux:input wire:model="fonctionEdition" size="sm" placeholder="{{ __('ex. Collaborateur') }}" class="max-w-xs" autofocus />
+                                                                <flux:button size="sm" type="submit" variant="primary" icon="check" square :aria-label="__('Enregistrer')" />
+                                                                <flux:button size="sm" variant="ghost" icon="x-mark" square wire:click="annulerFonction" :aria-label="__('Annuler')" />
+                                                            </form>
+                                                            @error('fonctionEdition') <flux:text class="mt-1 text-xs text-brand-danger">{{ $message }}</flux:text> @enderror
+                                                        @else
+                                                            {{ $u->pivot->role_in_unit ?? '—' }}
+                                                        @endif
+                                                    </td>
                                                     <td class="py-2 pr-2">
                                                         <span class="inline-flex items-center gap-1.5 text-xs font-medium {{ $u->actif ? 'text-brand-success' : 'text-zinc-500' }}">
                                                             <span class="size-2 rounded-full {{ $u->actif ? 'bg-brand-success' : 'bg-zinc-400' }}"></span>
@@ -167,11 +178,12 @@
                                                         <flux:dropdown position="bottom" align="end">
                                                             <flux:button size="sm" variant="ghost" icon="ellipsis-horizontal" square :aria-label="__('Actions')" />
                                                             <flux:menu>
-                                                                <flux:menu.item icon="user" :href="route('admin.utilisateurs')" wire:navigate>{{ __('Gérer cet utilisateur') }}</flux:menu.item>
+                                                                <flux:menu.item icon="user" :href="route('admin.utilisateurs', ['modifier' => $u->id])" wire:navigate>{{ __('Gérer cet utilisateur') }}</flux:menu.item>
                                                                 @can('update', $unite)
                                                                     <flux:menu.item icon="star" wire:click="definirCommeResponsable({{ $u->id }})">{{ __('Définir comme responsable') }}</flux:menu.item>
                                                                 @endcan
                                                                 @can('manageUsers', $unite)
+                                                                    <flux:menu.item icon="pencil-square" wire:click="modifierFonction({{ $u->id }})">{{ __('Modifier la fonction') }}</flux:menu.item>
                                                                     <flux:menu.separator />
                                                                     <flux:menu.item icon="x-mark" variant="danger" wire:click="retirerUtilisateur({{ $u->id }})" wire:confirm="{{ __('Retirer cet utilisateur de l\'unité ?') }}">{{ __('Retirer de l\'unité') }}</flux:menu.item>
                                                                 @endcan

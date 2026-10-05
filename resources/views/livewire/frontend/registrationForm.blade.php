@@ -175,18 +175,29 @@
 
                 {{-- Dossier surveillé (voir DECISIONS.md) : UI minimale, seule
                      une ligne discrète si la surveillance tourne déjà —
-                     inchangé, décision confirmée avec l'utilisateur. --}}
+                     inchangé, décision confirmée avec l'utilisateur. Mode
+                     'execution' (2026-09-24) : la configuration se fait dans
+                     Administration › Dossier surveillé. Pas de x-init="init()" :
+                     Alpine appelle déjà init() d'un Alpine.data(), ce second
+                     appel démarrait deux boucles de sondage. --}}
                 <div
                     x-data="surveillanceDossier()"
-                    x-init="init()"
                     x-effect="window.dispatchEvent(new CustomEvent('scan-watcher-etat', { detail: { etat } }))"
+                    data-mode="execution"
                     data-msg-droits-perdus="{{ __('Import automatique interrompu — contactez l\'administrateur.') }}"
+                    data-msg-acces-refuse="{{ __('Accès au dossier refusé.') }}"
                     data-msg-erreur-temporaire="{{ __('Échec temporaire — nouvel essai au prochain cycle.') }}"
                 >
                     <input type="file" wire:model="document" id="scan-watcher-entree-cachee" class="hidden" tabindex="-1" aria-hidden="true">
 
                     <template x-if="etat === 'en_surveillance'">
                         <span class="inline-flex items-center rounded-full bg-brand-success-light px-2 py-0.5 text-xs font-medium text-brand-success-dark">{{ __('Import automatique actif') }}</span>
+                    </template>
+
+                    {{-- Chrome redemande parfois l'accès au dossier (après un
+                         redémarrage) : un clic suffit, sans reconfigurer. --}}
+                    <template x-if="etat === 'a_reprendre'">
+                        <flux:button size="xs" variant="outline" icon="folder-open" x-on:click="reprendre()">{{ __('Autoriser l\'import automatique') }}</flux:button>
                     </template>
 
                     <template x-if="etat === 'en_pause_erreur'">
@@ -537,6 +548,7 @@
                 </div>
 
                 @if ($this->brouillon?->fichier_path)
+                    @php $telechargerUrlBrouillon = auth()->user()->can('telecharger', $this->brouillon) ? route('brouillons.telecharger', $this->brouillon) : null; @endphp
                     @if ($estImageApercu)
                         {{-- Barre d'outils réduite au téléchargement pour une
                              image : le zoom/la recherche n'ont de sens que
@@ -607,9 +619,6 @@
                                 erreur: null,
                                 zoom: 100,
                                 url: @js(route('brouillons.apercu', $this->brouillon)),
-                                rechercheOuverte: false,
-                                requeteRecherche: '',
-                                nbResultats: 0,
                                 pageActuelle: 1,
                                 numPages: 1,
                                 // obtenir(), pas creer() : cette instance vit
@@ -628,14 +637,28 @@
                                 // le rendu réussissait bien, juste invisible.
                                 instance() {
                                     const apercu = window.DocumentPreview.obtenir(this.url + ':panneau');
-                                    apercu.boite = this.$refs.corps;
-                                    apercu.conteneur = this.$refs.conteneurPdf;
+                                    apercu.boite = document.getElementById('apercu-document-corps');
+                                    apercu.conteneur = document.getElementById('apercu-document-conteneur');
 
                                     return apercu;
                                 },
                                 async init() {
                                     try {
                                         const apercu = this.instance();
+                                        // Cliquer-glisser (2026-09-24) — plutôt
+                                        // que de devoir viser la barre de
+                                        // défilement une fois zoomé au-delà
+                                        // de 100 %.
+                                        window.DocumentPreview.activerDeplacement(apercu.boite);
+                                        // Molette pour zoomer (2026-09-24, retour utilisateur :
+                                        // « why can[t] i zoom without the + sign ») — Ctrl/Cmd +
+                                        // molette, même bornes que zoomIn()/zoomOut() ci-dessous.
+                                        // ATTENTION — jamais de guillemet droit dans un commentaire
+                                        // à l'intérieur d'un attribut x-data (délimité par des
+                                        // guillemets droits) : ça referme l'attribut HTML en plein
+                                        // milieu (voir memory livewire_flux_gotchas — guillemets
+                                        // français «» seulement).
+                                        window.DocumentPreview.activerZoomMolette(apercu.boite, (pas) => this.zoomer(Math.min(Math.max(this.zoom + pas, 50), 200)));
                                         await apercu.charger(this.url, apercu.boite, apercu.conteneur);
                                         this.zoom = Math.round((apercu.echelle / apercu.echelleBase) * 100);
                                         this.pageActuelle = apercu.pageActuelle;
@@ -654,8 +677,6 @@
                                         console.error('[aperçu document] zoom', e);
                                         this.erreur = e.message ?? String(e);
                                     }
-
-                                    if (this.requeteRecherche) { this.rechercher(); }
                                 },
                                 zoomIn() { this.zoomer(Math.min(this.zoom + 25, 200)); },
                                 zoomOut() { this.zoomer(Math.max(this.zoom - 25, 50)); },
@@ -679,67 +700,16 @@
                                         this.erreur = e.message ?? String(e);
                                     }
                                 },
-                                basculerRecherche() {
-                                    this.rechercheOuverte = ! this.rechercheOuverte;
-
-                                    if (! this.rechercheOuverte) {
-                                        this.requeteRecherche = '';
-                                        this.rechercher();
-                                    }
-                                },
-                                rechercher() {
-                                    const apercu = this.instance();
-                                    this.nbResultats = apercu.rechercher(this.requeteRecherche);
-
-                                    if (this.nbResultats > 0) { apercu.allerAuPremierResultat(); }
-                                },
                             }"
                             x-init="init()"
                         >
-                            <div class="mb-2 flex items-center justify-between">
-                                <flux:button size="sm" variant="ghost" icon="magnifying-glass" x-on:click="basculerRecherche()" :aria-label="__('Rechercher dans le document')" />
-                                <div class="flex items-center gap-1">
-                                    <flux:button size="sm" variant="ghost" icon="minus" x-on:click="zoomOut()" :aria-label="__('Zoom -')" />
-                                    <span class="w-10 text-center text-xs text-zinc-500" x-text="zoom + '%'"></span>
-                                    <flux:button size="sm" variant="ghost" icon="plus" x-on:click="zoomIn()" :aria-label="__('Zoom +')" />
-                                    <flux:button size="sm" variant="ghost" icon="arrows-pointing-out" x-on:click="$dispatch('modal-show', { name: 'apercu-agrandi' })" :aria-label="__('Agrandir')" />
-                                    @can('telecharger', $this->brouillon) <flux:button size="sm" variant="ghost" icon="arrow-down-tray" :href="route('brouillons.telecharger', $this->brouillon)" :aria-label="__('Télécharger')" /> @endcan
-                                </div>
-                            </div>
-
-                            <div x-show="rechercheOuverte" x-cloak class="mb-2 flex items-center gap-2">
-                                <flux:input size="sm" x-model="requeteRecherche" x-on:input.debounce.300ms="rechercher()" placeholder="{{ __('Rechercher…') }}" />
-                                <flux:text class="shrink-0 text-xs text-zinc-500" x-show="requeteRecherche">
-                                    <span x-text="nbResultats"></span> {{ __('résultat(s)') }}
-                                </flux:text>
-                            </div>
-
-                            {{-- Navigation par page, pas de défilement à
-                                 travers plusieurs pages empilées — demande
-                                 explicite de l'utilisateur. Visible
-                                 seulement si le document en a plus d'une. --}}
-                            <div x-show="numPages > 1" x-cloak class="mb-2 flex items-center justify-center gap-3">
-                                <flux:button size="xs" variant="ghost" icon="chevron-left" x-on:click="pagePrecedente()" x-bind:disabled="pageActuelle <= 1" :aria-label="__('Page précédente')" />
-                                <flux:text class="text-xs text-zinc-500">
-                                    <span x-text="pageActuelle"></span> / <span x-text="numPages"></span>
-                                </flux:text>
-                                <flux:button size="xs" variant="ghost" icon="chevron-right" x-on:click="pageSuivante()" x-bind:disabled="pageActuelle >= numPages" :aria-label="__('Page suivante')" />
-                            </div>
-
-                            {{-- overflow conditionné au niveau de zoom : à
-                                 100 % ou moins, la page tient par
-                                 construction dans cette boîte — hidden,
-                                 aucune barre de défilement visible. Au-delà
-                                 de 100 %, le contenu dépasse forcément la
-                                 largeur fixe de cette colonne — auto, pour
-                                 que l'excédent soit atteignable en
-                                 défilant plutôt qu'invisible (recadré),
-                                 ce qui donnait l'impression que les
-                                 boutons de zoom ne faisaient rien. --}}
-                            <div x-ref="corps" class="flex h-74 w-full items-center justify-center rounded-lg border border-brand-border bg-white dark:border-zinc-700" x-bind:class="zoom > 100 ? 'overflow-auto' : 'overflow-hidden'">
-                                <p x-show="erreur" x-text="erreur" class="p-2 text-sm text-brand-danger"></p>
-                                <div x-ref="conteneurPdf"></div>
-                            </div>
+                            <x-apercu.barre-outils
+                                variant="panneau"
+                                :nom-fichier="$this->brouillon->nom_original"
+                                agrandir-evenement="apercu-agrandi"
+                                :telecharger-url="$telechargerUrlBrouillon"
+                            />
+                            <x-apercu.visionneuse id="apercu-document" hauteur="h-74" />
                         </div>
 
                         {{-- Modale "Agrandir" — instance pdf.js séparée de
@@ -764,21 +734,27 @@
                                 erreur: null,
                                 zoom: 100,
                                 url: @js(route('brouillons.apercu', $this->brouillon)),
-                                rechercheOuverte: false,
-                                requeteRecherche: '',
-                                nbResultats: 0,
                                 pageActuelle: 1,
                                 numPages: 1,
                                 instance() {
                                     const apercu = window.DocumentPreview.obtenir(this.url + ':agrandi');
                                     apercu.boite = document.getElementById('apercu-agrandi-corps');
                                     apercu.conteneur = document.getElementById('apercu-agrandi-conteneur');
-
                                     return apercu;
                                 },
                                 async rendre() {
                                     try {
                                         const apercu = this.instance();
+                                        window.DocumentPreview.activerDeplacement(apercu.boite);
+                                        // Molette pour zoomer (2026-09-24, retour utilisateur :
+                                        // « why can[t] i zoom without the + sign ») — Ctrl/Cmd +
+                                        // molette, même bornes que zoomIn()/zoomOut() ci-dessous.
+                                        // ATTENTION — jamais de guillemet droit dans un commentaire
+                                        // à l'intérieur d'un attribut x-data (délimité par des
+                                        // guillemets droits) : ça referme l'attribut HTML en plein
+                                        // milieu (voir memory livewire_flux_gotchas — guillemets
+                                        // français «» seulement).
+                                        window.DocumentPreview.activerZoomMolette(apercu.boite, (pas) => this.zoomer(Math.min(Math.max(this.zoom + pas, 50), 200)));
                                         await apercu.charger(this.url, apercu.boite, apercu.conteneur, true, true);
                                         this.zoom = Math.round((apercu.echelle / apercu.echelleBase) * 100);
                                         this.pageActuelle = apercu.pageActuelle;
@@ -797,8 +773,6 @@
                                         console.error('[aperçu agrandi] zoom', e);
                                         this.erreur = e.message ?? String(e);
                                     }
-
-                                    if (this.requeteRecherche) { this.rechercher(); }
                                 },
                                 zoomIn() { this.zoomer(Math.min(this.zoom + 25, 200)); },
                                 zoomOut() { this.zoomer(Math.max(this.zoom - 25, 50)); },
@@ -822,57 +796,50 @@
                                         this.erreur = e.message ?? String(e);
                                     }
                                 },
-                                basculerRecherche() {
-                                    this.rechercheOuverte = ! this.rechercheOuverte;
-
-                                    if (! this.rechercheOuverte) {
-                                        this.requeteRecherche = '';
-                                        this.rechercher();
-                                    }
-                                },
-                                rechercher() {
-                                    const apercu = this.instance();
-                                    this.nbResultats = apercu.rechercher(this.requeteRecherche);
-
-                                    if (this.nbResultats > 0) { apercu.allerAuPremierResultat(); }
-                                },
                             }"
                             x-on:modal-show.document="if ($event.detail.name === 'apercu-agrandi') { rendre(); }"
                         >
-                            <flux:modal name="apercu-agrandi" variant="bare" class="w-full max-w-2xl!">
-                                <div class="overflow-hidden rounded-xl bg-white shadow-lg">
-                                    <div class="flex items-center justify-between border-b border-brand-border px-4 py-3">
-                                        <flux:heading level="2">{{ __('Aperçu du courrier') }}</flux:heading>
-                                        <div class="flex items-center gap-1">
-                                            <flux:button size="sm" variant="ghost" icon="magnifying-glass" x-on:click="basculerRecherche()" :aria-label="__('Rechercher dans le document')" />
-                                            <flux:button size="sm" variant="ghost" icon="minus" x-on:click="zoomOut()" :aria-label="__('Zoom -')" />
-                                            <span class="w-12 text-center text-sm text-zinc-500" x-text="zoom + '%'"></span>
-                                            <flux:button size="sm" variant="ghost" icon="plus" x-on:click="zoomIn()" :aria-label="__('Zoom +')" />
-                                            @can('telecharger', $this->brouillon) <flux:button size="sm" variant="ghost" icon="arrow-down-tray" :href="route('brouillons.telecharger', $this->brouillon)" :aria-label="__('Télécharger')" /> @endcan
-                                            <flux:modal.close>
-                                                <flux:button size="sm" variant="ghost" icon="x-mark" :aria-label="__('Fermer')" />
-                                            </flux:modal.close>
+                            {{-- 2026-09-24 — même correctif que la modale
+                                 "Agrandir" de la fiche courrier (voir son
+                                 commentaire, ShowCourrier) : hauteur imposée
+                                 sur <flux:modal> lui-même (variant="bare" ne
+                                 garantit aucune hauteur propre), corps en
+                                 flex-1 min-h-0 pour occuper tout l'espace
+                                 restant — sans ça la modale se réduisait à
+                                 son en-tête et pdf.js rendait le document
+                                 minuscule, mesuré dans une boîte quasi nulle. --}}
+                            {{-- 2026-09-24 — SANS "display: flex" forcé (`flex!`) ICI :
+                                 ça écrasait la règle par défaut du navigateur qui cache un
+                                 popover fermé (`display: none`), laissant la modale réserver
+                                 ses 88vh de hauteur EN PERMANENCE dans le flux de la page,
+                                 même fermée. La mise en page en colonne reste sur le DIV
+                                 intérieur juste en dessous. --}}
+                            <flux:modal name="apercu-agrandi" variant="bare" class="h-[88vh]! max-h-[88vh]! w-full! max-w-7xl! overflow-hidden! rounded-xl! bg-white! p-0! shadow-lg!">
+                                <div class="flex h-full min-h-0 flex-col">
+                                    <x-apercu.barre-outils
+                                        variant="modale"
+                                        :nom-fichier="$this->brouillon->nom_original"
+                                        :telecharger-url="$telechargerUrlBrouillon"
+                                        fermer-modale="apercu-agrandi"
+                                    />
+
+                                    <div class="flex min-h-0 flex-1 flex-col min-[900px]:flex-row">
+                                        <x-apercu.visionneuse id="apercu-agrandi" grandir />
+                                        <div class="h-64 shrink-0 min-[900px]:h-auto min-[900px]:w-90">
+                                            <x-apercu.panneau-correspondance
+                                                :objet="$form->objet"
+                                                :expediteur-nom="$form->expediteur_nom"
+                                                :expediteur-organisation="$form->expediteur_organisation"
+                                                :expediteur-adresse="$form->expediteur_adresse"
+                                                :expediteur-telephone="$form->expediteur_telephone"
+                                                :expediteur-email="$form->expediteur_email"
+                                                :destinataire="$form->destinataire"
+                                                :date="$form->date_mouvement"
+                                                :nom-fichier="$this->brouillon->nom_original"
+                                                :taille-fichier="$this->brouillon->taille"
+                                                :telecharger-url="$telechargerUrlBrouillon"
+                                            />
                                         </div>
-                                    </div>
-
-                                    <div x-show="numPages > 1" x-cloak class="flex items-center justify-center gap-3 border-b border-brand-border px-4 py-2">
-                                        <flux:button size="xs" variant="ghost" icon="chevron-left" x-on:click="pagePrecedente()" x-bind:disabled="pageActuelle <= 1" :aria-label="__('Page précédente')" />
-                                        <flux:text class="text-sm text-zinc-500">
-                                            {{ __('Page') }} <span x-text="pageActuelle"></span> / <span x-text="numPages"></span>
-                                        </flux:text>
-                                        <flux:button size="xs" variant="ghost" icon="chevron-right" x-on:click="pageSuivante()" x-bind:disabled="pageActuelle >= numPages" :aria-label="__('Page suivante')" />
-                                    </div>
-
-                                    <div x-show="rechercheOuverte" x-cloak class="flex items-center gap-3 border-b border-brand-border px-4 py-2">
-                                        <flux:input size="sm" x-model="requeteRecherche" x-on:input.debounce.300ms="rechercher()" placeholder="{{ __('Rechercher dans ce document…') }}" class="max-w-xs" />
-                                        <flux:text class="text-xs text-zinc-500" x-show="requeteRecherche">
-                                            <span x-text="nbResultats"></span> {{ __('résultat(s)') }}
-                                        </flux:text>
-                                    </div>
-
-                                    <div id="apercu-agrandi-corps" class="flex h-[70vh] w-full items-center justify-center bg-white p-4" x-bind:class="zoom > 100 ? 'overflow-auto' : 'overflow-hidden'">
-                                        <p x-show="erreur" x-text="erreur" class="text-sm text-brand-danger"></p>
-                                        <div id="apercu-agrandi-conteneur"></div>
                                     </div>
                                 </div>
                             </flux:modal>

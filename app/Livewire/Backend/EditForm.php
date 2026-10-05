@@ -141,11 +141,23 @@ class EditForm extends Component
 
     // Règle n°2 — jamais un modèle Eloquent en propriété publique : rechargé
     // à chaque requête pour le panneau "Aperçu du courrier" (même motif que
-    // ShowCourrier::courrier()).
+    // ShowCourrier::courrier()). PENTEST (2026-09-24) — $courrierId est une
+    // propriété publique SANS #[Locked] : Livewire accepte de la modifier
+    // directement depuis une requête cliente forgée, même sans wire:model
+    // dans le DOM (mount() n'autorise qu'UNE FOIS, au chargement initial).
+    // Revérifier 'view' ICI, comme ShowCourrier::courrier() le fait déjà,
+    // est donc INDISPENSABLE — sans quoi ce panneau (expéditeur, statut,
+    // confidentialité, pièces jointes) pouvait fuiter le détail d'un
+    // courrier hors du périmètre de l'utilisateur après un simple
+    // changement d'id côté client.
     #[Computed]
     public function courrier(): Courrier
     {
-        return Courrier::query()->with(['piecesJointes'])->findOrFail($this->courrierId);
+        $courrier = Courrier::query()->with(['piecesJointes'])->findOrFail($this->courrierId);
+
+        $this->authorize('view', $courrier);
+
+        return $courrier;
     }
 
     public function enregistrerModification(PieceJointeService $pieceJointeService): void

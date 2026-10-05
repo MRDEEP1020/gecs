@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 
 class Courrier extends Model
@@ -26,6 +27,7 @@ class Courrier extends Model
     // continuer à l'expliciter dans chaque helper de test.
     protected $attributes = [
         'confidentialite' => 1,
+        'confidentiel_direct' => false,
     ];
 
     // Module 5 (2026-09-23, voir DECISIONS.md "SLA et alertes") — date
@@ -52,18 +54,37 @@ class Courrier extends Model
         // et Eloquent ne sauvegarderait alors pas ce "changement".
         static::saved(function (Courrier $courrier) {
             if ($courrier->wasChanged('date_limite')) {
-                static::query()->whereKey($courrier->getKey())->update(['alerte_risque_le' => null, 'alerte_retard_le' => null]);
-                $courrier->setRawAttributes(array_merge($courrier->getAttributes(), ['alerte_risque_le' => null, 'alerte_retard_le' => null]), true);
+                $reinitialisation = ['alerte_risque_le' => null, 'alerte_retard_le' => null, 'alerte_escalade_le' => null];
+                static::query()->whereKey($courrier->getKey())->update($reinitialisation);
+                $courrier->setRawAttributes(array_merge($courrier->getAttributes(), $reinitialisation), true);
             }
         });
     }
 
-    // Module 5/7 — courrier encore actif dont la date limite est dépassée.
+    // Module 5/7 — courrier encore actif dont l'échéance est dépassée.
+    // 2026-09-24 (audit du tableau de bord, décision "fixed all as you see
+    // fit" — voir DECISIONS.md "En retard : cohérence avec le chronomètre")
+    // — reflète EXACTEMENT ce que chronoFin() affiche sur le badge
+    // chronomètre, au lieu d'une comparaison à la journée près qui pouvait
+    // contredire le badge du même courrier sur la même page :
+    // - un délai fixé par le responsable (chrono_fin_le) est comparé à la
+    //   MINUTE près, comme le chronomètre ;
+    // - sans délai fixé, comportement STRICTEMENT INCHANGÉ : `whereDate(...,
+    //   '<', today())` équivaut déjà à "la journée de date_limite est
+    //   entièrement passée", exactement ce que chronoFin() calcule
+    //   (date_limite->endOfDay()) pour ce cas — aucun effet sur les
+    //   courriers qui n'utilisent pas le chronomètre.
+    // Répercussion assumée : SendMailAlertJob (Module 7), qui réutilise ce
+    // scope, peut désormais alerter dans l'heure suivant un délai fixé par
+    // le responsable, plutôt qu'au plus tôt le lendemain — cohérent avec le
+    // fait que ce délai a été choisi à l'heure près précisément pour ça.
     public function scopeEnRetard(Builder $query): Builder
     {
         return $query
             ->whereIn('statut', WorkflowService::statutsActifs())
-            ->whereDate('date_limite', '<', today());
+            ->where(fn ($q) => $q
+                ->where(fn ($q) => $q->whereNotNull('chrono_fin_le')->where('chrono_fin_le', '<', now()))
+                ->orWhere(fn ($q) => $q->whereNull('chrono_fin_le')->whereDate('date_limite', '<', today())));
     }
 
     // "confidentialite" est un ENTIER (1 à 5) depuis le 2026-09-21 —
@@ -81,8 +102,12 @@ class Courrier extends Model
         'date_mouvement',
         'echeance',
         'date_limite',
+        'chrono_debut_le',
+        'chrono_fin_le',
+        'chrono_arrete_le',
         'alerte_risque_le',
         'alerte_retard_le',
+        'alerte_escalade_le',
         'sla_jours',
         'expediteur_nom',
         'expediteur_fonction',
@@ -107,6 +132,7 @@ class Courrier extends Model
         'statut',
         'priorite',
         'confidentialite',
+        'confidentiel_direct',
         'fichier_path',
         'texte_ocr',
         'ocr_statut',
@@ -127,9 +153,14 @@ class Courrier extends Model
             'date_mouvement' => 'date',
             'echeance' => 'date',
             'date_limite' => 'date',
+            'chrono_debut_le' => 'datetime',
+            'chrono_fin_le' => 'datetime',
+            'chrono_arrete_le' => 'datetime',
             'alerte_risque_le' => 'datetime',
             'alerte_retard_le' => 'datetime',
+            'alerte_escalade_le' => 'datetime',
             'confidentialite' => 'integer',
+            'confidentiel_direct' => 'boolean',
             'ocr_traite_le' => 'datetime',
             'classement_propose_le' => 'datetime',
             'classement_analyse_le' => 'datetime',
@@ -194,10 +225,13 @@ class Courrier extends Model
             ->orderBy('libelle');
     }
 
-    // Module 5 — historique append-only, jamais reconstitué depuis updated_at
+    // Module 5 — historique append-only, jamais reconstitué depuis updated_at.
+    // Départage par id (2026-09-24, simulation du parcours réel) : création,
+    // numérisation et proposition de classement sont écrites dans la même
+    // seconde — sans ce second critère, leur ordre d'affichage était aléatoire.
     public function historiques(): HasMany
     {
-        return $this->hasMany(CourrierHistorique::class)->latest('created_at');
+        return $this->hasMany(CourrierHistorique::class)->latest('created_at')->latest('id');
     }
 
     // Module 6 — journal append-only des (ré)affectations, la plus récente en tête.
@@ -219,6 +253,22 @@ class Courrier extends Model
     public function piecesJointes(): HasMany
     {
         return $this->hasMany(PieceJointe::class)->latest('created_at');
+    }
+
+    // Module 9 — historique des emprunts de l'original physique (jamais
+    // supprimé, voir Decharge). La plus récente en tête, même patron que
+    // affectations() ci-dessus.
+    public function decharges(): HasMany
+    {
+        return $this->hasMany(Decharge::class)->latest('emprunte_le');
+    }
+
+    // Décharge en cours (pas encore rendue) — au plus une à la fois, un
+    // original physique ne peut pas être emprunté deux fois simultanément
+    // (voir WorkflowService::emettreDecharge()).
+    public function dechargeActive(): HasOne
+    {
+        return $this->hasOne(Decharge::class)->whereNull('rendu_le')->latestOfMany('emprunte_le');
     }
 
     // Module 2/3 — texte OCR utilisable pour le classement/les mots-clés
@@ -250,6 +300,46 @@ class Courrier extends Model
             ->where('action', 'creation')
             ->where('auteur_id', $user->id)
             ->exists();
+    }
+
+    // Module 3/9 (2026-09-24, voir DECISIONS.md "Dossier de classement : les
+    // acteurs du circuit gardent l'accès") — personnes directement impliquées
+    // dans CE courrier : son créateur, le collaborateur actuellement affecté,
+    // le responsable de son service, et le destinataire de son transfert. Le
+    // gate dossier (CourrierPolicy::accesDossierSuffisant(), scopeVisiblePar()
+    // ci-dessous) ne s'applique pas à elles — sans quoi un collaborateur qui
+    // range un courrier dans son dossier personnel le masquait à son propre
+    // responsable. Ne DONNE aucun accès : les privilèges de portée de
+    // CourrierPolicy::view() s'appliquent toujours ensuite.
+    public function impliqueUtilisateur(User $user): bool
+    {
+        return $this->destinataire_transfert_id === $user->id
+            || $this->service?->responsable_id === $user->id
+            || $this->affectationCourante?->user_id === $user->id
+            || $this->estCreeParUtilisateur($user);
+    }
+
+    // Module 5 — chronomètre de traitement (2026-09-24, voir DECISIONS.md
+    // "Chronomètre de traitement") : délai fixé à la minute par le
+    // responsable s'il y en a un, sinon la date limite SLA (fin de journée)
+    // — tout courrier en circuit a donc un chronomètre, jamais inventé.
+    public function chronoDebut(): ?CarbonInterface
+    {
+        return $this->chrono_debut_le ?? $this->date_mouvement?->copy()->startOfDay();
+    }
+
+    public function chronoFin(): ?CarbonInterface
+    {
+        return $this->chrono_fin_le ?? $this->date_limite?->copy()->endOfDay();
+    }
+
+    // 2026-09-24 — la DGA a validé le service de CE courrier (trace
+    // immuable de l'historique, Règle n°5) : couvre aussi les courriers
+    // transférés avant l'introduction de destinataire_transfert_id.
+    public function estTransferePar(User $user): bool
+    {
+        return $this->destinataire_transfert_id === $user->id
+            || $this->historiques()->where('action', 'service_valide_dga')->where('auteur_id', $user->id)->exists();
     }
 
     // Module 1/4 — segment "service" utilisé pour construire un chemin de
@@ -332,12 +422,18 @@ class Courrier extends Model
     // courriers dans les listes, alors que la Policy lui refusait chacun
     // individuellement. Aucun privilège de consultation => aucun résultat.
     // Ce scope est aussi, depuis ce même jour, le seul utilisé par
-    // Dashboard, WorkflowQueue, CourriersEnregistres et MesCourriers.
-    public function scopeVisiblePar(Builder $query, User $user): Builder
+    // Dashboard, CourriersEnregistres et MesCourriers (WorkflowQueue, qui
+    // l'utilisait aussi, a été supprimée le 2026-09-24).
+    //
+    // $avecTransfertsTraites (2026-09-24) : false pour une liste "à traiter"
+    // (Dashboard::tachesDuJour()) — les courriers qu'une DGA a déjà
+    // transférés restent consultables partout ailleurs, mais ne sont plus
+    // "à traiter" pour elle.
+    public function scopeVisiblePar(Builder $query, User $user, bool $avecTransfertsTraites = true): Builder
     {
         return $query
             ->where('confidentialite', '<=', $user->niveauConfidentialiteEffectif())
-            ->unless($user->hasPrivilege('courriers.voir_tout'), fn ($q) => $q->where(function ($q) use ($user) {
+            ->unless($user->hasPrivilege('courriers.voir_tout'), fn ($q) => $q->where(function ($q) use ($user, $avecTransfertsTraites) {
                 $q->whereRaw('1 = 0');
 
                 if ($user->hasPrivilege('courriers.voir_service')) {
@@ -356,14 +452,34 @@ class Courrier extends Model
                     $q->orWhere(fn ($q) => $q->where('statut', 'en_cours_de_transfert')
                         ->where(fn ($q) => $q->whereNull('destinataire_transfert_id')->orWhere('destinataire_transfert_id', $user->id)));
                 }
+
+                // Pli confidentiel envoyé directement à cet utilisateur
+                // (2026-09-24) — miroir de la branche équivalente de
+                // CourrierPolicy::view().
+                if ($user->hasPrivilege('courriers.voir_confidentiel_recu')) {
+                    $q->orWhere(fn ($q) => $q->where('confidentiel_direct', true)->where('destinataire_transfert_id', $user->id));
+                }
+
+                // Courriers que CETTE DGA a transférés (2026-09-24) — miroir
+                // de la branche voir_transferes de CourrierPolicy::view().
+                if ($avecTransfertsTraites && $user->hasPrivilege('courriers.voir_transferes')) {
+                    $q->orWhere('destinataire_transfert_id', $user->id)
+                        ->orWhereHas('historiques', fn ($q) => $q->where('action', 'service_valide_dga')->where('auteur_id', $user->id));
+                }
             }))
             // Module 3/9 — "les trois se cumulent" (DECISIONS.md 2026-09-16) :
             // gerer_tout court-circuite (même logique que
             // CourrierPolicy::accesDossierSuffisant()) ; sinon un courrier
             // CLASSÉ n'est visible que via ownership/partage du dossier ; un
             // courrier non classé n'est jamais affecté par ce bloc.
+            // 2026-09-24 — sauf pour les acteurs du courrier lui-même, miroir
+            // de impliqueUtilisateur() ci-dessus.
             ->when(! $user->hasPrivilege('dossiers_classement.gerer_tout'), fn ($q) => $q->where(fn ($q) => $q
                 ->whereNull('dossier_classement_id')
+                ->orWhere('destinataire_transfert_id', $user->id)
+                ->orWhereHas('service', fn ($q) => $q->where('responsable_id', $user->id))
+                ->orWhereHas('affectationCourante', fn ($q) => $q->where('user_id', $user->id))
+                ->orWhereHas('historiques', fn ($q) => $q->where('action', 'creation')->where('auteur_id', $user->id))
                 ->orWhereHas('dossierClassement', fn ($q) => $q
                     ->where('cree_par_id', $user->id)
                     ->orWhere('responsable_id', $user->id)

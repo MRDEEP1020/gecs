@@ -6,6 +6,7 @@ use App\Events\CourrierStatutChange;
 use App\Models\Affectation;
 use App\Models\Courrier;
 use App\Models\CourrierHistorique;
+use App\Models\Decharge;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -259,25 +260,37 @@ class WorkflowService
     {
         try {
             if (! Storage::disk('s3')->exists($ancien)) {
-                // Rien à déplacer (courrier pas encore scanné, ou déjà déplacé
-                // par une requête concurrente) — pas une erreur.
-                return false;
+                // Rien à l'ancien chemin : pas encore scanné, OU déjà déplacé
+                // (requête concurrente, tentative précédente dont la mise à
+                // jour de fichier_path n'a pas abouti). Dans ce second cas le
+                // fichier est déjà à destination : on se recale dessus plutôt
+                // que de laisser fichier_path pointer dans le vide — constaté
+                // le 2026-09-24 (GEC-2026-000003 : fichier dans DIS/, chemin
+                // resté sous _en_attente/, aperçu en erreur 500).
+                return Storage::disk('s3')->exists($nouveau);
             }
 
             Storage::disk('s3')->move($ancien, $nouveau);
-
-            // Règle n°4 (complétée) — même geste que RegistrationForm::finaliserBrouillon()
-            // pour la copie de secours : jamais bloquant si absente/non configurée.
-            if (filled(config('filesystems.disks.s3_backup.bucket')) && Storage::disk('s3_backup')->exists($ancien)) {
-                Storage::disk('s3_backup')->move($ancien, $nouveau);
-            }
-
-            return true;
         } catch (Throwable $e) {
             report($e);
 
             return false;
         }
+
+        // Règle n°4 (complétée) — même geste que RegistrationForm::finaliserBrouillon()
+        // pour la copie de secours : jamais bloquant si absente/non configurée.
+        // Séparé du déplacement principal (2026-09-24) : un échec ICI faisait
+        // renvoyer false alors que le fichier principal AVAIT été déplacé —
+        // fichier_path restait alors sur l'ancien chemin, désormais vide.
+        try {
+            if (filled(config('filesystems.disks.s3_backup.bucket')) && Storage::disk('s3_backup')->exists($ancien)) {
+                Storage::disk('s3_backup')->move($ancien, $nouveau);
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
+
+        return true;
     }
 
     // Module 6 — "réaffectation possible à tout moment, avec motif obligatoire".
@@ -350,12 +363,83 @@ class WorkflowService
         $this->transitionnerSimple($courrier, 'rejete', $auteur, 'rejet', $motif);
     }
 
+    // Module 5 (2026-09-24, voir DECISIONS.md "Chronomètre de traitement") —
+    // le responsable fixe le délai de traitement : le chronomètre part (ou
+    // repart) MAINTENANT pour $minutes. La date limite SLA (date_limite, via
+    // echeance) suit la fin du chronomètre, pour que listes, alertes et
+    // tableau de bord restent cohérents. Tracé dans l'historique (Règle n°5),
+    // motif conservé en cas de modification.
+    public function fixerDelai(Courrier $courrier, int $minutes, User $auteur, ?string $motif = null): void
+    {
+        if (! in_array($courrier->statut, self::statutsActifs(), true)) {
+            throw new RuntimeException("Délai non modifiable depuis le statut « {$courrier->statut} ».");
+        }
+
+        $modification = $courrier->chrono_fin_le !== null;
+        $fin = now()->addMinutes($minutes);
+
+        DB::transaction(function () use ($courrier, $fin, $auteur, $motif, $modification, $minutes) {
+            $courrier->update([
+                'chrono_debut_le' => $courrier->chrono_debut_le ?? now(),
+                'chrono_fin_le' => $fin,
+                'echeance' => $fin->toDateString(),
+            ]);
+
+            CourrierHistorique::create([
+                'courrier_id' => $courrier->id,
+                'auteur_id' => $auteur->id,
+                'action' => $modification ? 'delai_modifie' : 'delai_fixe',
+                'commentaire' => trim(self::libelleDuree($minutes).' — échéance le '.$fin->format('d/m/Y H:i').($motif ? " — motif : {$motif}" : '')),
+            ]);
+        });
+    }
+
+    public static function libelleDuree(int $minutes): string
+    {
+        return $minutes % (24 * 60) === 0
+            ? trans_choice(':n jour|:n jours', intdiv($minutes, 24 * 60), ['n' => intdiv($minutes, 24 * 60)])
+            : trans_choice(':n heure|:n heures', intdiv($minutes, 60), ['n' => intdiv($minutes, 60)]);
+    }
+
+    // Module 1/9 (2026-09-24, voir DECISIONS.md "Courrier confidentiel : accès
+    // et clôture par le destinataire") — le destinataire d'un pli
+    // confidentiel le marque comme remis : 'enregistre' → 'traite', puis
+    // archivage automatique comme tout courrier traité. Volontairement HORS
+    // de TRANSITIONS : y ajouter 'enregistre' → 'traite' permettrait à
+    // valider() de sauter tout le circuit d'un courrier normal ("un courrier
+    // ne peut pas sauter une étape obligatoire") — vérifié ici, pour ce seul
+    // type de courrier.
+    public function cloturerConfidentiel(Courrier $courrier, User $auteur): void
+    {
+        if (! $courrier->confidentiel_direct || $courrier->statut !== 'enregistre') {
+            throw new RuntimeException("Clôture impossible : courrier non confidentiel ou statut « {$courrier->statut} ».");
+        }
+
+        DB::transaction(function () use ($courrier, $auteur) {
+            $courrier->update(['statut' => 'traite', 'chrono_arrete_le' => now()]);
+
+            CourrierHistorique::create([
+                'courrier_id' => $courrier->id,
+                'auteur_id' => $auteur->id,
+                'action' => 'confidentiel_remis',
+                'commentaire' => 'Pli confidentiel marqué comme remis par son destinataire.',
+            ]);
+        });
+
+        $this->diffuserChangementStatut($courrier->id, 'traite');
+    }
+
     private function transitionnerSimple(Courrier $courrier, string $statutSuivant, User $auteur, string $action, ?string $commentaire = null): void
     {
         $this->verifierTransition($courrier, $statutSuivant);
 
         DB::transaction(function () use ($courrier, $statutSuivant, $auteur, $action, $commentaire) {
-            $courrier->update(['statut' => $statutSuivant]);
+            // Chronomètre figé à la clôture (2026-09-24) : le temps réellement
+            // passé reste affiché ensuite, même une fois le courrier archivé.
+            $courrier->update(array_merge(
+                ['statut' => $statutSuivant],
+                in_array($statutSuivant, ['traite', 'rejete'], true) ? ['chrono_arrete_le' => now()] : [],
+            ));
 
             CourrierHistorique::create([
                 'courrier_id' => $courrier->id,
@@ -405,6 +489,70 @@ class WorkflowService
         });
 
         $this->diffuserChangementStatut($courrier->id, 'archive');
+    }
+
+    // Module 9 — "Décharge" (specifications-modules-GEC.md point 5) : émise
+    // quand quelqu'un emprunte l'original physique d'un courrier archivé.
+    // Ne change PAS le statut du courrier (reste "archive" tout du long) —
+    // ce n'est pas une transition de circuit, juste un reçu de garde
+    // physique superposé. Un seul emprunt actif à la fois par courrier
+    // (verrou applicatif ici, en plus de dechargeActive() côté lecture) :
+    // on ne peut pas prêter le même original à deux personnes en même temps.
+    // Requête fraîche (jamais $courrier->dechargeActive, la relation EN
+    // MÉMOIRE peut avoir été chargée/mise en cache à "null" par un appelant
+    // AVANT la création de cette décharge — constaté en test, deux appels
+    // successifs sur la même instance $courrier réutilisaient le cache).
+    public function emettreDecharge(Courrier $courrier, User $emprunteur, User $emisPar, ?string $motif = null): Decharge
+    {
+        if ($courrier->statut !== 'archive') {
+            throw new RuntimeException("Décharge impossible : le courrier n'est pas archivé (statut « {$courrier->statut} »).");
+        }
+
+        if (Decharge::where('courrier_id', $courrier->id)->whereNull('rendu_le')->exists()) {
+            throw new RuntimeException('Décharge impossible : l\'original est déjà emprunté et non rendu.');
+        }
+
+        return DB::transaction(function () use ($courrier, $emprunteur, $emisPar, $motif) {
+            $decharge = Decharge::create([
+                'courrier_id' => $courrier->id,
+                'emprunteur_id' => $emprunteur->id,
+                'emis_par_id' => $emisPar->id,
+                'lieu_rangement' => $courrier->dossierClassement?->reference_localisation_physique,
+                'motif' => $motif,
+                'emprunte_le' => now(),
+            ]);
+
+            // Règle métier Module 9 : "Toute décharge émise doit être
+            // tracée dans l'historique du courrier concerné". `created()`
+            // (voir Decharge::booted()) a déjà rempli numero_reference sur
+            // CETTE instance au moment où Decharge::create() revient ici.
+            CourrierHistorique::create([
+                'courrier_id' => $courrier->id,
+                'auteur_id' => $emisPar->id,
+                'action' => 'decharge_emise',
+                'commentaire' => "Décharge {$decharge->numero_reference} émise — original emprunté par {$emprunteur->name}.",
+            ]);
+
+            return $decharge;
+        });
+    }
+
+    public function marquerDechargeRendue(Decharge $decharge, User $auteur): void
+    {
+        if ($decharge->estRendue()) {
+            throw new RuntimeException('Cette décharge est déjà marquée comme rendue.');
+        }
+
+        DB::transaction(function () use ($decharge, $auteur) {
+            $decharge->update(['rendu_le' => now()]);
+
+            CourrierHistorique::create([
+                'courrier_id' => $decharge->courrier_id,
+                'auteur_id' => $auteur->id,
+                'action' => 'decharge_rendue',
+                'commentaire' => "Décharge {$decharge->numero_reference} — original rendu.",
+            ]);
+        });
     }
 
     private function diffuserChangementStatut(int $courrierId, string $statut): void

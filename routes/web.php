@@ -8,12 +8,15 @@ use App\Http\Controllers\CourrierDocumentApercuController;
 use App\Http\Controllers\CourrierDocumentDownloadController;
 use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\PieceJointeDownloadController;
+use App\Livewire\Backend\CourrierCalendar;
 use App\Livewire\Backend\CourrierList;
 use App\Livewire\Backend\CourriersEnregistres;
 use App\Livewire\Backend\Dashboard;
 use App\Livewire\Backend\DossierClassementList;
+use App\Livewire\Backend\DossierSurveille;
 use App\Livewire\Backend\EditForm;
 use App\Livewire\Backend\MesCourriers;
+use App\Livewire\Backend\NotificationsIndex;
 use App\Livewire\Backend\OrganisationIndex;
 use App\Livewire\Backend\ParametreSysteme;
 use App\Livewire\Backend\ProfilList;
@@ -24,7 +27,6 @@ use App\Livewire\Backend\ScanForm;
 use App\Livewire\Backend\ScanPremier;
 use App\Livewire\Backend\ShowCourrier;
 use App\Livewire\Backend\UserList;
-use App\Livewire\Backend\WorkflowQueue;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -42,6 +44,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // rapides filtrées par privilège).
     Route::livewire('dashboard', Dashboard::class)->name('dashboard');
 
+    // Module 7 — centre de notifications in-app (2026-10-05) : page complète
+    // derrière la cloche de l'en-tête (resources/views/components live wire
+    // notification-bell), qui ne montre qu'un aperçu des 8 dernières.
+    Route::livewire('notifications', NotificationsIndex::class)->name('notifications.index');
+
     Route::livewire('courriers/nouveau', RegistrationForm::class)->name('courriers.nouveau');
     // Module 1/2 — aperçu du document scanné AVANT la création du Courrier
     // (panneau "Aperçu du document" du formulaire, voir DECISIONS.md
@@ -54,12 +61,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('courriers/confidentiel', RegistrationFormConfidentiel::class)->name('courriers.confidentiel');
     // Module 1/2 — flux "scan d'abord" (voir DECISIONS.md "Flux scan-first").
     Route::livewire('courriers/numeriser', ScanPremier::class)->name('courriers.numeriser-nouveau');
-    // Module 4 — file d'attente du circuit de validation.
-    Route::livewire('courriers/a-traiter', WorkflowQueue::class)->name('courriers.a-traiter');
+    // Module 4 — ancienne file d'attente "Transferts" (WorkflowQueue),
+    // supprimée le 2026-09-24 à la demande de l'utilisateur (doublon de
+    // "Tous les courriers") : l'adresse redirige vers la liste filtrée sur
+    // les courriers encore en circuit, pour ne casser aucun lien existant.
+    Route::redirect('courriers/a-traiter', '/courriers/rechercher?statut=actifs')->name('courriers.a-traiter');
     // Module 3/8 — recherche multi-critères ; DOIT rester avant
     // courriers/{courrierId} ci-dessous, sinon "rechercher" serait capturé
     // comme un ID de courrier par la route générique.
     Route::livewire('courriers/rechercher', CourrierList::class)->name('courriers.rechercher');
+    // Vue calendrier des échéances SLA (2026-10-05) — DOIT rester avant la
+    // route générique courriers/{courrierId}, même raison que ci-dessus.
+    Route::livewire('courriers/calendrier', CourrierCalendar::class)->name('courriers.calendrier');
     // Module 1/4 — page dédiée réceptionniste (2026-09-15, "new page for
     // receptionist") : ses courriers entrant, par sous-statut de transfert.
     // Même raison que ci-dessus : DOIT rester avant la route générique.
@@ -105,6 +118,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // "SLA & Alertes" (jusque-là "Bientôt disponible") par une vraie page ;
     // numéro de référence + SLA, éditables sans redéploiement.
     Route::livewire('admin/parametres', ParametreSysteme::class)->name('admin.parametres');
+    // Module 1/2 — configuration du dossier surveillé (2026-09-24, voir
+    // DECISIONS.md "Dossier surveillé : configuration dans l'administration").
+    Route::livewire('admin/dossier-surveille', DossierSurveille::class)->name('admin.dossier-surveille');
 });
 
 require __DIR__.'/settings.php';

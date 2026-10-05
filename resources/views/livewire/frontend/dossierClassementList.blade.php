@@ -97,7 +97,8 @@
                 <flux:subheading>{{ __('Tous les courriers contenus dans le dossier sélectionné.') }}</flux:subheading>
             </div>
 
-            <div class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <div x-data="squeletteMinimum()" class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                 <table class="w-full text-sm">
                     <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                         <tr>
@@ -109,14 +110,26 @@
                             <th class="py-3 pr-4">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                    {{-- Visibilité pilotée par l'état `visible` de
+                         squeletteMinimum() (x-data ci-dessus), durée
+                         minimale garantie — voir le commentaire équivalent
+                         dans courrierList.blade.php (2026-09-24). --}}
+                    <tbody x-show="visible" x-cloak class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                        <x-skeleton.table-rows :cols="6" />
+                    </tbody>
+                    <tbody x-show="!visible" class="divide-y divide-zinc-200 dark:divide-zinc-700">
                         @forelse ($this->courriersDuNoeud as $courrier)
                             <tr wire:key="courrier-{{ $courrier->id }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800">
                                 <td class="py-3 pl-4 pr-3 font-medium">{{ $courrier->numero_reference }}</td>
                                 <td class="max-w-xs truncate py-3 pr-3">{{ $courrier->objet }}</td>
                                 <td class="py-3 pr-3 text-zinc-600 dark:text-zinc-400">{{ $courrier->expediteur_nom ?: $courrier->expediteur_organisation ?: '—' }}</td>
                                 <td class="py-3 pr-3 text-zinc-600 dark:text-zinc-400">{{ $courrier->date_mouvement?->format('d/m/Y') ?? '—' }}</td>
-                                <td class="py-3 pr-3"><x-statut-badge :statut="$courrier->statut" /></td>
+                                <td class="py-3 pr-3">
+                                    {{-- Chronomètre à côté du statut (2026-09-28, "when the date
+                                         is comming soon the colours should change") — empilé sur
+                                         2 lignes (2026-10-02, positionnement revu). --}}
+                                    <x-statut-avec-echeance :courrier="$courrier" />
+                                </td>
                                 <td class="py-3 pr-4">
                                     <flux:dropdown position="bottom" align="end">
                                         <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" square :aria-label="__('Actions')" />
@@ -145,7 +158,17 @@
         </div>
 
         {{-- ===== Colonne droite — "Détails du dossier" ===== --}}
-        <div class="sticky top-20 self-start space-y-4">
+        <div x-data="squeletteMinimum()" class="sticky top-20 self-start space-y-4">
+            <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
+            {{-- Squelette (2026-09-24) — sélectionner un autre nœud
+                 (selectionnerDossier/selectionnerNoeud) redéclenche une
+                 requête Livewire qui recharge ce panneau. Durée minimale
+                 garantie via squeletteMinimum(), voir resources/js/app.js
+                 (2026-09-24, "am not seeing animation... in page"). --}}
+            <div x-show="visible" x-cloak class="rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <x-skeleton.panel :lignes="4" />
+            </div>
+            <div x-show="!visible" class="space-y-4">
             @if ($this->dossierSelectionne)
                 @php($dossier = $this->dossierSelectionne)
                 <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
@@ -257,6 +280,7 @@
                     <flux:text class="mt-2 text-sm text-zinc-500">{{ __('Sélectionnez un dossier pour voir ses détails.') }}</flux:text>
                 </div>
             @endif
+            </div>
         </div>
     </div>
 

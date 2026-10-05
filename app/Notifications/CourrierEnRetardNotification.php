@@ -19,11 +19,37 @@ class CourrierEnRetardNotification extends Notification
     public function __construct(
         public Courrier $courrier,
         public bool $enRetard,
+        // 2e palier d'alerte (2026-10-05, Module 7, "escalade... configurable
+        // selon le niveau de retard") — même notification "en retard", juste
+        // un libellé distinct + élargie à un destinataire supplémentaire côté
+        // SendMailAlertJob::destinataires(). Toujours false pour le palier
+        // "à risque"/"en retard" initial, par défaut pour ne rien changer au
+        // comportement déjà couvert par les tests existants.
+        public bool $escalade = false,
     ) {}
 
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        return ['mail', 'database'];
+    }
+
+    // Centre de notifications in-app (2026-10-05, Module 7) — mêmes règles
+    // que toMail() ci-dessous : jamais l'objet d'un courrier confidentiel
+    // dans les données stockées (le lien reste protégé par CourrierPolicy::view()
+    // derrière la fiche, mais la donnée stockée ici est, elle, affichée en
+    // clair dans la cloche sans revérification de droits ligne par ligne).
+    public function toDatabase(object $notifiable): array
+    {
+        $courrier = $this->courrier;
+
+        return [
+            'courrier_id' => $courrier->id,
+            'numero_reference' => $courrier->numero_reference,
+            'objet' => $courrier->confidentialite <= 1 ? $courrier->objet : null,
+            'en_retard' => $this->enRetard,
+            'escalade' => $this->escalade,
+            'date_limite' => $courrier->date_limite?->toDateString(),
+        ];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -32,13 +58,17 @@ class CourrierEnRetardNotification extends Notification
         $dateLimite = $courrier->date_limite?->format('d/m/Y');
 
         $message = (new MailMessage)
-            ->subject($this->enRetard
-                ? __('[GEC] Courrier en retard : :ref', ['ref' => $courrier->numero_reference])
-                : __('[GEC] Courrier bientôt en retard : :ref', ['ref' => $courrier->numero_reference]))
+            ->subject($this->escalade
+                ? __('[GEC] Escalade — courrier toujours en retard : :ref', ['ref' => $courrier->numero_reference])
+                : ($this->enRetard
+                    ? __('[GEC] Courrier en retard : :ref', ['ref' => $courrier->numero_reference])
+                    : __('[GEC] Courrier bientôt en retard : :ref', ['ref' => $courrier->numero_reference])))
             ->greeting(__('Bonjour :nom,', ['nom' => $notifiable->name]))
-            ->line($this->enRetard
-                ? __('Le courrier :ref a dépassé sa date limite de traitement (:date).', ['ref' => $courrier->numero_reference, 'date' => $dateLimite])
-                : __('Le courrier :ref arrive à sa date limite de traitement (:date).', ['ref' => $courrier->numero_reference, 'date' => $dateLimite]));
+            ->line($this->escalade
+                ? __('Le courrier :ref est toujours en retard malgré les relances précédentes — ce message vous est adressé en tant que niveau hiérarchique supérieur.', ['ref' => $courrier->numero_reference])
+                : ($this->enRetard
+                    ? __('Le courrier :ref a dépassé sa date limite de traitement (:date).', ['ref' => $courrier->numero_reference, 'date' => $dateLimite])
+                    : __('Le courrier :ref arrive à sa date limite de traitement (:date).', ['ref' => $courrier->numero_reference, 'date' => $dateLimite])));
 
         // Règle n°6 — un email sort du système : jamais l'objet d'un courrier
         // confidentiel, seulement sa référence (la fiche reste protégée par

@@ -37,6 +37,35 @@
     --text-3xl: 2rem;           /* 32px, était 30px */
     --text-3xl--line-height: calc(2.375 / 2);
 
+    /* Style "soft" (2026-09-28, demande explicite de l'utilisateur avec
+       capture d'écran — "check fundednext style soft i want the same
+       here", app.fundednext.com/accounts) : coins plus arrondis + ombres
+       plus douces et diffuses partout, même technique que l'échelle
+       typographique ci-dessus — surcharger directement l'échelle Tailwind
+       par défaut s'applique automatiquement à CHAQUE usage existant de
+       rounded-md/lg/xl/2xl et shadow-sm dans toutes les vues (cartes,
+       boutons Flux, badges...), sans toucher un par un des dizaines de
+       fichiers Blade. Couleurs GEC INCHANGÉES (palette de marque déjà
+       calée avec l'utilisateur sur plusieurs itérations, voir DECISIONS.md
+       "GEC Master Color System") — seule la FORME devient plus douce, pas
+       la couleur.
+       --radius-lg est le plus impactant : c'est le rayon des boutons Flux
+       (voir vendor/livewire/flux/stubs/.../button/index.blade.php, taille
+       "base") ET de la majorité des cartes de ce projet. --radius-2xl
+       couvre les plus grandes cartes/panneaux (ex. "Aperçu du courrier"). */
+    --radius-md: 0.5rem;    /* 8px, était 6px — petits boutons/champs Flux (tailles sm/xs) */
+    --radius-lg: 0.875rem;  /* 14px, était 8px — boutons Flux (taille base) + cartes courantes */
+    --radius-xl: 1.125rem;  /* 18px, était 12px */
+    --radius-2xl: 1.5rem;   /* 24px, était 16px — grandes cartes/panneaux */
+
+    /* Ombre diffuse et légère plutôt que la valeur par défaut de Tailwind
+       (plus resserrée, plus sombre) — même esprit que les cartes flottantes
+       de FundedNext, teintée navy très clair (accordée à --color-brand-navy
+       ci-dessous) plutôt que noir pur, pour rester cohérente avec la
+       palette de marque. shadow-sm est la valeur utilisée par la quasi-
+       totalité des cartes du projet (`bg-white ... shadow-sm`). */
+    --shadow-sm: 0 6px 20px -8px rgb(11 31 58 / 0.12);
+
     /* Graisse : retour à l'échelle Tailwind par défaut (2026-09-18) —
        allégée une première fois ("no bold"), puis l'utilisateur a précisé
        vouloir l'inverse : texte NOIR PUR et GRAS ("i want a pure black for
@@ -213,6 +242,20 @@
     @apply grid gap-2;
 }
 
+/* Barre de défilement de la page masquée partout (retour utilisateur,
+   2026-10-05, capture d'écran) — même demande déjà appliquée au panneau
+   "Aperçu du courrier" (resources/views/components/apercu/visionneuse.blade.php) :
+   le défilement lui-même reste entièrement fonctionnel (molette, trackpad,
+   clavier, cliquer-glisser), seul le rendu visuel de la barre est masqué. */
+html {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar {
+    display: none;
+}
+
 [data-flux-label] {
     @apply  !mb-0 !leading-tight;
 }
@@ -328,4 +371,126 @@ body:has(> [x-persist="app-sidebar"]) {
    cause exacte du dépassement de largeur. */
 [data-flux-sidebar] {
     overflow-x: hidden;
+}
+
+/* Correctif du vrai problème derrière la barre parasite ci-dessus (retour
+   utilisateur, 2026-10-05, capture d'écran : "Enregistrer un courrier" et
+   "Traitement & Réponse" coupés SANS "…", "Dossiers & Archives" qui
+   repasse à la ligne) — `overflow-x: hidden` ci-dessus masquait bien le
+   débordement, mais ne faisait QUE le couper net au bord de la sidebar,
+   sans jamais déclencher la vraie troncature "…" du `truncate` déjà posé
+   sur le DIV de texte (sidebar/item.blade.php, `data-content`). Cause :
+   ce DIV est un enfant `flex-1` d'une ligne flex — par défaut, un item
+   flex a `min-width: auto`, ce qui l'EMPÊCHE de rétrécir en dessous de la
+   largeur de son propre contenu, quelle que soit la largeur réelle
+   disponible ; `truncate` (overflow:hidden + text-overflow:ellipsis) ne
+   peut donc jamais s'activer sur CE DIV — c'est le `overflow-x: hidden`
+   du PARENT, plus haut dans l'arbre, qui coupait tout net en dernier
+   recours, sans le "…" prévu. `min-width: 0` autorise enfin ce DIV à
+   rétrécir jusqu'à la largeur réellement disponible, ce qui active la
+   vraie troncature avec ellipsis — comportement déjà documenté comme
+   voulu juste au-dessus ("le texte doit être tronqué avec "…", pas
+   scrollable"), jamais correctement obtenu jusqu'ici. */
+[data-flux-sidebar-item] [data-content] {
+    min-width: 0;
+}
+
+/* Même retour utilisateur que ci-dessus : le TITRE d'un groupe dépliable
+   ("Dossiers & Archives") passait carrément à la ligne au lieu d'être
+   tronqué — contrairement à `sidebar/item.blade.php`, le `<span>` du
+   titre dans `sidebar/group.blade.php` n'a ni `truncate` ni
+   `whitespace-nowrap` du tout (juste `flex-1 leading-none`), donc le
+   comportement par défaut du texte (retour à la ligne) s'applique dès
+   que le libellé + l'icône + le chevron dépassent la largeur de la
+   sidebar. Pas de `data-*` dédié sur ce `<span>` précis (contrairement au
+   `data-content` de l'item) : ciblé structurellement via le bouton direct
+   de `[data-flux-sidebar-group]`, qui couvre les deux variantes du stub
+   (avec et sans icône de groupe). */
+[data-flux-sidebar-group] > button > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Barre de progression de navigation entre pages (2026-09-24, "am not
+   seeing animation when i... switch pages") — Livewire affiche DÉJÀ une
+   barre pendant chaque wire:navigate (NProgress intégré, voir
+   vendor/livewire/livewire/dist/livewire.js), mais en gris-bleu générique
+   #29d et 2px de haut seulement — trop discrète pour être remarquée. Pas
+   de nouveau mécanisme à construire : Livewire expose exactement cette
+   variable CSS pour la personnaliser (--livewire-progress-bar-color),
+   simplement jamais définie jusqu'ici dans ce projet. Couleur de marque +
+   légèrement plus épaisse pour rester visible sans être criarde.
+   #nprogress est injecté par Livewire lui-même (pas dans ce fichier),
+   donc surchargé ici en ciblant directement son sélecteur. */
+:root {
+    --livewire-progress-bar-color: var(--color-brand-blue);
+}
+
+#nprogress .bar {
+    height: 3px !important;
+}
+
+/* Skeleton "shimmer" de chargement (2026-09-24, demande explicite de
+   l'utilisateur : "loading animation on each table, cards, panels
+   refreshing not the loading sp[inner]") — remplace un simple wire:loading
+   texte/spinner par une forme de la même taille que le contenu réel
+   (voir components/skeleton/*.blade.php), avec un dégradé clair qui balaye
+   de gauche à droite en boucle. Couleurs alignées sur la palette de marque
+   (brand-border), pas un gris Tailwind par défaut. */
+.skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: var(--color-brand-border);
+    background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.6) 50%, transparent 100%);
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.dark .skeleton {
+    background-color: var(--color-zinc-700);
+    background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.08) 50%, transparent 100%);
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 150% 0; }
+    100% { background-position: -50% 0; }
+}
+
+/* Jamais imposer l'animation à qui l'a désactivée au niveau système —
+   dégradé fixe, sans balayage, dans ce cas. */
+@media (prefers-reduced-motion: reduce) {
+    .skeleton {
+        animation: none;
+        background-image: none;
+    }
+}
+
+/* Badges de compteur de notifications (2026-10-05, Module 7, demande
+   explicite de l'utilisateur : "add animations on them those counts", puis
+   "it should it self automatically like going in and out" — PAS un effet
+   ponctuel à l'apparition, une respiration CONTINUE en boucle tant que le
+   badge est visible) — cloche de l'en-tête (notification-bell.blade.php) et
+   item "Notifications" de la sidebar (sidebar.blade.php,
+   data-flux-navlist-badge). Pur CSS `infinite` : aucun JS ne déclenche quoi
+   que ce soit, la boucle tourne d'elle-même tant que l'élément existe dans
+   le DOM et n'a pas `display: none` (donc aussi tant que la classe
+   `hidden` n'est pas posée dessus, voir sidebar.blade.php). Respecte
+   prefers-reduced-motion comme le shimmer ci-dessus. */
+.badge-notif-pop {
+    transform-origin: center;
+    animation: badge-notif-respire 1.6s ease-in-out infinite;
+}
+
+@keyframes badge-notif-respire {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.18); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .badge-notif-pop {
+        animation: none;
+    }
 }

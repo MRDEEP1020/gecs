@@ -52,6 +52,36 @@ class EditFormTest extends TestCase
         return $courrier;
     }
 
+    // 2026-09-24 — retour réel de l'utilisateur (capture d'écran) :
+    // "Aperçu du courrier" affichait le CODE JS DU PANNEAU comme texte
+    // visible sur la page. Cause trouvée : un commentaire à l'intérieur de
+    // l'attribut x-data="{ ... }" (délimité par des guillemets DROITS)
+    // contenait lui-même un guillemet droit — pour le navigateur, ce
+    // guillemet referme prématurément l'attribut HTML, et tout le reste du
+    // JS (jusqu'au prochain guillemet droit trouvé par accident) fuit comme
+    // texte de page. Règle : AUCUN guillemet droit " dans un commentaire ou
+    // une chaîne à l'intérieur d'un x-data="..." — guillemets français «»
+    // uniquement (voir memory livewire_flux_gotchas). Ce test extrait le
+    // bloc x-data du panneau d'aperçu et vérifie qu'il n'en contient aucun.
+    public function test_lattribut_xdata_du_panneau_apercu_ne_contient_aucun_guillemet_droit(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $courrier = $this->courrierEnregistrePar($admin, ['fichier_path' => 'courriers/2026/TST/GEC-TEST.pdf']);
+        $this->actingAs($admin);
+
+        $html = Livewire::test(EditForm::class, ['courrierId' => $courrier->id])->html();
+
+        $ancrage = strpos($html, 'activerDeplacement');
+        $this->assertNotFalse($ancrage, 'Le panneau "Document principal" ne s\'est pas affiché.');
+
+        $debut = strrpos(substr($html, 0, $ancrage), 'x-data="{');
+        $finAttribut = strpos($html, '}"', $ancrage);
+        $bloc = substr($html, $debut + strlen('x-data="'), $finAttribut - ($debut + strlen('x-data="')) + 1);
+
+        $this->assertStringNotContainsString('"', $bloc, 'Un guillemet droit dans le bloc x-data casse l\'attribut HTML.');
+        $this->assertSame(1, substr_count($html, 'Voir en plein écran'), 'Le bouton de la modale agrandie ne s\'est pas rendu correctement.');
+    }
+
     // Module 1 — "Type de document" en liste déroulante (demande explicite
     // de l'utilisateur, 2026-09-08). Un courrier existant peut avoir une
     // valeur hors de cette liste (enregistré avant ce changement, ou classé
@@ -191,6 +221,66 @@ class EditFormTest extends TestCase
 
         Livewire::test(EditForm::class, ['courrierId' => $courrier->id])
             ->assertForbidden();
+    }
+
+    // PENTEST (2026-09-24, "have go throught the view/edit too") —
+    // courrier() (#[Computed], alimente le panneau "Aperçu du courrier" :
+    // statut, expéditeur, niveau de confidentialité, pièces jointes,
+    // numéro — voir editForm.blade.php) rechargeait le courrier depuis
+    // $this->courrierId SANS jamais revérifier l'autorisation —
+    // contrairement à ShowCourrier::courrier(), qui revérifie 'view' à
+    // CHAQUE accès. $courrierId est une propriété publique SANS #[Locked] :
+    // Livewire permet à n'importe quelle requête cliente de la modifier
+    // directement, même sans wire:model dans le DOM (voir
+    // Livewire\Features\SupportLockedProperties\BaseLocked — cet attribut
+    // n'existe QUE pour bloquer précisément ce cas, et n'était pas posé
+    // ici). mount() n'autorise qu'UNE FOIS, au chargement initial : un
+    // utilisateur ayant légitimement accès à la page de modification d'UN
+    // courrier pouvait ensuite reprogrammer courrierId vers un AUTRE
+    // courrier hors de son périmètre et voir son détail dans le panneau
+    // "Aperçu" (note : PAS l'objet — affiché depuis $this->form->objet,
+    // rempli une seule fois au mount() pour le courrier d'ORIGINE, donc
+    // insensible à ce changement d'id ; en revanche expéditeur, statut,
+    // confidentialité et pièces jointes viennent bien de $this->courrier et
+    // fuitaient) — même faille que extraitTexteOcr() dans CourrierList
+    // (même jour), par un mécanisme différent (propriété publique mutable,
+    // pas un paramètre d'action typé).
+    public function test_le_panneau_apercu_refuse_un_courrier_hors_du_perimetre_apres_changement_did(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $lemien = $this->courrierEnregistrePar($agent);
+
+        // Ne passe pas par courrierEnregistrePar() ci-dessus pour ce second
+        // courrier : son service_id par défaut (Service::factory()->create(
+        // ['code' => 'TST'])) est évalué AVANT le array_merge qui le
+        // remplacerait, donc s'exécute quand même et entre en collision avec
+        // le service déjà créé pour $lemien.
+        $autreAgent = $this->utilisateurAvecProfil('Agent');
+        $horsPerimetre = Courrier::create([
+            'numero_reference' => 'GEC-'.now()->year.'-AUT-000001',
+            'sens' => 'entrant',
+            'date_mouvement' => now(),
+            'objet' => 'Objet strictement hors périmètre',
+            'expediteur_nom' => 'Expéditeur Strictement Hors Périmètre',
+            'type_document' => 'Lettre',
+            'mode_reception' => 'email',
+            'priorite' => 'normale',
+            'confidentialite' => 1,
+            'service_id' => Service::factory()->create(['code' => 'AUT'])->id,
+        ]);
+        CourrierHistorique::create([
+            'courrier_id' => $horsPerimetre->id,
+            'auteur_id' => $autreAgent->id,
+            'action' => 'creation',
+            'commentaire' => null,
+        ]);
+
+        $this->actingAs($agent);
+
+        Livewire::test(EditForm::class, ['courrierId' => $lemien->id])
+            ->set('courrierId', $horsPerimetre->id)
+            ->assertDontSee('Expéditeur Strictement Hors Périmètre')
+            ->assertDontSee($horsPerimetre->numero_reference);
     }
 
     public function test_aucune_entree_dhistorique_si_rien_nest_modifie(): void

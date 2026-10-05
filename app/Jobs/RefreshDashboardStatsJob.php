@@ -27,20 +27,32 @@ class RefreshDashboardStatsJob implements ShouldQueue
 
     public int $tries = 3;
 
-    // Délai = date de clôture ('validation_acceptee' dans l'historique
-    // append-only, Règle n°5) moins date de réception/envoi (date_mouvement),
-    // sur les courriers clôturés ces N derniers jours (N configurable
-    // depuis l'UI, "Group A" 2026-09-24 — ex-`const PERIODE_JOURS`, voir
-    // DECISIONS.md "Paramètres système configurables — Groupe A/B"). Stocké
-    // en somme + nombre PAR SERVICE pour que le tableau de bord puisse
-    // faire une moyenne pondérée sur le seul périmètre de l'utilisateur.
+    // Délai = date de clôture ('validation_acceptee' OU 'confidentiel_remis'
+    // dans l'historique append-only, Règle n°5 — deux actions distinctes qui
+    // amènent toutes deux un courrier au statut 'traite', voir
+    // WorkflowService::valider()/cloturerConfidentiel()) moins date de
+    // réception/envoi (date_mouvement), sur les courriers clôturés ces N
+    // derniers jours (N configurable depuis l'UI, "Group A" 2026-09-24 —
+    // ex-`const PERIODE_JOURS`, voir DECISIONS.md "Paramètres système
+    // configurables — Groupe A/B"). Stocké en somme + nombre PAR SERVICE
+    // pour que le tableau de bord puisse faire une moyenne pondérée sur le
+    // seul périmètre de l'utilisateur — un pli confidentiel (service_id
+    // toujours null) n'est donc compté que pour un compte ayant
+    // "Voir tous les courriers" (Administrateur), jamais pour un
+    // Responsable de service scopé à ses services : comportement attendu,
+    // pas une omission.
+    // 'confidentiel_remis' ajouté le 2026-09-24 (audit du tableau de bord,
+    // demande explicite de l'utilisateur "find bugs") : un pli confidentiel
+    // clôturé par son destinataire était jusque-là invisible de ce calcul,
+    // alors qu'il est bien "traité" — voir DECISIONS.md "Délai moyen de
+    // traitement : inclut les plis confidentiels".
     public function handle(): void
     {
         $parService = [];
 
         DB::table('courrier_historiques')
             ->join('courriers', 'courriers.id', '=', 'courrier_historiques.courrier_id')
-            ->where('courrier_historiques.action', 'validation_acceptee')
+            ->whereIn('courrier_historiques.action', ['validation_acceptee', 'confidentiel_remis'])
             ->where('courrier_historiques.created_at', '>=', now()->subDays(Parametre::actuel()->dashboard_delai_moyen_periode_jours))
             ->whereNull('courriers.deleted_at')
             ->select('courrier_historiques.id', 'courriers.service_id', 'courriers.date_mouvement', 'courrier_historiques.created_at')

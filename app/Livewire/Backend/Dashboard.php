@@ -115,17 +115,44 @@ class Dashboard extends Component
     }
 
     // Cartes "Notifications"/"Calendrier" du panneau latéral (2026-09-23) —
-    // contenu décoratif/placeholder, mais gouvernées comme toutes les autres.
+    // gouvernées comme toutes les autres.
     #[Computed]
     public function peutVoirNotifications(): bool
     {
         return Auth::user()->hasPrivilege('dashboard.notifications');
     }
 
+    // 2026-10-05 (Module 7, retour utilisateur sur la carte vide "Bientôt
+    // disponible.") — le centre de notifications existe désormais
+    // (NotificationBell/NotificationsIndex), cette carte peut donc afficher
+    // un VRAI aperçu au lieu du texte figé. `dashboard.notifications` ne
+    // gouverne QUE la visibilité de la carte elle-même ; la donnée reste
+    // toujours celle (et SEULEMENT celle) de l'utilisateur connecté, même
+    // principe que la cloche de l'en-tête — aucune policy séparée requise.
+    #[Computed]
+    public function notificationsRecentes()
+    {
+        if (! $this->peutVoirNotifications) {
+            return null;
+        }
+
+        return Auth::user()->notifications()->latest()->take(3)->get();
+    }
+
     #[Computed]
     public function peutVoirCalendrier(): bool
     {
         return Auth::user()->hasPrivilege('dashboard.calendrier');
+    }
+
+    // Lien "Voir le calendrier des échéances" (2026-10-05) — distinct de
+    // peutVoirCalendrier() ci-dessus (dashboard.calendrier n'autorise que la
+    // mini-carte décorative) : vérifie le vrai privilège de la page
+    // /courriers/calendrier avant d'y proposer un lien, sinon 403 au clic.
+    #[Computed]
+    public function peutOuvrirCalendrierComplet(): bool
+    {
+        return Auth::user()->can('calendrier', Courrier::class);
     }
 
     // Module 10 — "délai moyen" (PRD §3.10), pré-calculé par
@@ -181,10 +208,12 @@ class Dashboard extends Component
     }
 
     // Module 10 — "Tâches du jour" (demande explicite de l'utilisateur,
-    // 2026-09-16) : PAS une liste de tâches inventée/manuelle — un aperçu
-    // réel de ce que WorkflowQueue montrerait à CET utilisateur (même
-    // périmètre Collaborateur/Responsable que WorkflowQueue::courriers()),
-    // limité aux 5 plus anciens (les plus urgents à traiter en premier).
+    // 2026-09-16) : PAS une liste de tâches inventée/manuelle — les courriers
+    // encore en circuit dans le périmètre de CET utilisateur, limités à 5.
+    // Depuis la suppression de la page "Transferts" (WorkflowQueue,
+    // 2026-09-24), c'est ici que vit la notion de "à traiter" :
+    // visiblePar($user, false) exclut les courriers qu'une DGA ne fait
+    // plus que suivre (voir Courrier::scopeVisiblePar()).
     // Gardé derrière dashboard.taches_du_jour (voir PrivilegeSeeder) :
     // "mainly for collaborateur ... sometimes responsable service" —
     // n'est donc PAS calculé pour un utilisateur qui n'a pas ce privilège.
@@ -195,12 +224,45 @@ class Dashboard extends Component
             return null;
         }
 
-        return $this->courriersVisibles()
-            ->whereIn('statut', WorkflowService::statutsActifs())
+        // 2026-09-24 ("customize the tâche du jour") : triées par ÉCHÉANCE
+        // (date limite SLA, colonne indexée — les retards remontent en
+        // premier), puis par l'échéance précise du chronomètre (départage
+        // deux courriers dus le même jour — celui dont le délai a été fixé
+        // par le responsable pour 9h du matin passe avant celui fixé pour
+        // 17h), puis les plus anciennes ; sans date limite en dernier.
+        // ATTENTION — un ->orderBy('chrono_fin_le') avait été ajouté APRÈS
+        // ->limit(5) (audit du 2026-09-24) : Laravel l'acceptait sans erreur
+        // (LIMIT ne dépend pas de l'ordre des appels de orderBy() dans la
+        // chaîne) mais le critère devenait le MOINS prioritaire, sans effet
+        // réel — toujours placer tout orderBy()/orderByRaw() AVANT limit().
+        return $this->courriersATraiter()
             ->with('service')
+            ->orderByRaw('date_limite is null')
+            ->orderBy('date_limite')
+            ->orderByRaw('chrono_fin_le is null')
+            ->orderBy('chrono_fin_le')
             ->oldest('date_mouvement')
             ->limit(5)
-            ->get();
+            ->get(['id', 'numero_reference', 'objet', 'statut', 'priorite', 'date_limite', 'date_mouvement', 'service_id', 'chrono_debut_le', 'chrono_fin_le', 'chrono_arrete_le']);
+    }
+
+    // Compteur de l'en-tête "Tâches du jour" : total réel de la file (la
+    // carte n'en montre que 5).
+    #[Computed]
+    public function totalTachesDuJour(): int
+    {
+        if (! Auth::user()->hasPrivilege('dashboard.taches_du_jour')) {
+            return 0;
+        }
+
+        return $this->courriersATraiter()->count();
+    }
+
+    private function courriersATraiter(): Builder
+    {
+        return Courrier::query()
+            ->visiblePar(Auth::user(), false)
+            ->whereIn('statut', WorkflowService::statutsActifs());
     }
 
     public function render()

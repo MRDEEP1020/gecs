@@ -50,11 +50,17 @@
     @endassets
 
     {{-- ===== Carte "Importer automatiquement depuis un dossier" ===== --}}
+    {{-- Mode 'execution' (2026-09-24, voir DECISIONS.md "Dossier surveillé :
+         configuration dans l'administration") : cette page importe, elle ne
+         configure plus — choisir/activer le dossier se fait dans
+         Administration › Dossier surveillé. Pas de x-init="init()" : Alpine
+         appelle déjà init() d'un Alpine.data() (le second appel démarrait
+         deux boucles de sondage). --}}
     <div
         class="mt-6 rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900"
         x-data="surveillanceDossier()"
-        x-init="init()"
         x-effect="window.dispatchEvent(new CustomEvent('scan-watcher-etat', { detail: { etat } }))"
+        data-mode="execution"
         data-msg-erreur-acces="{{ __('Impossible d\'accéder à ce dossier.') }}"
         data-msg-acces-refuse="{{ __('Accès au dossier refusé.') }}"
         data-msg-droits-perdus="{{ __('Vous n\'êtes plus autorisé à numériser — surveillance en pause.') }}"
@@ -79,9 +85,9 @@
              est sans ambiguïté et fonctionne — voir scan-watcher.js. --}}
         <input type="file" wire:model="document" id="scan-watcher-entree-cachee" class="hidden" tabindex="-1" aria-hidden="true">
 
-        <flux:heading level="2">{{ __('Importer automatiquement depuis un dossier') }}</flux:heading>
+        <flux:heading level="2">{{ __('Import automatique depuis le dossier surveillé') }}</flux:heading>
         <flux:subheading>
-            {{ __('Autorisez l\'accès une seule fois à votre dossier de scan — chaque nouveau document y apparaissant sera envoyé automatiquement.') }}
+            {{ __('Chaque nouveau document déposé dans le dossier de scan de ce poste est envoyé automatiquement, sans recharger la page.') }}
         </flux:subheading>
 
         <template x-if="etat === 'non_pris_en_charge'">
@@ -90,17 +96,23 @@
             </flux:callout>
         </template>
 
-        <template x-if="etat === 'a_choisir'">
-            <flux:button variant="primary" icon="folder-open" x-on:click="choisirDossier()" class="mt-4">
-                {{ __('Choisir un dossier') }}
-            </flux:button>
+        <template x-if="etat === 'non_configure'">
+            <flux:text class="mt-4 text-sm text-zinc-500">
+                {{ __('L\'import automatique n\'est pas activé sur ce poste.') }}
+                @if (auth()->user()->hasPrivilege('administration.dossier_surveille'))
+                    <flux:link :href="route('admin.dossier-surveille')" wire:navigate>{{ __('Le configurer') }}</flux:link>
+                @else
+                    {{ __('Demandez à un administrateur de le configurer.') }}
+                @endif
+            </flux:text>
         </template>
 
+        {{-- Chrome redemande parfois l'accès au dossier (après un
+             redémarrage) : un clic suffit, sans reconfigurer. --}}
         <template x-if="etat === 'a_reprendre'">
             <div class="mt-4 flex items-center gap-3">
                 <flux:text x-text="nomDossier"></flux:text>
-                <flux:button variant="primary" size="sm" x-on:click="reprendre()">{{ __('Reprendre la surveillance') }}</flux:button>
-                <flux:button variant="ghost" size="sm" x-on:click="changerDossier()">{{ __('Choisir un autre dossier') }}</flux:button>
+                <flux:button variant="primary" size="sm" icon="folder-open" x-on:click="reprendre()">{{ __('Autoriser l\'import automatique') }}</flux:button>
             </div>
         </template>
 
@@ -123,7 +135,6 @@
                          rejoint Success. --}}
                     <span class="inline-flex items-center rounded-full bg-brand-success-light px-2 py-0.5 text-xs font-medium text-brand-success-dark">{{ __('Surveillance active') }}</span>
                     <flux:text x-text="nomDossier"></flux:text>
-                    <flux:button variant="ghost" size="sm" x-on:click="arreter()">{{ __('Arrêter') }}</flux:button>
                 </div>
 
                 <flux:text class="text-sm text-zinc-500">

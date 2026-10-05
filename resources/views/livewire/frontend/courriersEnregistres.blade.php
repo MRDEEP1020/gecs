@@ -19,6 +19,11 @@
         <flux:button size="sm" :variant="$onglet === 'enregistre' ? 'primary' : 'ghost'" wire:click="changerOnglet('enregistre')">
             {{ __('Transféré') }}
         </flux:button>
+        {{-- 2026-09-24 — suivre les courriers transférés à toutes leurs
+             étapes, en lecture seule (voir CourriersEnregistres::ONGLETS). --}}
+        <flux:button size="sm" icon="eye" :variant="$onglet === 'suivi' ? 'primary' : 'ghost'" wire:click="changerOnglet('suivi')">
+            {{ __('Suivi') }}
+        </flux:button>
     </div>
 
     <flux:separator class="mt-6" />
@@ -29,6 +34,8 @@
                 {{ __('Aucun courrier en attente de transfert.') }}
             @elseif ($onglet === 'en_cours_de_transfert')
                 {{ __('Aucun courrier en cours de transfert.') }}
+            @elseif ($onglet === 'suivi')
+                {{ __('Aucun courrier à suivre pour l\'instant.') }}
             @else
                 {{ __('Aucun courrier transféré pour l\'instant.') }}
             @endif
@@ -44,7 +51,13 @@
                         <th class="py-3 pr-3">{{ __('Objet') }}</th>
                         <th class="py-3 pr-3">{{ __('Type') }}</th>
                         <th class="py-3 pr-3">{{ __('Service') }}</th>
-                        <th class="py-3 pr-4">{{ __('Date') }}</th>
+                        @if ($onglet === 'suivi')
+                            <th class="py-3 pr-3">{{ __('Statut') }}</th>
+                            <th class="py-3 pr-3">{{ __('Affecté à') }}</th>
+                            <th class="py-3 pr-4">{{ __('Dernier mouvement') }}</th>
+                        @else
+                            <th class="py-3 pr-4">{{ __('Date') }}</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -56,7 +69,20 @@
                             <td class="py-3 pr-3">{{ $courrier->objet }}</td>
                             <td class="py-3 pr-3 text-zinc-500">{{ $courrier->type_document }}</td>
                             <td class="py-3 pr-3 text-zinc-500">{{ $courrier->service?->nom ?? __('—') }}</td>
-                            <td class="py-3 pr-4 text-zinc-500">{{ $courrier->date_mouvement->format('d/m/Y') }}</td>
+                            @if ($onglet === 'suivi')
+                                <td class="py-3 pr-3">
+                                    <span class="{{ match ($courrier->statut) {
+                                        'traite', 'archive' => 'bg-brand-success-light text-brand-success-dark',
+                                        'rejete' => 'bg-brand-danger-light text-brand-danger-dark',
+                                        'en_attente_information' => 'bg-brand-warning-light text-brand-warning-dark',
+                                        default => 'bg-brand-info-light text-brand-info-dark',
+                                    } }} inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium">{{ \App\Models\Courrier::libelleStatut($courrier->statut) }}</span>
+                                </td>
+                                <td class="py-3 pr-3 text-zinc-500">{{ $courrier->affectationCourante?->collaborateur?->name ?? __('—') }}</td>
+                                <td class="py-3 pr-4 text-zinc-500">{{ $courrier->updated_at->format('d/m/Y H:i') }}</td>
+                            @else
+                                <td class="py-3 pr-4 text-zinc-500">{{ $courrier->date_mouvement->format('d/m/Y') }}</td>
+                            @endif
                         </tr>
                     @endforeach
                 </tbody>

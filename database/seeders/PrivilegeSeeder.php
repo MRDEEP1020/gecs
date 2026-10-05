@@ -38,15 +38,20 @@ class PrivilegeSeeder extends Seeder
             'courriers.transferer_tout' => ['Transférer tous les courriers', 'Transférer n\'importe quel courrier entrant en attente vers le DGA/ADJ DGA.', 'ecriture', []],
             'courriers.transferer_propre' => ['Transférer ses propres courriers', 'Transférer vers le DGA/ADJ DGA les courriers entrants qu\'on a soi-même enregistrés.', 'ecriture', ['Agent']],
             'courriers.archiver' => ['Archiver un courrier', 'Archivage manuel (Module 9 — fonctionnalité pas encore implémentée, ce privilège ne fait donc rien pour l\'instant, même pour Administrateur).', 'ecriture', []],
+            // Module 9 — "Décharge" (2026-10-05) : reçu d'emprunt d'un
+            // original physique archivé. Responsable de service par défaut
+            // (gère déjà l'archivage/la traçabilité de son service), en plus
+            // d'Administrateur.
+            'courriers.emettre_decharge' => ['Émettre une décharge', 'Enregistrer l\'emprunt (et le retour) de l\'original physique d\'un courrier archivé.', 'ecriture', ['Responsable de service']],
             'courriers.affecter_tout' => ['Affecter tous les courriers', 'Affecter/réaffecter n\'importe quel courrier à un collaborateur.', 'ecriture', []],
             'courriers.affecter_service' => ['Affecter les courriers de son service', 'Affecter/réaffecter les courriers du service dont on est responsable.', 'ecriture', ['Responsable de service']],
             'courriers.traiter_tout' => ['Traiter tous les courriers', 'Démarrer le traitement de n\'importe quel courrier.', 'ecriture', []],
             'courriers.traiter_affecte' => ['Traiter les courriers qui lui sont affectés', 'Démarrer le traitement des courriers affectés à soi-même.', 'ecriture', ['Collaborateur']],
             'courriers.valider_tout' => ['Valider tous les courriers', 'Valider/renvoyer/rejeter n\'importe quel courrier.', 'ecriture', []],
             'courriers.valider_service' => ['Valider les courriers de son service', 'Valider/renvoyer/rejeter les courriers du service dont on est responsable.', 'ecriture', ['Responsable de service']],
-            'courriers.voir_file_attente' => ['Voir la file d\'attente', 'Accéder à la liste des courriers à traiter.', 'lecture', ['Responsable de service', 'Collaborateur', 'DGA']],
             'courriers.dga_valider_service' => ['Valider le service proposé (DGA)', 'Confirmer/changer le service proposé pour un courrier entrant non-sinistre.', 'ecriture', ['DGA']],
             'courriers.rechercher' => ['Rechercher des courriers', 'Accéder à la recherche multi-critères (Module 8).', 'lecture', ['Responsable de service', 'Agent', 'Collaborateur', 'DGA']],
+            'courriers.calendrier' => ['Voir le calendrier des échéances', 'Accéder à la vue calendrier des échéances SLA (Module 5/8).', 'lecture', ['Responsable de service', 'Agent', 'Collaborateur', 'DGA']],
             'brouillons.utiliser_tout' => ['Utiliser tous les brouillons scannés', 'Reprendre/finaliser n\'importe quel document scanné en attente, pas seulement les siens.', 'ecriture', []],
             'regles_classement.gerer' => ['Gérer les règles de classement', 'Créer/modifier/supprimer les règles de classement automatique (Module 3).', 'administratif', []],
             // Configuration administrateur — listes de référence
@@ -111,6 +116,10 @@ class PrivilegeSeeder extends Seeder
             'administration.automatisation' => ['Gérer l\'automatisation', 'Accéder à "Automatisation" (page à venir).', 'administratif', []],
             'administration.workflows' => ['Gérer les workflows', 'Accéder à "Workflows" (page à venir).', 'administratif', []],
             'administration.sla' => ['Gérer les SLA et alertes', 'Accéder à "SLA & Alertes" (page à venir ; délais actuellement dans config/gec.php).', 'administratif', []],
+            // 2026-09-24 — page "Dossier surveillé" (configuration de l'import
+            // automatique, déplacée depuis Numérisation) : Administrateur seul
+            // par défaut, comme les autres pages d'administration.
+            'administration.dossier_surveille' => ['Configurer le dossier surveillé', 'Accéder à "Dossier surveillé" : choisir le dossier de scan d\'un poste, démarrer ou arrêter l\'import automatique.', 'administratif', []],
             'administration.audit' => ['Consulter la sécurité et l\'audit', 'Accéder à "Sécurité & Audit" (page à venir).', 'administratif', []],
             'general.notifications' => ['Voir les notifications', 'Afficher le menu "Notifications" et la cloche de la barre supérieure.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             // Actions sur un courrier séparées de la simple consultation
@@ -125,6 +134,9 @@ class PrivilegeSeeder extends Seeder
             // s'y AJOUTENT, un par action ou lecture distincte. Défaut =
             // exactement les profils qui pouvaient déjà le faire.
             // — Circuit de traitement (fiche courrier)
+            // 2026-09-24 — chronomètre de traitement : délai fixé à
+            // l'affectation, modifiable ensuite avec motif.
+            'courriers.fixer_delai' => ['Fixer le délai de traitement', 'Définir ou modifier (motif obligatoire) le délai du chronomètre de traitement d\'un courrier, dans sa portée d\'affectation.', 'ecriture', ['Responsable de service']],
             'courriers.reaffecter' => ['Réaffecter un courrier', 'Changer le collaborateur affecté (motif obligatoire), dans sa portée d\'affectation.', 'ecriture', ['Responsable de service']],
             'courriers.soumettre_validation' => ['Soumettre pour validation', 'Envoyer sa réponse/action au responsable pour validation.', 'ecriture', ['Collaborateur']],
             'courriers.renvoyer_correction' => ['Renvoyer pour correction', 'Refuser une soumission et la renvoyer au collaborateur (motif obligatoire).', 'ecriture', ['Responsable de service']],
@@ -151,6 +163,16 @@ class PrivilegeSeeder extends Seeder
             'courriers.voir_carte_en_erreur' => ['Voir la carte "En erreur"', 'Afficher la carte "En erreur" (échec OCR) de "Tous les courriers".', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'courriers.voir_enregistres' => ['Voir "Courriers enregistrés"', 'Accéder à la page "Courriers enregistrés" (courriers entrants par sous-statut de transfert).', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'courriers.voir_mes_courriers' => ['Voir "Mes courriers"', 'Accéder à la page "Mes enregistrements" (ses propres courriers entrants).', 'lecture', ['Agent']],
+            // 2026-09-24 (voir DECISIONS.md "Courrier confidentiel : accès et
+            // clôture par le destinataire") — portée "pli reçu" : seulement
+            // les plis confidentiels dont on est le destinataire désigné.
+            // Défaut DGA + Responsable de service (RH), les destinataires
+            // typiques cités par le spec Module 1.
+            // 2026-09-24 — portée "courriers que j'ai transférés" (DGA) :
+            // consultation seule, après la validation du service.
+            'courriers.voir_transferes' => ['Voir les courriers qu\'on a transférés', 'Consulter les courriers dont on a validé le service (DGA/ADJ), après leur transfert — lecture seule.', 'lecture', ['DGA']],
+            'courriers.voir_confidentiel_recu' => ['Voir les plis confidentiels reçus', 'Consulter un courrier confidentiel (jamais ouvert) envoyé directement à soi-même par la réception.', 'lecture', ['DGA', 'Responsable de service']],
+            'courriers.cloturer_confidentiel' => ['Marquer un pli confidentiel comme remis', 'Clore un pli confidentiel reçu une fois remis/traité ; il est ensuite archivé automatiquement.', 'ecriture', ['DGA', 'Responsable de service']],
             'courriers.imprimer_accuse' => ['Imprimer l\'accusé de réception', 'Générer l\'accusé de réception d\'un courrier confidentiel.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             // — Tableau de bord : CHAQUE carte/KPI sa propre clé (2026-09-23,
             // demande explicite de l'utilisateur — "on tableau de board all
@@ -203,5 +225,9 @@ class PrivilegeSeeder extends Seeder
         // courriers.voir_statistiques (2026-09-23, même jour) : remplacée
         // par 4 clés, une par carte de "Tous les courriers" — même raison.
         Privilege::where('cle', 'courriers.voir_statistiques')->delete();
+        // courriers.voir_file_attente (2026-09-24) : page "Transferts"
+        // (WorkflowQueue) supprimée, doublon de "Tous les courriers" — même
+        // traitement, pas d'entrée morte dans le catalogue.
+        Privilege::where('cle', 'courriers.voir_file_attente')->delete();
     }
 }

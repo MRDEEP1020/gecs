@@ -68,7 +68,22 @@
          sans son privilège ; la rangée entière ne s'affiche que si au moins
          une carte l'est. --}}
     @if ($this->courrierEntrantAujourdhui !== null || $this->courrierSortantAujourdhui !== null || $this->enAttenteDeTraitement !== null || $this->courriersUrgents !== null || $this->courriersEnRetard !== null || $this->delaiMoyen !== null)
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    {{-- Squelette (2026-09-24, "loading animation on each table, cards,
+         panels refreshing") — même nombre de cartes que ci-dessous. --}}
+    @php
+        $nombreCartesKpi = collect([
+            $this->courrierEntrantAujourdhui, $this->courrierSortantAujourdhui, $this->enAttenteDeTraitement,
+            $this->courriersUrgents, $this->courriersEnRetard, $this->delaiMoyen,
+        ])->whereNotNull()->count();
+    @endphp
+    <div x-data="squeletteMinimum()">
+        <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
+        <div x-show="visible" x-cloak class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            @for ($i = 0; $i < $nombreCartesKpi; $i++)
+                <x-skeleton.card />
+            @endfor
+        </div>
+        <div x-show="!visible" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         @if ($this->courrierEntrantAujourdhui !== null)
         <div class="rounded-xl border border-brand-border bg-white p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
             <div class="flex items-center gap-2.5">
@@ -185,6 +200,7 @@
                 </flux:text>
             </div>
         @endif
+        </div>
     </div>
     @endif
 
@@ -258,7 +274,8 @@
             @if ($this->derniersCourriers->isEmpty())
                 <flux:text class="mt-4 text-zinc-500">{{ __('Aucun courrier pour l\'instant.') }}</flux:text>
             @else
-                <div class="mt-4 overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <div x-data="squeletteMinimum()" class="mt-4 overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                     <table class="w-full text-sm">
                         <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                             <tr>
@@ -271,7 +288,15 @@
                                 <th class="py-3 pr-4">{{ __('Statut') }}</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                        {{-- Visibilité pilotée par l'état `visible` de
+                             squeletteMinimum() (x-data ci-dessus), durée
+                             minimale garantie — voir le commentaire
+                             équivalent dans courrierList.blade.php
+                             (2026-09-24). --}}
+                        <tbody x-show="visible" x-cloak class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                            <x-skeleton.table-rows :cols="7" :rows="5" />
+                        </tbody>
+                        <tbody x-show="!visible" class="divide-y divide-zinc-200 dark:divide-zinc-700">
                             @foreach ($this->derniersCourriers as $courrier)
                                 <tr class="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800" onclick="window.location='{{ route('courriers.show', $courrier->id) }}'">
                                     <td class="py-3 pl-4 pr-3 font-medium">
@@ -287,7 +312,12 @@
                                     <td class="py-3 pr-3">{{ $courrier->objet }}</td>
                                     <td class="py-3 pr-3 text-zinc-500">{{ $courrier->date_mouvement->format('d/m/Y') }}</td>
                                     <td class="py-3 pr-4">
-                                        <x-statut-badge :statut="$courrier->statut" />
+                                        {{-- Chronomètre à côté du statut (2026-09-28, "when the
+                                             date is comming soon the colours should change") —
+                                             empilé sur 2 lignes (2026-10-02, positionnement revu) ;
+                                             compte à rebours masqué ici aussi (2026-10-02, "remove on
+                                             the dashboard too"), ne garde que les badges d'état. --}}
+                                        <x-statut-avec-echeance :courrier="$courrier" :masquer-temps="true" />
                                     </td>
                                 </tr>
                             @endforeach
@@ -306,57 +336,141 @@
                  dashboard.taches_du_jour (Collaborateur par défaut,
                  Responsable de service au cas par cas). --}}
             @if ($this->tachesDuJour !== null)
-                <div class="overflow-hidden rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                <div x-data="squeletteMinimum()" class="overflow-hidden rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+                    <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                     <div class="flex items-center gap-2 border-b border-brand-border bg-brand-blue-pale px-4 py-3 dark:border-zinc-700 dark:bg-brand-blue/10">
                         <flux:icon.check-circle class="size-4 text-brand-blue" />
                         <flux:heading level="3">{{ __('Tâches du jour') }}</flux:heading>
+                        @if ($this->totalTachesDuJour > 0)
+                            <span class="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-brand-blue px-2 py-0.5 text-xs font-semibold text-white">{{ $this->totalTachesDuJour }}</span>
+                        @endif
                     </div>
+                    {{-- Squelette (2026-09-24) — ce panneau n'a aujourd'hui
+                         aucun déclencheur de rafraîchissement en direct
+                         (Dashboard n'a ni #[On(...)] ni action publique),
+                         mais reste cohérent avec le reste de la page et
+                         couvre un futur ajout de rafraîchissement live. --}}
+                    <ul x-show="visible" x-cloak class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        <x-skeleton.list-items :items="3" />
+                    </ul>
+                    <div x-show="!visible">
                     @if ($this->tachesDuJour->isEmpty())
-                        <flux:text class="p-4 text-sm text-zinc-500">{{ __('Rien à traiter pour l\'instant.') }}</flux:text>
+                        <div class="flex items-center gap-2 p-4 text-sm text-zinc-500">
+                            <flux:icon.face-smile class="size-4" />
+                            {{ __('Rien à traiter pour l\'instant.') }}
+                        </div>
                     @else
-                        {{-- Case à gauche de chaque tâche (2026-09-18,
-                             "keep it real, restyle only" — voir la question
-                             posée à l'utilisateur après comparaison avec la
-                             maquette) : purement décorative (pas de vraie
-                             case à cocher/état "fait", aucune fonctionnalité
-                             fabriquée — Règle n°6) — juste le repère visuel
-                             de la maquette devant une tâche RÉELLE, jamais
-                             un pourcentage/quota inventé. --}}
+                        {{-- 2026-09-24 ("customize the tâche du jour") : chaque
+                             tâche dit QUOI faire (action attendue selon le
+                             statut) et POUR QUAND (échéance SLA réelle —
+                             date_limite), triée par urgence (voir
+                             Dashboard::tachesDuJour()). Point de couleur =
+                             priorité. Lien <a> simple : flux:link imposait son
+                             propre affichage en ligne et cassait la mise en
+                             page de la ligne (case réduite à une barre). --}}
                         <ul class="divide-y divide-zinc-100 dark:divide-zinc-800">
                             @foreach ($this->tachesDuJour as $courrier)
-                                <li>
-                                    <flux:link :href="route('courriers.show', $courrier->id)" wire:navigate class="flex items-start gap-2.5 px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-                                        <span class="mt-0.5 size-3.5 shrink-0 rounded-sm border-2 border-zinc-300 dark:border-zinc-600"></span>
+                                @php
+                                    $action = match ($courrier->statut) {
+                                        'en_attente_de_transfert' => __('À transférer'),
+                                        'en_cours_de_transfert' => __('Service à confirmer'),
+                                        'enregistre' => __('À affecter'),
+                                        'affecte' => __('À démarrer'),
+                                        'en_traitement' => __('À traiter'),
+                                        'en_validation' => __('À valider'),
+                                        'en_attente_information' => __('En attente d\'information'),
+                                        default => \App\Models\Courrier::libelleStatut($courrier->statut),
+                                    };
+                                    $classePriorite = match ($courrier->priorite) {
+                                        'urgente' => 'bg-brand-danger',
+                                        'haute' => 'bg-brand-warning',
+                                        default => 'bg-zinc-300 dark:bg-zinc-600',
+                                    };
+                                @endphp
+                                <li wire:key="tache-{{ $courrier->id }}">
+                                    <a href="{{ route('courriers.show', ['courrierId' => $courrier->id, 'onglet' => 'circuit']) }}" wire:navigate class="flex items-start gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+                                        <span class="mt-1.5 size-2 shrink-0 rounded-full {{ $classePriorite }}" title="{{ __('Priorité') }} : {{ $courrier->priorite }}"></span>
                                         <span class="min-w-0 flex-1">
-                                            <div class="font-medium">{{ $courrier->numero_reference }}</div>
-                                            <div class="truncate text-xs text-zinc-500">{{ $courrier->objet }}</div>
+                                            <span class="flex items-center justify-between gap-2">
+                                                <span class="truncate text-sm font-semibold text-brand-blue">{{ $courrier->numero_reference }}</span>
+                                                {{-- Chronomètre en direct (2026-09-24) à la place du badge
+                                                     J-N. Compte à rebours masqué (2026-10-02, "remove on
+                                                     the dashboard too") — ne garde que les badges d'état. --}}
+                                                <x-chronometre :courrier="$courrier" :masquer-temps="true" />
+
+                                            </span>
+                                            <span class="mt-0.5 block truncate text-xs text-zinc-600 dark:text-zinc-400">{{ $courrier->objet }}</span>
+                                            <span class="mt-1.5 flex items-center gap-1 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                                                <flux:icon.arrow-right-circle class="size-3.5 text-brand-blue" />
+                                                {{ $action }}
+                                                @if ($courrier->service)
+                                                    <span class="font-normal text-zinc-500">· {{ $courrier->service->code }}</span>
+                                                @endif
+                                            </span>
                                         </span>
-                                    </flux:link>
+                                    </a>
                                 </li>
                             @endforeach
                         </ul>
                         <div class="border-t border-brand-border p-2 text-center dark:border-zinc-700">
-                            <flux:link :href="route('courriers.a-traiter')" wire:navigate>{{ __('Voir tout') }} →</flux:link>
+                            <flux:link :href="route('courriers.rechercher', ['statut' => \App\Livewire\Backend\CourrierList::STATUT_ACTIFS])" wire:navigate>
+                                @if ($this->totalTachesDuJour > $this->tachesDuJour->count())
+                                    {{ __('Voir les :n tâches', ['n' => $this->totalTachesDuJour]) }} →
+                                @else
+                                    {{ __('Voir tout') }} →
+                                @endif
+                            </flux:link>
                         </div>
                     @endif
+                    </div>
                 </div>
             @endif
 
             {{-- Style de carte aligné sur "Tâches du jour"/"Calendrier"
                  ci-dessous (2026-09-18, "the notification panel design
                  doesn't match the image" — la maquette montre une carte
-                 blanche avec bandeau d'en-tête, pas une zone en pointillés)
-                 — le CONTENU reste honnête ("Bientôt disponible", aucune
-                 notification fabriquée : Module 7/SendMailAlertJob
-                 n'existe toujours pas), seul le style visuel change.
-                 dashboard.notifications (2026-09-23). --}}
+                 blanche avec bandeau d'en-tête, pas une zone en pointillés).
+                 dashboard.notifications (2026-09-23) gouverne la carte ;
+                 depuis le 2026-10-05 (Module 7) elle affiche un vrai aperçu
+                 des notifications de l'utilisateur plutôt que le texte figé
+                 "Bientôt disponible." — même format compact que la cloche
+                 de l'en-tête (notification-bell.blade.php). --}}
             @if ($this->peutVoirNotifications)
                 <div class="overflow-hidden rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="flex items-center gap-2 border-b border-brand-border bg-brand-blue-pale px-4 py-3 dark:border-zinc-700 dark:bg-brand-blue/10">
                         <flux:icon.bell class="size-4 text-brand-blue" />
                         <flux:heading level="3">{{ __('Notifications') }}</flux:heading>
                     </div>
-                    <flux:text class="p-4 text-sm text-zinc-500">{{ __('Bientôt disponible.') }}</flux:text>
+                    @forelse ($this->notificationsRecentes as $notification)
+                        <a
+                            href="{{ route('courriers.show', $notification->data['courrier_id']) }}"
+                            wire:navigate
+                            class="flex items-center gap-2 border-b border-brand-border px-4 py-2.5 last:border-b-0 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                        >
+                            <div @class([
+                                'flex size-7 shrink-0 items-center justify-center rounded-full text-white',
+                                'bg-brand-danger' => $notification->data['en_retard'],
+                                'bg-brand-warning' => ! $notification->data['en_retard'],
+                            ])>
+                                <flux:icon :icon="$notification->data['en_retard'] ? 'exclamation-triangle' : 'clock'" class="size-3.5" />
+                            </div>
+                            <flux:text class="truncate text-sm">
+                                {{ $notification->data['en_retard']
+                                    ? __(':ref est en retard', ['ref' => $notification->data['numero_reference']])
+                                    : __(':ref arrive à échéance', ['ref' => $notification->data['numero_reference']]) }}
+                            </flux:text>
+                            @if (! $notification->read_at)
+                                <span class="ms-auto size-2 shrink-0 rounded-full bg-brand-blue"></span>
+                            @endif
+                        </a>
+                    @empty
+                        <flux:text class="p-4 text-sm text-zinc-500">{{ __('Aucune notification pour l\'instant.') }}</flux:text>
+                    @endforelse
+                    @if ($this->notificationsRecentes->isNotEmpty())
+                        <a href="{{ route('notifications.index') }}" wire:navigate class="block border-t border-brand-border px-4 py-2 text-center text-xs text-brand-blue hover:underline dark:border-zinc-700">
+                            {{ __('Voir toutes les notifications') }}
+                        </a>
+                    @endif
                 </div>
             @endif
 
@@ -440,6 +554,15 @@
                         </template>
                     </div>
                 </div>
+                {{-- 2026-10-05 : relie la mini-carte décorative à la vraie
+                     page /courriers/calendrier (privilège distinct,
+                     courriers.calendrier — voir peutOuvrirCalendrierComplet()),
+                     construite le même jour. --}}
+                @if ($this->peutOuvrirCalendrierComplet)
+                    <a href="{{ route('courriers.calendrier') }}" wire:navigate class="block border-t border-brand-border px-4 py-2 text-center text-xs text-brand-blue hover:underline dark:border-zinc-700">
+                        {{ __('Voir le calendrier des échéances') }} →
+                    </a>
+                @endif
             </div>
             @endif
         </div>

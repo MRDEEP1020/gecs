@@ -4,6 +4,7 @@ namespace App\Policies;
 
 use App\Models\Courrier;
 use App\Models\User;
+use App\Services\WorkflowService;
 
 class CourrierPolicy
 {
@@ -67,6 +68,13 @@ class CourrierPolicy
         }
 
         if ($user->hasPrivilege('dossiers_classement.gerer_tout')) {
+            return true;
+        }
+
+        // 2026-09-24 (voir DECISIONS.md "Dossier de classement : les acteurs
+        // du circuit gardent l'accès") — un dossier personnel ne masque
+        // jamais un courrier à ceux qui travaillent dessus.
+        if ($courrier->impliqueUtilisateur($user)) {
             return true;
         }
 
@@ -148,7 +156,42 @@ class CourrierPolicy
             return true;
         }
 
+        // 2026-09-24 (voir DECISIONS.md "DGA : consultation des courriers
+        // transférés") — demande explicite de l'utilisateur ("dga doesn't
+        // see all the courier he transfered") : une fois le service validé,
+        // la DGA garde la CONSULTATION du courrier (lecture seule — aucune
+        // autre ability ne s'appuie sur ce privilège).
+        if ($user->hasPrivilege('courriers.voir_transferes') && $courrier->estTransferePar($user)) {
+            return true;
+        }
+
+        // 2026-09-24 (voir DECISIONS.md "Courrier confidentiel : accès et
+        // clôture par le destinataire") — un pli confidentiel envoyé
+        // directement à cet utilisateur, quel que soit son statut (il garde
+        // la consultation une fois remis puis archivé). Le niveau de
+        // confidentialité reste vérifié en tête de méthode.
+        if ($user->hasPrivilege('courriers.voir_confidentiel_recu')
+            && $courrier->confidentiel_direct
+            && $courrier->destinataire_transfert_id === $user->id) {
+            return true;
+        }
+
         return false;
+    }
+
+    // Module 1/9 — "Marquer comme remis" : le destinataire d'un pli
+    // confidentiel le clôt une fois remis/traité hors application ; il est
+    // ensuite archivé automatiquement comme tout courrier traité.
+    public function cloturerConfidentiel(User $user, Courrier $courrier): bool
+    {
+        if (! $this->niveauSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        return $user->hasPrivilege('courriers.cloturer_confidentiel')
+            && $courrier->confidentiel_direct
+            && $courrier->statut === 'enregistre'
+            && $courrier->destinataire_transfert_id === $user->id;
     }
 
     // Module 1 — corriger un enregistrement : même périmètre que la consultation
@@ -196,6 +239,24 @@ class CourrierPolicy
         return $user->hasPrivilege('courriers.archiver');
     }
 
+    // Module 9 — "Décharge" (2026-10-05) : mêmes trois portes que view()
+    // (niveau/dossier/périmètre — on ne peut pas emprunter l'original d'un
+    // courrier qu'on ne pourrait même pas consulter), plus le privilège
+    // dédié. Uniquement sur un courrier déjà archivé (vérifié aussi côté
+    // WorkflowService::emettreDecharge(), jamais seulement ici).
+    public function emettreDecharge(User $user, Courrier $courrier): bool
+    {
+        if ($courrier->statut !== 'archive') {
+            return false;
+        }
+
+        if (! $this->niveauSuffisant($user, $courrier) || ! $this->accesDossierSuffisant($user, $courrier) || ! $this->accesPerimetreSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        return $user->hasPrivilege('courriers.emettre_decharge');
+    }
+
     // Module 6 — affecter/réaffecter : le responsable du service concerné,
     // ou un administrateur. Un agent ou un collaborateur ne s'auto-affecte pas.
     public function affecter(User $user, Courrier $courrier): bool
@@ -225,6 +286,17 @@ class CourrierPolicy
         }
 
         return false;
+    }
+
+    // Module 5 — fixer / modifier le délai de traitement (chronomètre,
+    // 2026-09-24) : même portée que l'affectation (responsable du service,
+    // ou affecter_tout), EN PLUS du privilège d'action dédié ; seulement
+    // tant que le courrier est encore en circuit.
+    public function fixerDelai(User $user, Courrier $courrier): bool
+    {
+        return $user->hasPrivilege('courriers.fixer_delai')
+            && in_array($courrier->statut, WorkflowService::statutsActifs(), true)
+            && $this->affecter($user, $courrier);
     }
 
     // Module 4 — démarrer le traitement / soumettre pour validation : réservé
@@ -288,13 +360,6 @@ class CourrierPolicy
         }
 
         return false;
-    }
-
-    // Module 4 — file d'attente : réservée aux acteurs du circuit (un Agent
-    // enregistre des courriers mais ne les traite pas).
-    public function voirFileAttente(User $user): bool
-    {
-        return $user->hasPrivilege('courriers.voir_file_attente');
     }
 
     // Module 1/4 — la réceptionniste clique "Transférer" pour envoyer
@@ -445,6 +510,14 @@ class CourrierPolicy
             return false;
         }
 
+        // 2026-09-24 — seule étape où valider le service a un sens. Jusqu'ici
+        // la vue et WorkflowService le garantissaient seuls ; nécessaire ici
+        // depuis que la DGA garde la consultation des courriers déjà
+        // transférés (sinon peutValiderService restait vrai après coup).
+        if ($courrier->statut !== 'en_cours_de_transfert') {
+            return false;
+        }
+
         // 2026-09-15 (mise à jour, voir DECISIONS.md "Destinataires de
         // transfert") : ne valide que ce qui lui a été explicitement
         // adressé — même exception `null` que view() ci-dessus pour les
@@ -453,7 +526,7 @@ class CourrierPolicy
     }
 
     // Module 8 — recherche/liste multi-critères : ouverte à tout profil
-    // reconnu (contrairement à voirFileAttente, l'Agent y a accès aussi —
+    // reconnu (contrairement à l'ancienne file d'attente, l'Agent y a accès aussi —
     // il doit pouvoir retrouver les courriers qu'il a lui-même enregistrés).
     // Le filtrage par périmètre lui-même est fait au niveau de la requête
     // dans CourrierList::resultats(), avec la même logique que view().
@@ -527,5 +600,10 @@ class CourrierPolicy
     public function rechercher(User $user): bool
     {
         return $user->hasPrivilege('courriers.rechercher');
+    }
+
+    public function calendrier(User $user): bool
+    {
+        return $user->hasPrivilege('courriers.calendrier');
     }
 }

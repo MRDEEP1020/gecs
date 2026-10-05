@@ -27,6 +27,7 @@ class Parametre extends Model
         'sla_jours_defaut',
         'sla_seuil_risque_jours',
         'sla_relance_jours',
+        'sla_escalade_jours',
         'sla_par_type',
         // "Group A" (2026-09-24) — anciennes public const codées en dur,
         // voir DECISIONS.md "Paramètres système configurables — Groupe A/B".
@@ -44,6 +45,7 @@ class Parametre extends Model
             'sla_jours_defaut' => 'integer',
             'sla_seuil_risque_jours' => 'integer',
             'sla_relance_jours' => 'integer',
+            'sla_escalade_jours' => 'integer',
             'sla_par_type' => 'array',
             'niveau_confidentialite_max' => 'integer',
             'scan_resolution_minimale' => 'integer',

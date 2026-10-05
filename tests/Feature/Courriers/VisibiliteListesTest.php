@@ -61,7 +61,9 @@ class VisibiliteListesTest extends TestCase
             $this->actingAs($this->agent)->get($page)->assertOk()->assertDontSee('OBJET-SECRET');
         }
 
-        foreach (['/dashboard', '/courriers/enregistres', '/courriers/a-traiter'] as $page) {
+        // '/courriers/rechercher?statut=actifs' : remplace l'ancienne file
+        // '/courriers/a-traiter' (supprimée le 2026-09-24, redirige ici).
+        foreach (['/dashboard', '/courriers/enregistres', '/courriers/rechercher?statut=actifs'] as $page) {
             $this->actingAs($this->responsable)->get($page.($page === '/courriers/enregistres' ? '?onglet=enregistre' : ''))
                 ->assertOk()->assertDontSee('OBJET-SECRET');
         }
@@ -73,7 +75,7 @@ class VisibiliteListesTest extends TestCase
         $this->courrier('enregistre', 1, 'OBJET-VISIBLE-B');
 
         $this->actingAs($this->agent)->get('/courriers/mes-courriers')->assertSee('OBJET-VISIBLE-A');
-        $this->actingAs($this->responsable)->get('/courriers/a-traiter')->assertSee('OBJET-VISIBLE-B');
+        $this->actingAs($this->responsable)->get('/courriers/rechercher?statut=actifs')->assertSee('OBJET-VISIBLE-B');
         $this->actingAs($this->responsable)->get('/dashboard')->assertSee('OBJET-VISIBLE-B');
     }
 

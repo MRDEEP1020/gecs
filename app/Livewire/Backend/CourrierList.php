@@ -70,6 +70,10 @@ class CourrierList extends Component
     #[Url]
     public string $statut = '';
 
+    // Valeur spéciale du filtre statut : "tous les courriers encore en
+    // circuit" (voir resultats()).
+    public const STATUT_ACTIFS = 'actifs';
+
     #[Url]
     public string $sens = '';
 
@@ -116,9 +120,15 @@ class CourrierList extends Component
     // Colonne de cases à cocher (maquette 2026-09-18) : uniquement des ids
     // (Règle n°2), liaison de tableau native de Livewire (chaque case
     // partage le même wire:model, avec sa propre `value`). Réellement
-    // fonctionnelle (la sélection persiste, se vide au changement de
-    // filtre/page) même si aucune action de masse n'est encore construite
-    // dessus — jamais une case qui ferait semblant de fonctionner.
+    // fonctionnelle — jamais une case qui ferait semblant de fonctionner.
+    // Persiste volontairement à travers un changement de page/filtre (pas
+    // vidée par updated() ci-dessous) : chaque id reste revérifié
+    // individuellement (Règle n°6) au moment de l'action, donc rien
+    // d'incorrect à la valider ; la vider automatiquement au moindre
+    // changement de propriété casserait transfererSelection()/
+    // classerSelection() elles-mêmes (destinataireChoisi/dossierChoisi sont
+    // aussi des propriétés, mises à jour dans LA MÊME requête que l'appel,
+    // juste avant lui).
     public array $selectionnes = [];
 
     // Module 1/4 — transfert en masse (2026-09-22, demande explicite de
@@ -464,7 +474,11 @@ class CourrierList extends Component
             ->when($this->dateFin !== '', fn ($q) => $q->whereDate('date_mouvement', '<=', $this->dateFin))
             ->when($periodeDebut && $periodeFin, fn ($q) => $q->whereBetween('date_mouvement', [$periodeDebut, $periodeFin]))
             ->when($this->serviceId, fn ($q) => $q->where('service_id', $this->serviceId))
-            ->when($this->statut !== '', fn ($q) => $q->where('statut', $this->statut))
+            // 'actifs' (2026-09-24) : tous les statuts encore en circuit —
+            // remplace l'ancienne page "Transferts"/file d'attente
+            // (WorkflowQueue), supprimée à la demande de l'utilisateur.
+            ->when($this->statut === self::STATUT_ACTIFS, fn ($q) => $q->whereIn('statut', WorkflowService::statutsActifs()))
+            ->when($this->statut !== '' && $this->statut !== self::STATUT_ACTIFS, fn ($q) => $q->where('statut', $this->statut))
             ->when($this->sens !== '', fn ($q) => $q->where('sens', $this->sens))
             ->with('service')
             // Tri dynamique (voir trierPar() et COLONNES_TRIABLES) : $tri est
@@ -564,9 +578,20 @@ class CourrierList extends Component
         return Auth::user()->hasPrivilege('courriers.voir_texte_ocr');
     }
 
+    // PENTEST (2026-09-24) — $courrier est TYPÉ, donc Livewire le résout
+    // lui-même via resolveRouteBinding() (Courrier::find($id) brut) AVANT
+    // même d'entrer dans cette méthode, sans passer par visiblePar() ni
+    // aucune policy — contrairement à courrierApercu()/supprimerCourrier()
+    // ci-dessus qui revérifient explicitement un id reçu du client (Règle
+    // n°6). ! $this->peutRechercherContenu (privilège global) ne suffit
+    // pas : il fallait aussi revérifier CE courrier précis, sinon un id
+    // arbitraire posté directement (hors UI, qui ne l'affiche jamais)
+    // pouvait faire fuir un extrait de texte OCR hors du périmètre de
+    // l'utilisateur. voirTexteOcr() inclut déjà view() (confidentialité +
+    // dossier + périmètre de service).
     public function extraitTexteOcr(Courrier $courrier): ?string
     {
-        if ($this->contenu === '' || blank($courrier->texte_ocr) || ! $this->peutRechercherContenu) {
+        if ($this->contenu === '' || blank($courrier->texte_ocr) || Auth::user()->cannot('voirTexteOcr', $courrier)) {
             return null;
         }
 

@@ -71,11 +71,50 @@ async function enregistrerDossier(db, handle) {
         handle,
         nom: handle.name,
         enregistreLe: Date.now(),
+        actif: true,
     }));
+    signalerChangement();
 }
 
 async function oublierDossier(db) {
     await demande(transaction(db, STORE_DOSSIER, 'readwrite').delete(CLE_DOSSIER_COURANT));
+    signalerChangement();
+}
+
+// 2026-09-24 (voir DECISIONS.md "Dossier surveillé : configuration dans
+// l'administration") — activation/désactivation PERSISTANTE de l'import
+// automatique sur ce poste, pilotée depuis la page d'administration.
+// Un enregistrement antérieur sans champ `actif` est considéré actif
+// (comportement d'avant ce changement).
+function estActif(enregistrement) {
+    return enregistrement !== null && enregistrement.actif !== false;
+}
+
+async function definirActif(db, actif) {
+    const enregistrement = await dossierEnregistre(db);
+
+    if (enregistrement === null) {
+        return;
+    }
+
+    await demande(transaction(db, STORE_DOSSIER, 'readwrite').put({ ...enregistrement, actif }));
+    signalerChangement();
+}
+
+// Prévient les autres onglets du même navigateur (page Numérisation /
+// Nouveau courrier déjà ouvertes) qu'une configuration a changé : ils
+// démarrent ou arrêtent l'import sans rechargement.
+const CANAL = 'BroadcastChannel' in window ? new BroadcastChannel('gec-scan-watcher') : null;
+
+function signalerChangement() {
+    CANAL?.postMessage('configuration');
+}
+
+// Renvoie la fonction de désabonnement (appelée par destroy() du composant).
+function surChangement(rappel) {
+    CANAL?.addEventListener('message', rappel);
+
+    return () => CANAL?.removeEventListener('message', rappel);
 }
 
 function cleFichier({ name, size, lastModified }) {
@@ -250,6 +289,9 @@ window.ScanWatcher = {
     dossierEnregistre,
     enregistrerDossier,
     oublierDossier,
+    estActif,
+    definirActif,
+    surChangement,
     purgerFichiersAnciens,
     cleFichier,
     fichierTraite,
@@ -267,7 +309,20 @@ window.ScanWatcher = {
 // (échappement HTML normal, aucun conflit), lus une fois dans init().
 document.addEventListener('alpine:init', () => {
     window.Alpine.data('surveillanceDossier', () => ({
-        etat: 'chargement', // chargement | non_pris_en_charge | a_choisir | a_reprendre | en_surveillance | en_pause_erreur
+        // Deux modes (2026-09-24, voir DECISIONS.md "Dossier surveillé :
+        // configuration dans l'administration"), lus sur data-mode :
+        //   - 'config' (page Administration › Dossier surveillé) : choisir le
+        //     dossier, activer/désactiver, autoriser l'accès — n'importe
+        //     jamais rien lui-même ;
+        //   - 'execution' (Numérisation, Nouveau courrier) : importe
+        //     automatiquement, sans aucun bouton de configuration.
+        // États : chargement | non_pris_en_charge
+        //   config    : a_choisir | configure
+        //   execution : non_configure | a_reprendre | en_surveillance | en_pause_erreur
+        mode: 'execution',
+        etat: 'chargement',
+        actif: false,
+        permission: null,
         db: null,
         handle: null,
         nomDossier: '',
@@ -281,6 +336,7 @@ document.addEventListener('alpine:init', () => {
         messageErreur: '',
         messages: {},
         intervalId: null,
+        desabonner: null,
         enCoursDeTraitement: false,
         tailleVues: {},
         // Id Livewire stable du composant (this.$wire.$id), capturé une
@@ -291,7 +347,11 @@ document.addEventListener('alpine:init', () => {
 
         async init() {
             this.messages = { ...this.$el.dataset };
-            this.wireId = this.$wire.$id;
+            this.mode = this.$el.dataset.mode === 'config' ? 'config' : 'execution';
+
+            if (this.mode === 'execution') {
+                this.wireId = this.$wire.$id;
+            }
 
             if (!window.ScanWatcher.estPriseEnCharge()) {
                 this.etat = 'non_pris_en_charge';
@@ -301,72 +361,122 @@ document.addEventListener('alpine:init', () => {
             this.db = await window.ScanWatcher.ouvrirDB();
             await window.ScanWatcher.purgerFichiersAnciens(this.db);
 
+            await this.charger();
+
+            // Configuration changée dans un autre onglet (page
+            // d'administration) : appliquée ici sans rechargement.
+            this.desabonner = window.ScanWatcher.surChangement(() => this.charger());
+        },
+
+        // Navigation wire:navigate : le composant est détruit mais un
+        // setInterval continuerait de sonder le dossier en arrière-plan.
+        destroy() {
+            this.arreterBoucle();
+            this.desabonner?.();
+        },
+
+        // (Re)lit la configuration de CE poste et en déduit l'état affiché —
+        // appelé au chargement et à chaque changement de configuration.
+        async charger() {
             const enregistre = await window.ScanWatcher.dossierEnregistre(this.db);
 
-            if (enregistre) {
-                this.handle = enregistre.handle;
-                this.nomDossier = enregistre.nom;
+            this.handle = enregistre?.handle ?? null;
+            this.nomDossier = enregistre?.nom ?? '';
+            this.actif = window.ScanWatcher.estActif(enregistre);
 
-                // Reprise automatique sans clic (2026-09-09, voir DECISIONS.md
-                // "Watcher automatique sur le formulaire d'enregistrement") :
-                // queryPermission() ne fait que LIRE l'état actuel de la
-                // permission, contrairement à requestPermission() — ça ne
-                // nécessite pas de geste utilisateur et peut donc être appelé
-                // ici, silencieusement, à chaque chargement de page. Si le
-                // navigateur a déjà accordé l'accès lors d'une session
-                // précédente (cas normal, même profil/poste), la surveillance
-                // repart directement. Sinon (jamais accordé sur ce profil, ou
-                // révoqué), 'a_reprendre' reste le repli — un vrai clic est
-                // alors incontournable (requestPermission() l'exige).
-                const permission = await this.handle.queryPermission({ mode: 'read' });
+            if (this.mode === 'config') {
+                this.permission = this.handle ? await this.handle.queryPermission({ mode: 'read' }) : null;
+                this.etat = this.handle ? 'configure' : 'a_choisir';
 
-                if (permission === 'granted') {
-                    this.demarrer();
-                } else {
-                    this.etat = 'a_reprendre';
-                }
+                return;
+            }
+
+            this.arreterBoucle();
+
+            if (!this.handle || !this.actif) {
+                this.etat = 'non_configure';
+
+                return;
+            }
+
+            // Reprise automatique sans clic (2026-09-09) : queryPermission()
+            // ne fait que LIRE l'état de la permission, sans geste
+            // utilisateur. Sinon (jamais accordé sur ce profil, ou révoqué),
+            // 'a_reprendre' : un vrai clic est incontournable
+            // (requestPermission() l'exige).
+            const permission = await this.handle.queryPermission({ mode: 'read' });
+
+            if (permission === 'granted') {
+                this.demarrer();
             } else {
-                this.etat = 'a_choisir';
+                this.etat = 'a_reprendre';
             }
         },
+
+        // ===== Mode config (Administration › Dossier surveillé) =====
 
         async choisirDossier() {
             try {
                 const handle = await window.showDirectoryPicker({ mode: 'read' });
 
                 await window.ScanWatcher.enregistrerDossier(this.db, handle);
-                this.handle = handle;
-                this.nomDossier = handle.name;
-                this.demarrer();
+                await this.charger();
             } catch (erreur) {
                 // AbortError : l'utilisateur a fermé le sélecteur sans choisir — pas une vraie erreur.
                 if (erreur.name !== 'AbortError') {
-                    this.etat = 'en_pause_erreur';
                     this.messageErreur = this.messages.msgErreurAcces;
                 }
             }
         },
 
-        async changerDossier() {
-            await window.ScanWatcher.oublierDossier(this.db);
-            this.handle = null;
-            this.nomDossier = '';
-            this.etat = 'a_choisir';
+        async activer() {
+            this.messageErreur = '';
+
+            if (!(await this.autoriserAcces())) {
+                return;
+            }
+
+            await window.ScanWatcher.definirActif(this.db, true);
+            await this.charger();
         },
 
-        // Repli manuel quand init() n'a pas pu reprendre silencieusement
-        // (queryPermission() ≠ 'granted') : requestPermission() exige un
-        // vrai geste utilisateur, ce clic en est un.
-        async reprendre() {
+        async desactiver() {
+            await window.ScanWatcher.definirActif(this.db, false);
+            await this.charger();
+        },
+
+        async oublier() {
+            await window.ScanWatcher.oublierDossier(this.db);
+            await this.charger();
+        },
+
+        // requestPermission() exige un vrai geste utilisateur : toujours
+        // appelée depuis un clic.
+        async autoriserAcces() {
             let permission = await this.handle.queryPermission({ mode: 'read' });
 
             if (permission !== 'granted') {
                 permission = await this.handle.requestPermission({ mode: 'read' });
             }
 
+            this.permission = permission;
+
             if (permission !== 'granted') {
-                this.etat = 'en_pause_erreur';
                 this.messageErreur = this.messages.msgAccesRefuse;
+
+                return false;
+            }
+
+            return true;
+        },
+
+        // ===== Mode execution (Numérisation, Nouveau courrier) =====
+
+        // Repli quand charger() n'a pas pu reprendre silencieusement : la
+        // réceptionniste réautorise l'accès d'un clic, sans rien reconfigurer.
+        async reprendre() {
+            if (!(await this.autoriserAcces())) {
+                this.etat = 'en_pause_erreur';
 
                 return;
             }
@@ -375,15 +485,15 @@ document.addEventListener('alpine:init', () => {
         },
 
         demarrer() {
+            this.arreterBoucle();
             this.etat = 'en_surveillance';
             this.cycleDeSurveillance();
             this.intervalId = setInterval(() => this.cycleDeSurveillance(), 4000);
         },
 
-        arreter() {
+        arreterBoucle() {
             clearInterval(this.intervalId);
             this.intervalId = null;
-            this.etat = 'a_reprendre';
         },
 
         majJournal(nom, statut, raison = null) {
@@ -519,7 +629,7 @@ document.addEventListener('alpine:init', () => {
                 // seulement ce fichier — pause plutôt que de marteler le serveur.
                 this.etat = 'en_pause_erreur';
                 this.messageErreur = this.messages.msgDroitsPerdus;
-                clearInterval(this.intervalId);
+                this.arreterBoucle();
 
                 return;
             }

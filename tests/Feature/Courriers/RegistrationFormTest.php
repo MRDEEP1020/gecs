@@ -554,6 +554,37 @@ class RegistrationFormTest extends TestCase
         ], $attributs));
     }
 
+    // 2026-09-24 — retour réel de l'utilisateur (capture d'écran) :
+    // "Aperçu du courrier" affichait le CODE JS DU PANNEAU comme texte
+    // visible sur la page. Cause trouvée : un commentaire à l'intérieur de
+    // l'attribut x-data="{ ... }" (délimité par des guillemets DROITS)
+    // contenait lui-même un guillemet droit — pour le navigateur, ce
+    // guillemet referme prématurément l'attribut HTML, et tout le reste du
+    // JS (jusqu'au prochain guillemet droit trouvé par accident) fuit comme
+    // texte de page. Règle : AUCUN guillemet droit " dans un commentaire ou
+    // une chaîne à l'intérieur d'un x-data="..." — guillemets français «»
+    // uniquement (voir memory livewire_flux_gotchas). Ce test extrait le
+    // bloc x-data du panneau d'aperçu et vérifie qu'il n'en contient aucun.
+    public function test_lattribut_xdata_du_panneau_apercu_ne_contient_aucun_guillemet_droit(): void
+    {
+        Storage::fake('s3');
+        $agent = $this->utilisateurAvecProfil('Agent');
+        Storage::disk('s3')->put('brouillons/uuid-test.pdf', 'contenu du scan');
+        $brouillon = $this->brouillon($agent);
+        $this->actingAs($agent);
+
+        $html = Livewire::test(RegistrationForm::class, ['brouillonId' => $brouillon->id])->html();
+
+        $ancrage = strpos($html, 'activerDeplacement');
+        $this->assertNotFalse($ancrage, 'Le panneau "Aperçu du document" ne s\'est pas affiché.');
+
+        $debut = strrpos(substr($html, 0, $ancrage), 'x-data="{');
+        $finAttribut = strpos($html, '}"', $ancrage);
+        $bloc = substr($html, $debut + strlen('x-data="'), $finAttribut - ($debut + strlen('x-data="')) + 1);
+
+        $this->assertStringNotContainsString('"', $bloc, 'Un guillemet droit dans le bloc x-data casse l\'attribut HTML.');
+    }
+
     public function test_un_brouillon_prerempli_la_date_et_est_finalise_a_lenregistrement(): void
     {
         Storage::fake('s3');

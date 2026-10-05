@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\Courrier;
 use App\Models\CourrierHistorique;
+use App\Models\OrganizationUnit;
 use App\Models\Parametre;
 use App\Models\User;
 use App\Notifications\CourrierEnRetardNotification;
@@ -54,6 +55,22 @@ class SendMailAlertJob implements ShouldQueue
                 ->whereDate('date_limite', '<=', $aujourdhui->copy()->addDays($parametres->sla_seuil_risque_jours)),
             enRetard: false,
         );
+
+        // 2e palier — escalade (2026-10-05, Module 7, "l'escalade vers le
+        // responsable hiérarchique doit être configurable selon le niveau
+        // de retard") : une seule fois par date limite (alerte_escalade_le),
+        // jamais répétée comme la relance "en retard" ci-dessus — sinon le
+        // niveau supérieur recevrait autant de relances que le collaborateur
+        // initial, ce qui n'est pas le but d'une escalade ponctuelle.
+        // sla_escalade_jours nullable = fonctionnalité désactivée (défaut).
+        if ($parametres->sla_escalade_jours !== null) {
+            $this->traiterEscalade(
+                Courrier::query()
+                    ->enRetard()
+                    ->whereNull('alerte_escalade_le')
+                    ->whereDate('date_limite', '<=', $aujourdhui->copy()->subDays($parametres->sla_escalade_jours)),
+            );
+        }
     }
 
     private function traiter($requete, bool $enRetard): void
@@ -129,6 +146,97 @@ class SendMailAlertJob implements ShouldQueue
     private function createur(Courrier $courrier): ?User
     {
         return $courrier->historiques()->where('action', 'creation')->first()?->auteur;
+    }
+
+    private function traiterEscalade($requete): void
+    {
+        $requete
+            ->with(['service.responsable', 'affectationCourante.collaborateur', 'destinataireTransfert'])
+            ->chunkById(100, function ($courriers) {
+                foreach ($courriers as $courrier) {
+                    try {
+                        $this->alerterEscalade($courrier);
+                    } catch (Throwable $e) {
+                        report($e);
+                        Log::error('Échec de l\'alerte SLA (escalade)', [
+                            'courrier_id' => $courrier->id,
+                            'numero_reference' => $courrier->numero_reference,
+                            'erreur' => $e->getMessage(),
+                        ]);
+                    }
+                }
+            });
+    }
+
+    private function alerterEscalade(Courrier $courrier): void
+    {
+        $destinataires = $this->destinatairesEscalade($courrier);
+
+        if ($destinataires->isNotEmpty()) {
+            Notification::send($destinataires, new CourrierEnRetardNotification($courrier, enRetard: true, escalade: true));
+        }
+
+        $courrier->forceFill(['alerte_escalade_le' => now()])->saveQuietly();
+
+        CourrierHistorique::create([
+            'courrier_id' => $courrier->id,
+            'auteur_id' => null,
+            'action' => 'alerte_escalade',
+            'commentaire' => $destinataires->isEmpty()
+                ? 'Alerte SLA (escalade) : aucun destinataire autorisé trouvé.'
+                : 'Alerte SLA (escalade) envoyée à '.$destinataires->pluck('name')->implode(', '),
+        ]);
+    }
+
+    // Destinataires du palier "en retard" + le responsable du NIVEAU
+    // HIÉRARCHIQUE SUPÉRIEUR à celui du service, si résolvable.
+    private function destinatairesEscalade(Courrier $courrier): Collection
+    {
+        $destinataires = $this->destinataires($courrier, enRetard: true);
+
+        $superieur = $this->responsableNiveauSuperieur($courrier);
+
+        if ($superieur !== null && $superieur->can('view', $courrier)) {
+            $destinataires = $destinataires->push($superieur)->unique('id')->values();
+        }
+
+        return $destinataires;
+    }
+
+    // Remonte l'organigramme (App\Models\OrganizationUnit, voir "Organisation"
+    // v2) depuis le nœud ponté au service du courrier, jusqu'au premier
+    // ancêtre dont le responsable diffère de celui du service lui-même.
+    // Retourne null sans erreur si le service n'est pas encore ponté à
+    // l'organigramme (la majorité des services à ce jour, voir
+    // OrganizationUnit::departementLabelParServiceId()) — l'escalade se
+    // comporte alors comme les paliers précédents (collaborateur + responsable
+    // de service seulement) plutôt que d'échouer ou d'inventer un destinataire.
+    private function responsableNiveauSuperieur(Courrier $courrier): ?User
+    {
+        if ($courrier->service_id === null) {
+            return null;
+        }
+
+        $noeud = OrganizationUnit::where('service_id', $courrier->service_id)->first();
+
+        if ($noeud === null) {
+            return null;
+        }
+
+        $responsableService = $courrier->service?->responsable_id;
+        $courant = $noeud;
+        $profondeur = 0;
+
+        while ($courant?->parent_id !== null && $profondeur < 10) {
+            $courant = OrganizationUnit::find($courant->parent_id);
+            $profondeur++;
+
+            if ($courant?->responsible_user_id !== null && $courant->responsible_user_id !== $responsableService) {
+                return $courant->responsable;
+            }
+        }
+
+        return null;
     }
 
     public function failed(?Throwable $exception): void

@@ -197,6 +197,30 @@ class DossierClassementListTest extends TestCase
 
     // ===== Partager (deux boîtes) =====
 
+    // PENTEST (2026-09-24) — trouvé EN CORRIGEANT le test suivant :
+    // partageDisponibles() ignorait un $dossier null (sans le garde-fou de
+    // partageAssignes() juste en dessous, "return collect() vide") et
+    // listait alors TOUS les utilisateurs de l'organisation. Comme la
+    // modale "Partager" est rendue SANS condition dans la vue (voir
+    // dossierAPartager()), c'était le cas À CHAQUE chargement de la page —
+    // avant même d'ouvrir une seule fois la modale — pour n'importe quel
+    // utilisateur ayant seulement dossiers_classement.voir (Agent/DGA/
+    // Responsable de service/Collaborateur), sans le moindre droit de
+    // partage. Bug pré-existant, pas introduit par la revérification
+    // ajoutée sur dossierAPartager() le même jour — juste révélé par elle.
+    public function test_aucun_utilisateur_nest_liste_dans_la_modale_partager_sans_dossier_selectionne(): void
+    {
+        $observateur = $this->utilisateurAvecProfil('Agent');
+        Privilege::where('cle', 'dossiers_classement.voir')->firstOrFail()->users()->attach($observateur->id);
+
+        $nimporteQui = User::factory()->create(['name' => 'Utilisateur Quelconque De Lorganisation']);
+
+        $this->actingAs($observateur);
+
+        Livewire::test(DossierClassementList::class)
+            ->assertDontSee('Utilisateur Quelconque De Lorganisation');
+    }
+
     public function test_ajouter_et_retirer_un_partage_individuellement(): void
     {
         $createur = $this->utilisateurAvecProfil('Responsable de service');
@@ -215,6 +239,41 @@ class DossierClassementListTest extends TestCase
         $test->call('retirerPartage', $beneficiaire->id);
 
         $this->assertFalse($dossier->utilisateursAutorises()->where('users.id', $beneficiaire->id)->exists());
+    }
+
+    // PENTEST (2026-09-24, "next page then") — dossierAPartager() (#[Computed],
+    // alimente les deux boîtes de la modale "Partager" : noms/emails)
+    // chargeait le dossier depuis $this->dossierAPartagerId SANS jamais
+    // revérifier l'autorisation — contrairement à dossierSelectionne(), juste
+    // au-dessus dans le même fichier, qui revérifie déjà 'view' à chaque
+    // accès. $dossierAPartagerId est une propriété publique SANS #[Locked],
+    // donc modifiable directement par une requête cliente forgée (même
+    // faille de mécanisme que EditForm::courrier(), trouvée plus tôt le même
+    // jour). ouvrirPartage() autorise bien 'partager' AVANT de fixer
+    // dossierAPartagerId — mais un attaquant n'a pas besoin de passer par
+    // cette méthode : $this->partageDisponibles/partageAssignes sont
+    // affichées SANS condition dans le markup de la modale "dossier-partage"
+    // (voir dossierClassementList.blade.php ligne ~325-365 : aucun
+    // @if($dossierAPartagerId) autour), donc tout changement de la propriété
+    // suffit à faire fuir la liste des bénéficiaires (noms + emails) d'un
+    // dossier hors du périmètre de l'utilisateur, au prochain rendu — sans
+    // jamais appeler ouvrirPartage() ni aucune action.
+    public function test_le_panneau_partager_refuse_un_dossier_hors_du_perimetre_apres_changement_did(): void
+    {
+        $createur = $this->utilisateurAvecProfil('Responsable de service');
+        $this->accorderCreer($createur);
+        $dossierDeB = DossierClassement::create(['nom' => 'Dossier de B', 'cree_par_id' => $createur->id]);
+        $beneficiaireSecret = User::factory()->create(['name' => 'Bénéficiaire Secret Hors Périmètre']);
+        $dossierDeB->utilisateursAutorises()->attach($beneficiaireSecret->id);
+
+        $attaquant = $this->utilisateurAvecProfil('Responsable de service');
+        $this->accorderCreer($attaquant);
+
+        $this->actingAs($attaquant);
+
+        Livewire::test(DossierClassementList::class)
+            ->set('dossierAPartagerId', $dossierDeB->id)
+            ->assertDontSee('Bénéficiaire Secret Hors Périmètre');
     }
 
     public function test_ajouter_une_selection_en_masse(): void

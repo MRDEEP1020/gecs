@@ -193,11 +193,12 @@ class CircuitCourrierTest extends TestCase
         $this->assertSame($serviceHumainePropose->id, $courrier->refresh()->service_id);
     }
 
-    // Bug réel constaté le 2026-09-23 : après une validation RÉUSSIE, le
-    // courrier quitte "en cours de transfert", la DGA perd le droit de le
-    // consulter (branche voir_dga de CourrierPolicy::view()) et le re-rendu
-    // affichait une page 403 — l'action semblait avoir échoué.
-    public function test_apres_validation_la_dga_est_redirigee_au_lieu_dune_page_403(): void
+    // Bug réel constaté le 2026-09-23 : après une validation RÉUSSIE, la DGA
+    // perdait le droit de consulter le courrier et le re-rendu affichait une
+    // page 403. Depuis le 2026-09-24 ("dga doesn't see all the courier he
+    // transfered"), elle GARDE la consultation (privilège voir_transferes) :
+    // elle reste sur la fiche, sans plus aucune action possible dessus.
+    public function test_apres_validation_la_dga_garde_la_consultation_sans_pouvoir_agir(): void
     {
         $dga = $this->utilisateur('DGA');
         $service = Service::factory()->create(['code' => 'TST']);
@@ -210,9 +211,70 @@ class CircuitCourrierTest extends TestCase
             ->set('departementSelectionneId', $departement->id)
             ->call('validerService')
             ->assertHasNoErrors()
-            ->assertRedirect(route('courriers.a-traiter'));
+            ->assertNoRedirect()
+            ->assertSet('peutValiderService', false)
+            ->assertSet('peutAffecter', false);
 
         $this->assertSame($service->id, $courrier->refresh()->service_id);
+        $this->get(route('courriers.show', $courrier->id))->assertOk();
+    }
+
+    // 2026-09-24 — les courriers transférés restent dans les listes de la
+    // DGA (recherche, courriers enregistrés) mais PAS dans sa file "à
+    // traiter" : ils ne l'attendent plus.
+    public function test_la_dga_retrouve_ses_courriers_transferes_hors_de_sa_file_a_traiter(): void
+    {
+        $dga = $this->utilisateur('DGA');
+        $autreDga = $this->utilisateur('DGA');
+        $service = Service::factory()->create(['code' => 'TST']);
+        $transfere = $this->courrier($service, ['statut' => 'affecte', 'destinataire_transfert_id' => $dga->id, 'numero_reference' => 'GEC-2026-000201']);
+        $ancienSansDestinataire = $this->courrier($service, ['statut' => 'enregistre', 'numero_reference' => 'GEC-2026-000202']);
+        CourrierHistorique::create(['courrier_id' => $ancienSansDestinataire->id, 'auteur_id' => $dga->id, 'action' => 'service_valide_dga']);
+        $dUneAutreDga = $this->courrier($service, ['statut' => 'affecte', 'destinataire_transfert_id' => $autreDga->id, 'numero_reference' => 'GEC-2026-000203']);
+
+        $this->assertEqualsCanonicalizing(
+            [$transfere->id, $ancienSansDestinataire->id],
+            Courrier::query()->visiblePar($dga)->pluck('id')->all(),
+        );
+        $this->assertSame([], Courrier::query()->visiblePar($dga, false)->pluck('id')->all());
+
+        $this->actingAs($dga);
+        $this->get(route('courriers.show', $transfere->id))->assertOk();
+        $this->get(route('courriers.show', $dUneAutreDga->id))->assertForbidden();
+        Livewire::withQueryParams(['statut' => 'en_cours_de_transfert'])->test(\App\Livewire\Backend\CourrierList::class)->assertDontSee('GEC-2026-000201');
+        // withQueryParams() reste actif pour les Livewire::test() suivants :
+        // on le remet explicitement à vide pour la liste complète.
+        Livewire::withQueryParams([])->test(\App\Livewire\Backend\CourrierList::class)->assertSee('GEC-2026-000201')->assertSee('GEC-2026-000202');
+    }
+
+    // 2026-09-24 ("after he transfer he has to see the courier update /
+    // follow without working on it") : onglet "Suivi" de Courriers
+    // enregistrés — le courrier transféré reste suivi à chaque étape, avec
+    // son statut et la personne affectée ; l'onglet "Transféré" seul le
+    // perdait dès l'affectation.
+    public function test_la_dga_suit_ses_courriers_transferes_a_chaque_etape(): void
+    {
+        $dga = $this->utilisateur('DGA');
+        $responsable = $this->utilisateur('Responsable de service');
+        $service = Service::factory()->create(['code' => 'TST', 'responsable_id' => $responsable->id]);
+        $collaborateur = $this->utilisateur('Collaborateur', $service);
+        $courrier = $this->courrier($service, ['statut' => 'en_traitement', 'destinataire_transfert_id' => $dga->id, 'numero_reference' => 'GEC-2026-000301']);
+        Affectation::create(['courrier_id' => $courrier->id, 'user_id' => $collaborateur->id, 'affecte_par_id' => $responsable->id]);
+        $this->actingAs($dga);
+
+        Livewire::test(\App\Livewire\Backend\CourriersEnregistres::class, ['onglet' => 'enregistre'])
+            ->assertDontSee('GEC-2026-000301');
+
+        Livewire::withQueryParams(['onglet' => 'suivi'])
+            ->test(\App\Livewire\Backend\CourriersEnregistres::class)
+            ->assertSee('GEC-2026-000301')
+            ->assertSee(Courrier::libelleStatut('en_traitement'))
+            ->assertSee($collaborateur->name);
+
+        // Lecture seule : aucune action de circuit.
+        $this->assertFalse($dga->can('traiter', $courrier->fresh()));
+        $this->assertFalse($dga->can('valider', $courrier->fresh()));
+        $this->assertFalse($dga->can('affecter', $courrier->fresh()));
     }
 
     // Bug réel constaté le 2026-09-23 : courrier validé vers "Sinistre Santé"

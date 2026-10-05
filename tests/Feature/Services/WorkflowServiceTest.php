@@ -275,6 +275,56 @@ class WorkflowServiceTest extends TestCase
         Storage::disk('s3')->assertExists($cheminPieceAttendu);
     }
 
+    // Bug réel (2026-09-24, GEC-2026-000003) : fichier déjà dans le dossier
+    // du service, fichier_path resté sous _en_attente → aperçu en erreur 500.
+    public function test_valider_le_service_se_recale_sur_un_fichier_deja_deplace(): void
+    {
+        Storage::fake('s3');
+
+        $annee = now()->year;
+        $courrier = $this->courrier([
+            'statut' => 'en_cours_de_transfert',
+            'service_id' => null,
+            'numero_reference' => "GEC-{$annee}-000043",
+            'fichier_path' => "courriers/{$annee}/_en_attente/GEC-{$annee}-000043.pdf",
+        ]);
+        $cheminAttendu = "courriers/{$annee}/{$this->service->code}/GEC-{$annee}-000043.pdf";
+        Storage::disk('s3')->put($cheminAttendu, 'déjà déplacé');
+
+        $dga = User::factory()->create(['profil_id' => Profil::firstOrCreate(['nom' => 'DGA'])->id]);
+        $this->workflow->validerService($courrier, $this->service->id, 1, $dga);
+
+        $this->assertSame($cheminAttendu, $courrier->refresh()->fichier_path);
+    }
+
+    // Un échec de la COPIE DE SECOURS ne doit jamais laisser fichier_path
+    // sur l'ancien chemin alors que le fichier principal a bien été déplacé.
+    public function test_un_echec_de_la_copie_de_secours_met_quand_meme_a_jour_le_chemin(): void
+    {
+        Storage::fake('s3');
+        config(['filesystems.disks.s3_backup.bucket' => 'gec-backup']);
+        $secours = \Mockery::mock(\Illuminate\Contracts\Filesystem\Filesystem::class);
+        $secours->shouldReceive('exists')->andReturn(true);
+        $secours->shouldReceive('move')->andThrow(new RuntimeException('stockage de secours indisponible'));
+        Storage::set('s3_backup', $secours);
+
+        $annee = now()->year;
+        $courrier = $this->courrier([
+            'statut' => 'en_cours_de_transfert',
+            'service_id' => null,
+            'numero_reference' => "GEC-{$annee}-000044",
+            'fichier_path' => "courriers/{$annee}/_en_attente/GEC-{$annee}-000044.pdf",
+        ]);
+        Storage::disk('s3')->put($courrier->fichier_path, 'contenu du scan');
+
+        $dga = User::factory()->create(['profil_id' => Profil::firstOrCreate(['nom' => 'DGA'])->id]);
+        $this->workflow->validerService($courrier, $this->service->id, 1, $dga);
+
+        $cheminAttendu = "courriers/{$annee}/{$this->service->code}/GEC-{$annee}-000044.pdf";
+        $this->assertSame($cheminAttendu, $courrier->refresh()->fichier_path);
+        Storage::disk('s3')->assertExists($cheminAttendu);
+    }
+
     public function test_une_reaffectation_cree_une_nouvelle_ligne_sans_changer_le_statut(): void
     {
         $premier = $this->collaborateur();

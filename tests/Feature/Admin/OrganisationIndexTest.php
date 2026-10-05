@@ -232,6 +232,45 @@ class OrganisationIndexTest extends TestCase
         $this->assertFalse($unite->utilisateurs()->where('users.id', $membre->id)->exists());
     }
 
+    // 2026-09-24 — la fonction d'un membre se corrige après coup.
+    public function test_modifier_la_fonction_dun_membre(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $unite = OrganizationUnit::factory()->create();
+        $membre = $this->utilisateurAvecProfil('Collaborateur');
+        $unite->utilisateurs()->attach($membre->id, ['role_in_unit' => null]);
+        $this->actingAs($admin);
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('selectionnerNoeud', $unite->id)
+            ->call('modifierFonction', $membre->id)
+            ->assertSet('membreFonctionEditionId', $membre->id)
+            ->set('fonctionEdition', 'Chargé de clientèle')
+            ->call('enregistrerFonction')
+            ->assertHasNoErrors()
+            ->assertSet('membreFonctionEditionId', null)
+            ->assertSee('Chargé de clientèle');
+
+        $this->assertSame('Chargé de clientèle', $unite->utilisateurs()->where('users.id', $membre->id)->first()->pivot->role_in_unit);
+    }
+
+    public function test_modifier_la_fonction_refuse_sans_le_privilege(): void
+    {
+        $unite = OrganizationUnit::factory()->create();
+        $membre = $this->utilisateurAvecProfil('Collaborateur');
+        $unite->utilisateurs()->attach($membre->id, ['role_in_unit' => 'Collaborateur']);
+        $lecteur = $this->utilisateurAvecProfil('Agent');
+        $lecteur->privilegesDirectes()->attach(Privilege::where('cle', 'organisation.view')->firstOrFail());
+        $this->actingAs($lecteur->fresh());
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('selectionnerNoeud', $unite->id)
+            ->call('modifierFonction', $membre->id)
+            ->assertForbidden();
+
+        $this->assertSame('Collaborateur', $unite->utilisateurs()->where('users.id', $membre->id)->first()->pivot->role_in_unit);
+    }
+
     // ===== Statistiques réellement calculées (spec §11) =====
 
     public function test_le_panneau_de_details_affiche_les_vrais_compteurs(): void

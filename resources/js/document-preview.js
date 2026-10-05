@@ -120,6 +120,10 @@ class ApercuDocument {
         // réseau interne de pdf.js.
         const reponse = await fetch(url, { credentials: 'same-origin' });
 
+        if (reponse.status === 404) {
+            throw new Error('Document introuvable sur le stockage — signalez-le à un administrateur.');
+        }
+
         if (! reponse.ok) {
             throw new Error(`Réponse HTTP ${reponse.status} en récupérant le document.`);
         }
@@ -337,6 +341,95 @@ class ApercuDocument {
 // la requête réseau ni réinitialiser le zoom/la page — voir charger()).
 const registre = new Map();
 
+// Cliquer-glisser (2026-09-24, retour utilisateur : "why can i move it
+// like click move without having to schrolling") — pan à la souris/au
+// doigt/au stylet sur un conteneur en défilement (document zoomé
+// au-delà de la boîte visible), au lieu de devoir viser la barre de
+// défilement. Pointer Events (API unifiée souris/tactile/stylet) avec
+// setPointerCapture : le déplacement continue de suivre le pointeur même
+// s'il quitte momentanément les limites de l'élément pendant un
+// glissement rapide. Idempotent (élément marqué via _panActif) : peut
+// être rappelée sans risque à chaque rendre()/init() — ces conteneurs
+// sont `wire:ignore`, le même nœud DOM persiste entre plusieurs
+// ouvertures de la modale/plusieurs chargements du panneau, ré-attacher
+// les écouteurs à chaque fois dupliquerait le comportement.
+function activerDeplacement(element) {
+    if (! element || element._panActif) {
+        return;
+    }
+
+    element._panActif = true;
+    element.style.cursor = 'grab';
+
+    let enCours = false;
+    let depart = { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 };
+
+    element.addEventListener('pointerdown', (e) => {
+        // Bouton principal uniquement ; jamais sur un bouton/lien de la
+        // barre d'outils, ni sur la couche de texte pdf.js (la sélection
+        // de texte, pour la recherche/le copier-coller, doit rester
+        // possible au clic-glisser normal).
+        if (e.button !== 0 || e.target.closest('button, a, .textLayer')) {
+            return;
+        }
+
+        enCours = true;
+        depart = { x: e.clientX, y: e.clientY, scrollLeft: element.scrollLeft, scrollTop: element.scrollTop };
+        element.style.cursor = 'grabbing';
+        element.setPointerCapture(e.pointerId);
+    });
+
+    element.addEventListener('pointermove', (e) => {
+        if (! enCours) {
+            return;
+        }
+
+        element.scrollLeft = depart.scrollLeft - (e.clientX - depart.x);
+        element.scrollTop = depart.scrollTop - (e.clientY - depart.y);
+    });
+
+    const relacher = () => {
+        enCours = false;
+        element.style.cursor = 'grab';
+    };
+
+    element.addEventListener('pointerup', relacher);
+    element.addEventListener('pointercancel', relacher);
+}
+
+// Molette pour zoomer (2026-09-24, retour utilisateur : "why can[t] [i]
+// zoom without the + sign") — Ctrl/Cmd + molette, comme la plupart des
+// lecteurs PDF/éditeurs (Google Docs, Figma…) ; la molette SEULE reste
+// réservée au défilement normal du document (le conteneur est en
+// overflow-auto une fois zoomé). `onZoom(pas)` est fourni par l'appelant
+// (le composant Alpine du Blade) — cette fonction ne fait qu'écouter
+// l'évènement DOM, la logique de zoom elle-même (echelle, redessin pdf.js)
+// reste dans ApercuDocument.zoomer(), déjà appelée via `this.zoomer(...)`
+// côté Alpine (même principe de séparation que activerDeplacement()
+// ci-dessus : le JS partagé gère l'interaction DOM brute, jamais l'état
+// réactif d'Alpine). Idempotent (élément marqué via _zoomMoletteActif) —
+// même raison que activerDeplacement (conteneurs wire:ignore, nœud DOM
+// persistant entre plusieurs ouvertures).
+function activerZoomMolette(element, onZoom) {
+    if (! element || element._zoomMoletteActif) {
+        return;
+    }
+
+    element._zoomMoletteActif = true;
+
+    element.addEventListener('wheel', (e) => {
+        if (! (e.ctrlKey || e.metaKey)) {
+            return;
+        }
+
+        // Sans ce preventDefault, Ctrl+molette zoome aussi la PAGE ENTIÈRE
+        // du navigateur (comportement natif) en plus du document — les deux
+        // zooms combinés donneraient une expérience incohérente.
+        e.preventDefault();
+        onZoom(e.deltaY < 0 ? 10 : -10);
+    }, { passive: false });
+}
+
 window.DocumentPreview = {
     obtenir(cle) {
         if (! registre.has(cle)) {
@@ -345,4 +438,6 @@ window.DocumentPreview = {
 
         return registre.get(cle);
     },
+    activerDeplacement,
+    activerZoomMolette,
 };

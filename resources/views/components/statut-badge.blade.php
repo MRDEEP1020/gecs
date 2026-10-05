@@ -26,16 +26,22 @@
     (orange) — seul en_traitement a été déplacé. "affecte" reste SUCCESS
     (vert) — listé explicitement sous 🟢 dans le système fourni ("Affecté"),
     non concerné par ce changement.
+
+    Mise à jour (2026-10-05, retour utilisateur) : "archive" quitte le
+    groupe SUCCESS (vert) pour rejoindre la palette grise/noire neutre
+    (mêmes tokens --color-brand-disabled-bg/text que le statut par défaut),
+    afin de ne plus être confondu visuellement avec "traité"/"affecté".
 --}}
 @php
     $classes = match ($statut) {
-        'traite', 'archive', 'affecte' => 'bg-brand-success-light text-brand-success-dark',
+        'traite', 'affecte' => 'bg-brand-success-light text-brand-success-dark',
+        'archive' => 'bg-brand-disabled-bg text-brand-disabled-text',
         'rejete' => 'bg-brand-danger-light text-brand-danger-dark',
         'en_traitement', 'enregistre' => 'bg-brand-info-light text-brand-info-dark',
         'en_attente_information', 'en_attente_de_transfert', 'en_validation', 'en_cours_de_transfert' => 'bg-brand-warning-light text-brand-warning-dark',
         default => 'bg-brand-disabled-bg text-brand-disabled-text',
     };
 @endphp
-<span {{ $attributes->class(['inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', $classes]) }}>
+<span {{ $attributes->class(['inline-flex items-center rounded-full px-3 py-0.5 text-xs font-medium', $classes]) }}>
     {{ \App\Models\Courrier::libelleStatut($statut) }}
 </span>

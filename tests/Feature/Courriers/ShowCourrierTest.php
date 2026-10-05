@@ -47,6 +47,36 @@ class ShowCourrierTest extends TestCase
         return $courrier;
     }
 
+    // 2026-09-24 — retour réel de l'utilisateur (capture d'écran) :
+    // "Aperçu du courrier" affichait le CODE JS DU PANNEAU comme texte
+    // visible sur la page. Cause trouvée : un commentaire à l'intérieur de
+    // l'attribut x-data="{ ... }" (délimité par des guillemets DROITS)
+    // contenait lui-même un guillemet droit — pour le navigateur, ce
+    // guillemet referme prématurément l'attribut HTML, et tout le reste du
+    // JS (jusqu'au prochain guillemet droit trouvé par accident) fuit comme
+    // texte de page. Règle : AUCUN guillemet droit " dans un commentaire ou
+    // une chaîne à l'intérieur d'un x-data="..." — guillemets français «»
+    // uniquement (voir memory livewire_flux_gotchas). Ce test extrait le
+    // bloc x-data du panneau d'aperçu et vérifie qu'il n'en contient aucun.
+    public function test_lattribut_xdata_du_panneau_apercu_ne_contient_aucun_guillemet_droit(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $courrier = $this->courrierEnregistrePar($admin, ['fichier_path' => 'courriers/2026/TST/GEC-TEST.pdf']);
+        $this->actingAs($admin);
+
+        $html = Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])->html();
+
+        $ancrage = strpos($html, 'activerDeplacement');
+        $this->assertNotFalse($ancrage, 'Le panneau "Aperçu du courrier" ne s\'est pas affiché.');
+
+        $debut = strrpos(substr($html, 0, $ancrage), 'x-data="{');
+        $finAttribut = strpos($html, '}"', $ancrage);
+        $bloc = substr($html, $debut + strlen('x-data="'), $finAttribut - ($debut + strlen('x-data="')) + 1);
+
+        $this->assertStringNotContainsString('"', $bloc, 'Un guillemet droit dans le bloc x-data casse l\'attribut HTML.');
+        $this->assertSame(1, substr_count($html, 'Voir en plein écran'), 'Le bouton de la modale agrandie ne s\'est pas rendu correctement.');
+    }
+
     public function test_un_administrateur_peut_voir_nimporte_quel_courrier(): void
     {
         $agent = $this->utilisateurAvecProfil('Agent');
@@ -365,6 +395,54 @@ class ShowCourrierTest extends TestCase
             ->assertSee('DOS-2026-0042');
     }
 
+    // 2026-10-02 — retour utilisateur avec capture d'écran : "where does it
+    // represent here that this courier is inside a folder", puis "i want it
+    // somewhere there" (capture de l'en-tête), puis "here" (capture recadrée
+    // sur la rangée de badges N°/Statut) — le nom du dossier n'apparaissait
+    // qu'en bas de page (Détails complémentaires + Actions rapides + l'option
+    // du menu déroulant de la modale "Classer dans un dossier", qui liste
+    // aussi ce dossier parmi les accessibles — 3 occurrences avant ces
+    // correctifs), hors du premier écran visible sans défiler. Ajouté dans
+    // DEUX endroits toujours visibles : le champ "Dossier" du panneau
+    // "Informations générales", ET un badge pilule dans la rangée de badges
+    // de l'en-tête (à côté de x-statut-badge et x-chronometre), au format
+    // "NomDossier/NuméroCourrier" ("i want this isnstead dossier
+    // name/courier name") — l'emplacement le plus en évidence de toute la
+    // page. "Non classé" ne s'affiche QUE dans "Informations générales",
+    // jamais dans l'en-tête (réservé à ce qui est effectivement vrai sur ce
+    // courrier, même logique que le numéro de tampon juste en dessous). Ce
+    // test compte les occurrences pour vérifier que ces deux nouveaux
+    // endroits rendent bien, sans dépendre d'un texte de libellé ("Dossier")
+    // trop générique pour être cherché sans ambiguïté avec "Dossier
+    // lié"/"Dossier de classement" déjà existants.
+    public function test_le_nom_du_dossier_apparait_aussi_dans_informations_generales(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $dossier = DossierClassement::create(['nom' => 'Sinistres 2026 Unique', 'cree_par_id' => $agent->id]);
+        $courrier = $this->courrierEnregistrePar($agent, ['dossier_classement_id' => $dossier->id]);
+        $this->actingAs($agent);
+
+        $html = Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])->html();
+
+        $this->assertSame(5, substr_count($html, 'Sinistres 2026 Unique'), 'Le nom du dossier doit apparaître 5 fois : en-tête, Informations générales, Détails complémentaires, Actions rapides, option de la modale "Classer".');
+    }
+
+    // Non classé : le champ "Dossier" du panneau "Informations générales"
+    // doit quand même afficher un état clair, jamais rester vide — MAIS
+    // la rangée de badges de l'en-tête ne doit RIEN montrer dans ce cas,
+    // "Non classé" n'y ayant pas sa place (réservé à ce qui est
+    // effectivement vrai sur ce courrier).
+    public function test_non_classe_saffiche_dans_informations_generales_sans_dossier(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $courrier = $this->courrierEnregistrePar($agent);
+        $this->actingAs($agent);
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])
+            ->assertSeeInOrder([__('Référence externe'), __('Dossier'), __('Non classé')])
+            ->assertDontSee(__('Dossier').' :', false);
+    }
+
     public function test_classer_dans_un_dossier_assigne_le_courrier(): void
     {
         $agent = $this->utilisateurAvecProfil('Agent');
@@ -486,7 +564,7 @@ class ShowCourrierTest extends TestCase
 
     // 2026-09-22, demande explicite de l'utilisateur (diagnostic en direct :
     // "why do i have to navigate there first where is that shortcut one")
-    // — WorkflowQueue ("Transferts") doit pouvoir ouvrir directement sur
+    // — un lien (Tâches du jour, Actions rapides) doit pouvoir ouvrir directement sur
     // l'onglet "Circuit de traitement" via ?onglet=circuit, au lieu de
     // forcer un clic supplémentaire sur chaque courrier.
     public function test_onglet_circuit_est_ouvert_directement_via_le_parametre_durl(): void

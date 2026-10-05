@@ -108,7 +108,7 @@
                 </div>
                 <flux:text class="mb-4 text-zinc-500">{{ __('Jours calendaires. Une échéance saisie à la main sur un courrier, ou un délai propre à ce courrier, reste toujours prioritaire sur ces valeurs.') }}</flux:text>
 
-                <div class="grid gap-4 sm:grid-cols-3">
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <flux:input
                         type="number"
                         wire:model="slaJoursDefaut"
@@ -132,6 +132,15 @@
                         min="1"
                         max="30"
                         :description="__('Une fois en retard, relance au plus tous les N jours.')"
+                    />
+                    <flux:input
+                        type="number"
+                        wire:model="slaEscaladeJours"
+                        :label="__('Escalade après (jours de retard)')"
+                        min="1"
+                        max="365"
+                        :placeholder="__('Désactivée')"
+                        :description="__('Laisser vide pour désactiver. Notifie en plus le niveau hiérarchique supérieur (Organisation).')"
                     />
                 </div>
             </div>

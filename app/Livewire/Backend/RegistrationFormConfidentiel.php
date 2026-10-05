@@ -102,6 +102,9 @@ class RegistrationFormConfidentiel extends Component
                 'service_id' => null,
                 'statut' => 'enregistre',
                 'confidentialite' => $data['niveauConfidentialite'],
+                // Marque explicite de ce flux (2026-09-24) — accès et clôture
+                // par le destinataire, voir CourrierPolicy::view()/cloturerConfidentiel().
+                'confidentiel_direct' => true,
                 'destinataire_transfert_id' => $destinataire->id,
             ]);
 

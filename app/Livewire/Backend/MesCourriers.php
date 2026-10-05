@@ -19,8 +19,7 @@ use Livewire\WithPagination;
 // répartis en 3 onglets correspondant aux sous-statuts du transfert vers le
 // DGA/ADJ DGA (voir DECISIONS.md "Synchronisation avec le nouveau document
 // SRS-GEC.pdf" — Module 1/4). Distincte de `CourrierList` (recherche
-// générale multi-critères) et de `WorkflowQueue` (file d'attente des
-// acteurs du circuit — l'Agent n'y a pas accès).
+// générale multi-critères).
 #[Title('Mes courriers')]
 class MesCourriers extends Component
 {
