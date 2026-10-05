@@ -44,9 +44,15 @@ class ServiceReelSynchroniseur
 
         $modifs = [];
 
+        // Plus de garde-fou "aucun autre service de ce nom" ici (2026-10-05,
+        // voir le commentaire de relierOuCreer() ci-dessous) : `services.nom`
+        // n'est plus unique globalement depuis le multi-site, deux services
+        // de même nom sous deux Sites différents sont attendus. Seul le test
+        // "le nom du service est toujours resté aligné sur ce nœud" protège
+        // encore un service PARTAGÉ (plusieurs nœuds reliés à la main au même
+        // service réel) contre un renommage non voulu depuis un seul d'entre eux.
         $ancienNom = $avant['name'] ?? $unite->name;
-        if ($service->nom === $ancienNom && $service->nom !== $unite->name
-            && ! Service::where('nom', $unite->name)->whereKeyNot($service->id)->exists()) {
+        if ($service->nom === $ancienNom && $service->nom !== $unite->name) {
             $modifs['nom'] = $unite->name;
         }
 
@@ -61,11 +67,21 @@ class ServiceReelSynchroniseur
         $service->update($modifs);
     }
 
-    // Aucun service choisi à la main : un service de même nom existe déjà →
-    // on le relie (pas de doublon, `services.nom` est unique) ; sinon on le crée.
+    // Aucun service choisi à la main : un service de même nom existe déjà
+    // DANS LE MÊME SITE → on le relie (pas de doublon au sein d'une même
+    // agence) ; sinon on en crée un NOUVEAU, même si une autre agence a déjà
+    // un service de ce nom (2026-10-05, demande explicite de l'utilisateur :
+    // "EACH CITY HAS HIS OWN DEPARTMENTS... USERS ON IT SHOULD SEE THE DATAS
+    // OF THAT SITE NOT THE OTHERS") — deux agences ont chacune leur propre
+    // "DSIN", jamais le même courrier ni les mêmes collaborateurs.
+    // `services.nom` n'est plus unique en base pour permettre ça (voir
+    // migration 2026_10_05_040000) ; `services.code`, lui, reste unique
+    // (codeUnique() ci-dessous), donc chaque service reste identifiable sans
+    // ambiguïté même si plusieurs partagent le même nom affiché.
     private function relierOuCreer(OrganizationUnit $unite): void
     {
-        $service = Service::where('nom', $unite->name)->first()
+        $siteId = $this->siteAncetreId($unite);
+        $service = $this->serviceExistantDansLeMemeSite($unite, $siteId)
             ?? Service::create([
                 'nom' => $unite->name,
                 'code' => $this->codeUnique($unite->code, $unite->name),
@@ -78,6 +94,44 @@ class ServiceReelSynchroniseur
         }
 
         $unite->update(['service_id' => $service->id]);
+    }
+
+    // Un service de même nom existe-t-il déjà, relié à un AUTRE nœud
+    // service/sous-service du MÊME Site racine que $unite ? Ne regarde que
+    // les nœuds déjà bridés (service_id non null) — jamais un nœud pas
+    // encore synchronisé, et jamais $unite elle-même.
+    private function serviceExistantDansLeMemeSite(OrganizationUnit $unite, ?int $siteId): ?Service
+    {
+        $candidats = OrganizationUnit::where('name', $unite->name)
+            ->whereKeyNot($unite->id)
+            ->whereIn('type', self::TYPES_SYNCHRONISES)
+            ->whereNotNull('service_id')
+            ->get();
+
+        foreach ($candidats as $candidat) {
+            if ($this->siteAncetreId($candidat) === $siteId) {
+                return $candidat->service;
+            }
+        }
+
+        return null;
+    }
+
+    // Remonte l'organigramme jusqu'au premier ancêtre de type Site/Agence
+    // (le niveau racine, "sans parent" — voir OrganisationIndex). Retourne
+    // null si le nœud n'a aucun ancêtre Site (ne devrait pas arriver en
+    // usage normal, mais évite de planter sur une arborescence incomplète).
+    private function siteAncetreId(OrganizationUnit $unite): ?int
+    {
+        $courant = $unite;
+        $profondeur = 0;
+
+        while ($courant !== null && $courant->type !== OrganizationUnit::TYPE_SITE && $profondeur < 10) {
+            $courant = $courant->parent_id !== null ? OrganizationUnit::find($courant->parent_id) : null;
+            $profondeur++;
+        }
+
+        return $courant?->type === OrganizationUnit::TYPE_SITE ? $courant->id : null;
     }
 
     // Un service partagé par plusieurs nœuds reste actif tant qu'au moins un
