@@ -121,6 +121,10 @@ class PrivilegeSeeder extends Seeder
             // par défaut, comme les autres pages d'administration.
             'administration.dossier_surveille' => ['Configurer le dossier surveillé', 'Accéder à "Dossier surveillé" : choisir le dossier de scan d\'un poste, démarrer ou arrêter l\'import automatique.', 'administratif', []],
             'administration.audit' => ['Consulter la sécurité et l\'audit', 'Accéder à "Sécurité & Audit" (page à venir).', 'administratif', []],
+            // 2026-10-06 — entretien terrain réceptionniste (voir DECISIONS.md
+            // "Délégation DGA/ADJ absents") : DGA peut aussi activer sa
+            // propre délégation avant une absence, pas seulement l'Administrateur.
+            'administration.delegation_dga' => ['Gérer les délégations DGA', 'Activer/désactiver une délégation temporaire de la validation du service (DGA/ADJ) vers un autre utilisateur, en cas d\'absence simultanée.', 'administratif', ['DGA']],
             'general.notifications' => ['Voir les notifications', 'Afficher le menu "Notifications" et la cloche de la barre supérieure.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             // Actions sur un courrier séparées de la simple consultation
             // (2026-09-23, "all of them") — mêmes défauts qu'avant (tout

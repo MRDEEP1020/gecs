@@ -12,6 +12,7 @@ use App\Livewire\Backend\CourrierCalendar;
 use App\Livewire\Backend\CourrierList;
 use App\Livewire\Backend\CourriersEnregistres;
 use App\Livewire\Backend\Dashboard;
+use App\Livewire\Backend\DelegationDgaIndex;
 use App\Livewire\Backend\DossierClassementList;
 use App\Livewire\Backend\DossierSurveille;
 use App\Livewire\Backend\EditForm;
@@ -121,6 +122,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Module 1/2 — configuration du dossier surveillé (2026-09-24, voir
     // DECISIONS.md "Dossier surveillé : configuration dans l'administration").
     Route::livewire('admin/dossier-surveille', DossierSurveille::class)->name('admin.dossier-surveille');
+    // Module 1/4 — délégation DGA/ADJ → RH en cas d'absence simultanée
+    // (2026-10-06, voir DECISIONS.md "Délégation DGA/ADJ absents").
+    Route::livewire('admin/delegation-dga', DelegationDgaIndex::class)->name('admin.delegation-dga');
 });
 
 require __DIR__.'/settings.php';

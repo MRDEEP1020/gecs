@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Services\SlaCalculatorService;
 use App\Services\WorkflowService;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -11,7 +12,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
-use Carbon\CarbonInterface;
 use Illuminate\Support\Str;
 
 class Courrier extends Model
@@ -451,6 +451,18 @@ class Courrier extends Model
                 if ($user->hasPrivilege('courriers.voir_dga')) {
                     $q->orWhere(fn ($q) => $q->where('statut', 'en_cours_de_transfert')
                         ->where(fn ($q) => $q->whereNull('destinataire_transfert_id')->orWhere('destinataire_transfert_id', $user->id)));
+                }
+
+                // 2026-10-06 (entretien terrain, voir DECISIONS.md
+                // "Délégation DGA/ADJ absents") : un délégataire actif voit
+                // aussi les courriers en attente de validation adressés au(x)
+                // DGA/ADJ qu'il couvre actuellement — indépendant du
+                // privilège courriers.voir_dga (un RH délégataire ne l'a pas).
+                $delegantsIds = $user->delegationsDgaActivesIds();
+
+                if (! empty($delegantsIds)) {
+                    $q->orWhere(fn ($q) => $q->where('statut', 'en_cours_de_transfert')
+                        ->where(fn ($q) => $q->whereNull('destinataire_transfert_id')->orWhereIn('destinataire_transfert_id', $delegantsIds)));
                 }
 
                 // Pli confidentiel envoyé directement à cet utilisateur

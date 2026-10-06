@@ -4353,3 +4353,57 @@ Alternatives envisagées : aucune — ce sont des constats d'entretien, pas un
 choix d'architecture ; seul le point "délégation DGA+ADJ absents" ouvre une
 vraie décision à prendre plus tard (non tranchée ici, juste consignée pour
 ne pas être oubliée).
+
+## [2026-10-06] Tests de charge/concurrence réels (2 cycles casse → correctif → re-test) + max_connections MySQL relevé
+Contexte : demande explicite de l'utilisateur ("TEST WITH DATA UNTIL THE
+SYSTEM WANT TO BREAK THEN STOP REPAIRE IT AND CONTINUE THE TESTING"), suite
+aux questions sur la capacité réelle (14-100 courriers/jour, 200-390/semaine,
+voir entretien terrain ci-dessus). Série de tests RÉELS contre la vraie base
+`gec` (toujours avec données taguées + nettoyage complet vérifié après coup,
+jamais laissés en l'état) :
+- **OCR/queue (volume réaliste, 100 documents réels via Dompdf → Ghostscript
+  600dpi → Tesseract double-passe)** : ~9-10s/job, 0 échec, 100/100 réussis.
+  Découverte en cours de route : Herd fait déjà tourner son propre
+  `queue:work` permanent en arrière-plan pour ce site (process actif depuis
+  le 2026-10-02) — mes jobs ont donc été traités par 2 workers concurrents
+  sans que je l'aie demandé. À savoir pour toute future mesure de débit.
+- **Concurrence réelle (processus OS séparés et simultanés, pas une boucle)**
+  sur `NumeroReferenceGenerator::generer()` + `Courrier::create()` — le point
+  précis que Règle n°3 de CLAUDE.md dit protégé par contrainte d'unicité en
+  base : 10, 30, 60, 150 processus simultanés → 0 doublon, 0 erreur à chaque
+  palier.
+- **CASSE #1** à 300 processus simultanés : `SQLSTATE[08004] [1040] Too many
+  connections` (défaut MySQL `max_connections=151`, XAMPP jamais ajusté
+  depuis l'installation). 149/300 postes échoués. **Corrigé** (approbation
+  explicite de l'utilisateur après qu'une 1ère tentative sans confirmation
+  a été bloquée par le classifieur auto-mode) : `max_connections` relevé à
+  500 (`SET GLOBAL`, effet immédiat + persisté dans `C:\xampp\mysql\bin\
+  my.ini`, survit à un redémarrage MySQL). Re-test à 300 : 0 erreur.
+- **CASSE #2** à 600 processus simultanés : même erreur, au nouveau plafond
+  (≈500-600). **Corrigé** : relevé à 1000 (même procédure, `my.ini` mis à
+  jour une 2e fois). Re-test à 600 : 0 erreur. Poussé ensuite à 1000
+  processus simultanés / 10 000 courriers : 0 erreur, 0 doublon de
+  `numero_reference` sur les 10 000.
+- **Performance des pages réelles à grande échelle** : les ~28 000 courriers
+  de test accumulés pendant ces vagues ont servi à chronométrer en HTTP réel
+  (curl, session authentifiée) `/dashboard`, `/courriers/enregistres`,
+  `/courriers/rechercher` (avec et sans filtre) — tous sous 1s après le
+  premier hit (le premier chargement de `/courriers/rechercher` à 2.6s était
+  un simple échauffement OPcache/première compilation, pas une régression —
+  confirmé en répétant 4 fois, toujours <0.55s ensuite). Aucune dégradation
+  de Règle n°3 (pagination/eager loading) détectée à cette échelle, bien
+  au-delà du volume réel attendu.
+Décision : `max_connections=1000` conservé en l'état (large marge au-dessus
+du besoin réel — même 1000 inscriptions simultanées, un volume jamais
+observé dans l'entretien terrain, passent sans erreur). `innodb_buffer_pool_size`
+et les autres réglages de `my.ini` (hérités tels quels du fichier d'exemple
+XAMPP "small systems <= 64M") n'ont PAS été revus dans ce passage — seul
+`max_connections` a été touché, sur demande explicite ; à reconsidérer
+globalement avant un déploiement réel si le serveur de production n'est pas
+XAMPP.
+Alternatives envisagées : laisser `max_connections=151` et documenter la
+limite sans la changer (écarté — demande explicite de pousser jusqu'à la
+casse PUIS corriger) ; automatiser une détection applicative de ce cas
+(retry avec backoff côté `NumeroReferenceGenerator`, qui ne retente qu'une
+fois sur `QueryException` générique) — pas nécessaire ici, la vraie cause
+était un plafond serveur sous-dimensionné, pas un défaut du code applicatif.

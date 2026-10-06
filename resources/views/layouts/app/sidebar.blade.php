@@ -99,6 +99,7 @@
                     'admin_workflows' => $u->hasPrivilege('administration.workflows'),
                     'admin_sla' => $u->hasPrivilege('administration.sla'),
                     'admin_dossier_surveille' => $u->hasPrivilege('administration.dossier_surveille'),
+                    'admin_delegation_dga' => $u->hasPrivilege('administration.delegation_dga'),
                     'admin_audit' => $u->hasPrivilege('administration.audit'),
                     'stats_dashboard' => $u->hasPrivilege('statistiques.consulter'),
                     'stats_rapports' => $u->hasPrivilege('statistiques.rapports'),
@@ -231,7 +232,7 @@
                          privilèges lui-même est désormais fixe (plus de
                          création/suppression de définition), voir
                          CHANGELOG-AGENT.md. --}}
-                    <flux:sidebar.group :heading="__('Administration')" expandable :expanded="request()->routeIs(['admin.utilisateurs', 'admin.profils', 'admin.regles', 'admin.organisation', 'admin.parametres', 'admin.dossier-surveille'])" icon="cog-6-tooth" class="grid">
+                    <flux:sidebar.group :heading="__('Administration')" expandable :expanded="request()->routeIs(['admin.utilisateurs', 'admin.profils', 'admin.regles', 'admin.organisation', 'admin.parametres', 'admin.dossier-surveille', 'admin.delegation-dga'])" icon="cog-6-tooth" class="grid">
                         {{-- utilisateurs.gerer / privileges.gerer séparés le 2026-09-23. --}}
                         @if ($menu['admin_utilisateurs'])
                             <flux:sidebar.item icon="users" :href="route('admin.utilisateurs')" :current="request()->routeIs('admin.utilisateurs')" wire:navigate>
@@ -281,6 +282,14 @@
                         @if ($menu['admin_dossier_surveille'])
                             <flux:sidebar.item icon="folder-open" :href="route('admin.dossier-surveille')" :current="request()->routeIs('admin.dossier-surveille')" wire:navigate>
                                 {{ __('Dossier surveillé') }}
+                            </flux:sidebar.item>
+                        @endif
+                        {{-- Délégation DGA/ADJ → RH en cas d'absence simultanée
+                             (2026-10-06, entretien terrain réceptionniste, voir
+                             DECISIONS.md "Délégation DGA/ADJ absents"). --}}
+                        @if ($menu['admin_delegation_dga'])
+                            <flux:sidebar.item icon="arrow-right-circle" :href="route('admin.delegation-dga')" :current="request()->routeIs('admin.delegation-dga')" wire:navigate>
+                                {{ __('Délégation DGA') }}
                             </flux:sidebar.item>
                         @endif
                         @if ($menu['admin_audit'])

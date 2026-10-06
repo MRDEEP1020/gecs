@@ -3597,6 +3597,24 @@ Pourquoi : même demande que ci-dessus. Remplace le `<flux:radio.group wire:mode
 ## [2026-10-06 00:00] Organisation — test du sélecteur réactif retiré, remplacé par un test de détermination du type par le parent
 Fichier(s) : tests/Feature/Admin/OrganisationIndexTest.php
 Pourquoi : `test_changer_le_type_rafraichit_le_champ_service_reel_lie` testait un comportement (bascule réactive de `typeNoeud` dans une modale unique) qui n'existe plus après la séparation en 4 modales ci-dessus. Remplacé par `test_ouvrir_creation_determine_le_type_depuis_le_parent`, qui vérifie que `ouvrirCreation()` fixe bien `typeNoeud` depuis `typeEnfantPropose()` du parent (ou TYPE_SITE à la racine) — le comportement réellement garanti désormais. Suite complète Admin/Organisation + Dossiers + SimulationParcoursReel vérifiée au vert (54/54) après ce changement.
+
+## [2026-10-06 01:00] Module 1/4 — Délégation DGA/ADJ absents (entretien terrain réceptionniste)
+Fichier(s) : database/migrations/2026_10_06_010000_create_delegations_dga_table.php
+Fichier(s) : app/Models/DelegationDga.php
+Fichier(s) : app/Models/User.php
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : app/Livewire/Backend/DelegationDgaIndex.php
+Fichier(s) : resources/views/livewire/frontend/delegationDgaIndex.blade.php
+Fichier(s) : routes/web.php
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : gap identifié lors de l'entretien terrain réceptionniste (voir DECISIONS.md "Délégation DGA/ADJ absents") — quand le DGA ET l'Adjoint DGA sont absents en même temps, le processus papier bascule informellement vers les RH, jamais modélisé jusqu'ici dans `CourrierPolicy::validerService()`. Choix confirmé par AskUserQuestion (toggle manuel, pas de détection automatique d'absence) : nouvelle table `delegations_dga` nominative (delegant DGA/ADJ → delegataire, jamais supprimée physiquement, Règle n°5), nouvelle page Administration › Délégation DGA (privilège `administration.delegation_dga`, DGA + Administrateur par défaut) pour activer/désactiver. `User::delegationsDgaActivesIds()` (mémoïsé comme `privilegesCles()`) utilisé par `CourrierPolicy::validerService()`/`view()` ET `Courrier::scopeVisiblePar()` — un délégataire actif ne peut valider/voir QUE les courriers adressés au(x) DGA/ADJ précis qu'il couvre, jamais au-delà (nominatif, pas un interrupteur global). Seedé immédiatement contre la vraie base (`php artisan migrate --force` + script ciblé pour la nouvelle clé de privilège, pas de PrivilegeSeeder complet).
+
+## [2026-10-06 01:00] Tests — délégation DGA/ADJ (policy + page d'administration)
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php (4 nouveaux tests : délégation active valide à la place du DGA, refus sans délégation, refus si la délégation vise un AUTRE DGA que celui adressé sur le courrier, refus si la délégation est désactivée)
+Fichier(s) : tests/Feature/Admin/DelegationDgaIndexTest.php (nouveau — même gabarit que DossierSurveilleTest : accès/privilège, activation, refus d'un delegant sans le privilège DGA, désactivation)
+Pourquoi : couvrir le caractère nominatif de la délégation (le point le plus facile à casser silencieusement) avant de considérer ce correctif terminé — suites Courriers (274/274 hors SimulationParcoursReel), Admin (186/186) et SimulationParcoursReel (1/1, mémoire relevée, voir memory test_suite_memory_limit) vérifiées au vert après ce changement.
 Fichier(s) : resources/views/layouts/app/sidebar.blade.php
 Fichier(s) : routes/web.php
 Fichier(s) : tests/Feature/Jobs/SendMailAlertJobTest.php

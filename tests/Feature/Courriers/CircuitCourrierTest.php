@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Courriers;
 
+use App\Livewire\Backend\CourrierList;
+use App\Livewire\Backend\CourriersEnregistres;
 use App\Livewire\Backend\ShowCourrier;
 use App\Models\Affectation;
 use App\Models\Courrier;
 use App\Models\CourrierHistorique;
+use App\Models\DelegationDga;
 use App\Models\OrganizationUnit;
 use App\Models\Profil;
 use App\Models\Service;
@@ -241,10 +244,10 @@ class CircuitCourrierTest extends TestCase
         $this->actingAs($dga);
         $this->get(route('courriers.show', $transfere->id))->assertOk();
         $this->get(route('courriers.show', $dUneAutreDga->id))->assertForbidden();
-        Livewire::withQueryParams(['statut' => 'en_cours_de_transfert'])->test(\App\Livewire\Backend\CourrierList::class)->assertDontSee('GEC-2026-000201');
+        Livewire::withQueryParams(['statut' => 'en_cours_de_transfert'])->test(CourrierList::class)->assertDontSee('GEC-2026-000201');
         // withQueryParams() reste actif pour les Livewire::test() suivants :
         // on le remet explicitement à vide pour la liste complète.
-        Livewire::withQueryParams([])->test(\App\Livewire\Backend\CourrierList::class)->assertSee('GEC-2026-000201')->assertSee('GEC-2026-000202');
+        Livewire::withQueryParams([])->test(CourrierList::class)->assertSee('GEC-2026-000201')->assertSee('GEC-2026-000202');
     }
 
     // 2026-09-24 ("after he transfer he has to see the courier update /
@@ -262,11 +265,11 @@ class CircuitCourrierTest extends TestCase
         Affectation::create(['courrier_id' => $courrier->id, 'user_id' => $collaborateur->id, 'affecte_par_id' => $responsable->id]);
         $this->actingAs($dga);
 
-        Livewire::test(\App\Livewire\Backend\CourriersEnregistres::class, ['onglet' => 'enregistre'])
+        Livewire::test(CourriersEnregistres::class, ['onglet' => 'enregistre'])
             ->assertDontSee('GEC-2026-000301');
 
         Livewire::withQueryParams(['onglet' => 'suivi'])
-            ->test(\App\Livewire\Backend\CourriersEnregistres::class)
+            ->test(CourriersEnregistres::class)
             ->assertSee('GEC-2026-000301')
             ->assertSee(Courrier::libelleStatut('en_traitement'))
             ->assertSee($collaborateur->name);
@@ -329,6 +332,115 @@ class CircuitCourrierTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame('en_cours_de_transfert', $courrier->refresh()->statut);
+    }
+
+    // 2026-10-06 (entretien terrain réceptionniste, voir DECISIONS.md
+    // "Délégation DGA/ADJ absents") : absence simultanée DGA + Adjoint DGA
+    // → un délégataire (ex. RH) sans le privilège courriers.dga_valider_service
+    // peut valider le service à la place du DGA qui lui a délégué cette
+    // capacité — jamais au-delà (voir les 2 tests de refus ci-dessous).
+    public function test_un_delegataire_actif_valide_le_service_a_la_place_du_dga_absent(): void
+    {
+        $dga = $this->utilisateur('DGA');
+        $rh = $this->utilisateur('Collaborateur');
+        $serviceInitial = Service::factory()->create(['code' => 'TST']);
+        $serviceRetenu = Service::factory()->create(['code' => 'AUT']);
+        $departement = $this->departementPonte($serviceRetenu);
+        $courrier = $this->courrier($serviceInitial, [
+            'statut' => 'en_cours_de_transfert',
+            'destinataire_transfert_id' => $dga->id,
+        ]);
+
+        DelegationDga::create([
+            'delegant_id' => $dga->id,
+            'delegataire_id' => $rh->id,
+            'debut_le' => now()->subHour(),
+            'actif' => true,
+            'active_par_id' => $dga->id,
+        ]);
+
+        $this->actingAs($rh);
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])
+            ->set('siteSelectionneId', $departement->parent_id)
+            ->set('departementSelectionneId', $departement->id)
+            ->call('validerService')
+            ->assertHasNoErrors();
+
+        $courrier->refresh();
+        $this->assertSame('enregistre', $courrier->statut);
+        $this->assertSame($serviceRetenu->id, $courrier->service_id);
+    }
+
+    public function test_un_utilisateur_sans_delegation_active_ne_peut_pas_valider_a_la_place_du_dga(): void
+    {
+        $dga = $this->utilisateur('DGA');
+        $rh = $this->utilisateur('Collaborateur');
+        $service = Service::factory()->create(['code' => 'TST']);
+        $courrier = $this->courrier($service, [
+            'statut' => 'en_cours_de_transfert',
+            'destinataire_transfert_id' => $dga->id,
+        ]);
+        $this->actingAs($rh);
+
+        // Sans délégation, RH ne peut même pas voir la fiche (statut
+        // en_cours_de_transfert adressé à un autre DGA) — mount() refuse
+        // directement, avant qu'il y ait quoi que ce soit à appeler.
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])->assertForbidden();
+
+        $this->assertSame('en_cours_de_transfert', $courrier->refresh()->statut);
+    }
+
+    // Nominatif : une délégation ne couvre QUE le DGA qui l'a accordée, pas
+    // n'importe quel courrier adressé à un autre DGA.
+    public function test_une_delegation_ne_couvre_pas_un_courrier_adresse_a_un_autre_dga(): void
+    {
+        $dgaDelegant = $this->utilisateur('DGA');
+        $autreDga = $this->utilisateur('DGA');
+        $rh = $this->utilisateur('Collaborateur');
+        $service = Service::factory()->create(['code' => 'TST']);
+        $courrier = $this->courrier($service, [
+            'statut' => 'en_cours_de_transfert',
+            'destinataire_transfert_id' => $autreDga->id,
+        ]);
+
+        DelegationDga::create([
+            'delegant_id' => $dgaDelegant->id,
+            'delegataire_id' => $rh->id,
+            'debut_le' => now()->subHour(),
+            'actif' => true,
+            'active_par_id' => $dgaDelegant->id,
+        ]);
+
+        $this->actingAs($rh);
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])->assertForbidden();
+    }
+
+    // Une délégation DÉSACTIVÉE (DGA de retour) ne doit plus donner aucun accès.
+    public function test_une_delegation_desactivee_ne_donne_plus_aucun_acces(): void
+    {
+        $dga = $this->utilisateur('DGA');
+        $rh = $this->utilisateur('Collaborateur');
+        $service = Service::factory()->create(['code' => 'TST']);
+        $courrier = $this->courrier($service, [
+            'statut' => 'en_cours_de_transfert',
+            'destinataire_transfert_id' => $dga->id,
+        ]);
+
+        DelegationDga::create([
+            'delegant_id' => $dga->id,
+            'delegataire_id' => $rh->id,
+            'debut_le' => now()->subDay(),
+            'actif' => false,
+            'active_par_id' => $dga->id,
+            'desactive_par_id' => $dga->id,
+            'desactive_le' => now()->subHour(),
+        ]);
+
+        $this->actingAs($rh);
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])->assertForbidden();
     }
 
     // Module 1/4 — la réceptionniste transfère explicitement le courrier au

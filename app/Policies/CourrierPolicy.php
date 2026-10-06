@@ -156,6 +156,17 @@ class CourrierPolicy
             return true;
         }
 
+        // 2026-10-06 (entretien terrain, voir DECISIONS.md "Délégation DGA/
+        // ADJ absents") : miroir de la branche ci-dessus pour un délégataire
+        // actif (ex. RH), sans le privilège courriers.voir_dga lui-même.
+        $delegantsIds = $user->delegationsDgaActivesIds();
+
+        if (! empty($delegantsIds)
+            && $courrier->statut === 'en_cours_de_transfert'
+            && ($courrier->destinataire_transfert_id === null || in_array($courrier->destinataire_transfert_id, $delegantsIds, true))) {
+            return true;
+        }
+
         // 2026-09-24 (voir DECISIONS.md "DGA : consultation des courriers
         // transférés") — demande explicite de l'utilisateur ("dga doesn't
         // see all the courier he transfered") : une fois le service validé,
@@ -506,10 +517,6 @@ class CourrierPolicy
             return false;
         }
 
-        if (! $user->hasPrivilege('courriers.dga_valider_service')) {
-            return false;
-        }
-
         // 2026-09-24 — seule étape où valider le service a un sens. Jusqu'ici
         // la vue et WorkflowService le garantissaient seuls ; nécessaire ici
         // depuis que la DGA garde la consultation des courriers déjà
@@ -518,11 +525,28 @@ class CourrierPolicy
             return false;
         }
 
-        // 2026-09-15 (mise à jour, voir DECISIONS.md "Destinataires de
-        // transfert") : ne valide que ce qui lui a été explicitement
-        // adressé — même exception `null` que view() ci-dessus pour les
-        // courriers transférés avant ce changement.
-        return $courrier->destinataire_transfert_id === null || $courrier->destinataire_transfert_id === $user->id;
+        if ($user->hasPrivilege('courriers.dga_valider_service')) {
+            // 2026-09-15 (mise à jour, voir DECISIONS.md "Destinataires de
+            // transfert") : ne valide que ce qui lui a été explicitement
+            // adressé — même exception `null` que view() ci-dessus pour les
+            // courriers transférés avant ce changement.
+            return $courrier->destinataire_transfert_id === null || $courrier->destinataire_transfert_id === $user->id;
+        }
+
+        // 2026-10-06 (entretien terrain, voir DECISIONS.md "Délégation DGA/
+        // ADJ absents") : un utilisateur sans le privilège DGA peut quand
+        // même valider si un DGA/ADJ actif lui a explicitement délégué cette
+        // capacité (absence simultanée du DGA ET de l'Adjoint DGA) — jamais
+        // au-delà de ce que ce DGA précis couvre : même règle d'adressage
+        // que ci-dessus, en remplaçant "soi-même" par "n'importe quel DGA
+        // délégant actuellement couvert".
+        $delegantsIds = $user->delegationsDgaActivesIds();
+
+        if (empty($delegantsIds)) {
+            return false;
+        }
+
+        return $courrier->destinataire_transfert_id === null || in_array($courrier->destinataire_transfert_id, $delegantsIds, true);
     }
 
     // Module 8 — recherche/liste multi-critères : ouverte à tout profil

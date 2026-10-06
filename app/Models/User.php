@@ -147,6 +147,16 @@ class User extends Authenticatable implements PasskeyUser
             ->unique());
     }
 
+    // Module 1/4 — délégation DGA/ADJ absent(e) → RH (2026-10-06, voir
+    // DECISIONS.md "Délégation DGA/ADJ absents"). Mêmes IDs de DGA/ADJ dont
+    // CET utilisateur couvre actuellement l'absence, utilisés par
+    // CourrierPolicy::validerService() et Courrier::scopeVisiblePar() —
+    // mémoïsé comme privilegesCles() ci-dessus, vérifié plusieurs fois par page.
+    public function delegationsDgaActivesIds(): array
+    {
+        return once(fn () => DelegationDga::delegantsIdsPour($this->id));
+    }
+
     /**
      * Get the user's initials
      */
