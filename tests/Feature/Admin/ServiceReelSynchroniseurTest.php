@@ -60,14 +60,75 @@ class ServiceReelSynchroniseurTest extends TestCase
         $this->assertTrue($service->actif);
     }
 
-    public function test_un_service_de_meme_nom_existant_est_relie_sans_doublon(): void
+    // 2026-10-05 (multi-site, voir DECISIONS.md) — comportement INVERSÉ par
+    // rapport à l'ancienne version de ce test : un `Service` existant mais
+    // JAMAIS relié à aucun nœud de l'organigramme (créé hors Organisation,
+    // ex. un reliquat d'avant le multi-site) n'est PLUS réutilisé par
+    // simple égalité de nom. `services.nom` n'est plus unique en base
+    // (migration 2026_10_05_040000) précisément pour permettre à deux
+    // agences différentes d'avoir chacune leur propre service du même nom —
+    // la réutilisation ne vaut donc plus que pour un AUTRE nœud du MÊME
+    // Site, jamais pour un Service orphelin trouvé par son seul nom.
+    public function test_un_service_existant_mais_jamais_relie_a_un_noeud_nest_plus_reutilise(): void
     {
         $existant = Service::factory()->create(['nom' => 'Informatique', 'code' => 'INF']);
 
         $this->creerService('Informatique');
 
-        $this->assertSame(1, Service::where('nom', 'Informatique')->count());
-        $this->assertSame($existant->id, OrganizationUnit::where('name', 'Informatique')->value('service_id'));
+        $this->assertSame(2, Service::where('nom', 'Informatique')->count());
+        $this->assertNotSame($existant->id, OrganizationUnit::where('name', 'Informatique')->value('service_id'));
+    }
+
+    // Deux nœuds de même nom, chacun sous un Site différent, doivent chacun
+    // avoir leur PROPRE service réel — jamais le même (demande explicite de
+    // l'utilisateur, 2026-10-05 : "EACH CITY HAS HIS OWN DEPARTMENTS...
+    // USERS ON IT SHOULD SEE THE DATAS OF THAT SITE NOT THE OTHERS").
+    public function test_meme_nom_sous_deux_sites_differents_cree_deux_services_distincts(): void
+    {
+        $siteA = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_SITE, 'name' => 'Douala']);
+        $siteB = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_SITE, 'name' => 'Yaoundé']);
+        $departementA = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_DEPARTMENT, 'parent_id' => $siteA->id]);
+        $departementB = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_DEPARTMENT, 'parent_id' => $siteB->id]);
+
+        $creerSous = function (OrganizationUnit $departement, string $nom) {
+            return Livewire::test(OrganisationIndex::class)
+                ->call('ouvrirCreation', $departement->id)
+                ->set('typeNoeud', OrganizationUnit::TYPE_SERVICE)
+                ->set('nomNoeud', $nom)
+                ->call('enregistrerNoeud')
+                ->assertHasNoErrors();
+        };
+
+        $creerSous($departementA, 'DSIN');
+        $creerSous($departementB, 'DSIN');
+
+        $this->assertSame(2, Service::where('nom', 'DSIN')->count());
+        $idA = OrganizationUnit::where('parent_id', $departementA->id)->where('name', 'DSIN')->value('service_id');
+        $idB = OrganizationUnit::where('parent_id', $departementB->id)->where('name', 'DSIN')->value('service_id');
+        $this->assertNotSame($idA, $idB);
+    }
+
+    // Deux nœuds de même nom sous le MÊME Site, eux, partagent bien le même
+    // service réel — comportement inchangé au sein d'une seule agence.
+    public function test_meme_nom_sous_le_meme_site_partage_le_meme_service(): void
+    {
+        $site = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_SITE, 'name' => 'Douala']);
+        $departementParent = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_DEPARTMENT, 'parent_id' => $site->id]);
+        $autreDepartementMemeSite = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_DEPARTMENT, 'parent_id' => $site->id]);
+
+        $creerSous = function (OrganizationUnit $departement, string $nom) {
+            return Livewire::test(OrganisationIndex::class)
+                ->call('ouvrirCreation', $departement->id)
+                ->set('typeNoeud', OrganizationUnit::TYPE_SERVICE)
+                ->set('nomNoeud', $nom)
+                ->call('enregistrerNoeud')
+                ->assertHasNoErrors();
+        };
+
+        $creerSous($departementParent, 'Courrier Général');
+        $creerSous($autreDepartementMemeSite, 'Courrier Général');
+
+        $this->assertSame(1, Service::where('nom', 'Courrier Général')->count());
     }
 
     public function test_code_derive_du_nom_et_unique(): void

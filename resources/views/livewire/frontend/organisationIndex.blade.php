@@ -333,79 +333,60 @@
         </div>
     @endif
 
-    {{-- ===== Modale "Ajouter/Modifier une entité" ===== --}}
-    {{-- max-w-xl (2026-09-23, "make all the tabs here to work") — max-w-lg
-         était trop étroit pour les 4 libellés du sélecteur "Type" segmenté
-         ci-dessous, forçant un défilement horizontal qui coupait "Sous-service". --}}
-    <flux:modal name="organisation-form" class="w-full max-w-xl">
+    {{-- ===== Modales "Ajouter/Modifier une entité", une par type =====
+         2026-10-06 ("seperate the site modal, department,service and sou
+         service modal") — remplace l'ancienne modale unique à sélecteur de
+         type : le type d'une entité est toujours déterminé par le contexte
+         (voir OrganisationIndex::modalPourType()), jamais choisi librement,
+         donc chaque bouton "+" ouvre directement la bonne modale. --}}
+    <flux:modal name="organisation-form-site" class="w-full max-w-xl">
         <form wire:submit="enregistrerNoeud" class="space-y-6">
-            <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier l\'entité') : __('Ajouter un élément') }}</flux:heading>
+            <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier le site / l\'agence') : __('Ajouter un site / une agence') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-500">{{ __('Un site/agence physique — le niveau le plus haut, sans parent.') }}</flux:text>
 
-            {{-- 2026-09-23, demande explicite de l'utilisateur ("make all the
-                 tabs here to work") — .live obligatoire : la visibilité du
-                 champ "Service réel lié" ci-dessous dépend d'un @if PHP sur
-                 $typeNoeud, qui ne se réévalue qu'à un aller-retour serveur.
-                 Sans .live, le radio bouton bascule visuellement (comportement
-                 natif du <input type=radio>) mais le formulaire ne se
-                 rafraîchit jamais tant qu'aucun autre champ .live n'est
-                 touché. --}}
-            <flux:radio.group wire:model.live="typeNoeud" :label="__('Type')" variant="segmented">
-                <flux:radio value="{{ App\Models\OrganizationUnit::TYPE_SITE }}" :label="__('Site / Agence')" />
-                <flux:radio value="{{ App\Models\OrganizationUnit::TYPE_DEPARTMENT }}" :label="__('Département')" />
-                <flux:radio value="{{ App\Models\OrganizationUnit::TYPE_SERVICE }}" :label="__('Service / Unité')" />
-                <flux:radio value="{{ App\Models\OrganizationUnit::TYPE_SUB_SERVICE }}" :label="__('Sous-service')" />
-            </flux:radio.group>
-            @error('typeNoeud') <flux:text class="text-sm text-brand-danger">{{ $message }}</flux:text> @enderror
+            <x-organisation.champs-formulaire :responsables="$this->responsablesPotentiels" :services-reels="$this->servicesReels" />
 
-            {{-- 2026-09-23, demande explicite de l'utilisateur ("on the form
-                 it shows the same tabs") — Département et Service/Unité
-                 affichent le même champ "Service réel lié" (les deux peuvent
-                 légitimement être pontés, spec §1), donc rien ne confirmait
-                 visuellement que le changement d'onglet avait bien pris —
-                 cette description change avec $typeNoeud pour le rendre visible. --}}
-            <flux:text class="text-xs text-zinc-500">
-                {{ match ($typeNoeud) {
-                    App\Models\OrganizationUnit::TYPE_SITE => __('Un site/agence physique — le niveau le plus haut, sans parent.'),
-                    App\Models\OrganizationUnit::TYPE_DEPARTMENT => __('Un département/direction — peut recevoir les courriers directement, ou contenir des Services.'),
-                    App\Models\OrganizationUnit::TYPE_SERVICE => __('Un service/unité — rattaché à un département, peut lui-même contenir des Sous-services.'),
-                    App\Models\OrganizationUnit::TYPE_SUB_SERVICE => __('Un sous-service — le niveau le plus fin, rattaché à un Service.'),
-                    default => '',
-                } }}
-            </flux:text>
+            <div class="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
+                <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>
+                <flux:button type="submit" variant="primary" icon="check">{{ $noeudEnEditionId ? __('Enregistrer') : __('Créer') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 
-            <flux:input wire:model="nomNoeud" :label="__('Nom')" required />
-            <flux:input wire:model="codeNoeud" :label="__('Code')" placeholder="{{ __('ex. SIN-SANTE') }}" />
+    <flux:modal name="organisation-form-department" class="w-full max-w-xl">
+        <form wire:submit="enregistrerNoeud" class="space-y-6">
+            <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier le département') : __('Ajouter un département') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-500">{{ __('Un département/direction — peut recevoir les courriers directement, ou contenir des Services.') }}</flux:text>
 
-            <flux:select wire:model="responsableIdNoeud" :label="__('Responsable')" placeholder="{{ __('— Aucun pour l\'instant —') }}">
-                <flux:select.option value="">{{ __('— Aucun pour l\'instant —') }}</flux:select.option>
-                @foreach ($this->responsablesPotentiels as $u)
-                    <flux:select.option value="{{ $u->id }}">{{ $u->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
+            <x-organisation.champs-formulaire avec-service-pont :responsables="$this->responsablesPotentiels" :services-reels="$this->servicesReels" />
 
-            {{-- 2026-09-23 : un Service / Sous-service sans lien choisi crée
-                 (ou relie, s'il existe déjà sous ce nom) automatiquement son
-                 service réel — voir App\Services\ServiceReelSynchroniseur. --}}
-            @php($creationAuto = in_array($typeNoeud, App\Services\ServiceReelSynchroniseur::TYPES_SYNCHRONISES))
-            @if (in_array($typeNoeud, [App\Models\OrganizationUnit::TYPE_DEPARTMENT, App\Models\OrganizationUnit::TYPE_SERVICE, App\Models\OrganizationUnit::TYPE_SUB_SERVICE]))
-                <div>
-                    <flux:select wire:model="servicePontNoeud" :label="__('Service réel lié')">
-                        <flux:select.option value="">{{ $creationAuto ? __('— Créer automatiquement —') : __('— Aucun —') }}</flux:select.option>
-                        @foreach ($this->servicesReels as $s)
-                            <flux:select.option value="{{ $s->id }}">{{ $s->nom }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                    <flux:text class="mt-1 text-xs text-zinc-500">
-                        @if ($creationAuto)
-                            {{ __('Laissez "Créer automatiquement" pour que ce service reçoive des courriers (routage DGA, règles, recherche). Nom et responsable seront repris ; choisissez un service existant seulement pour le regrouper avec lui.') }}
-                        @else
-                            {{ __('Relie cette entité à un service réel — nécessaire pour qu\'elle soit sélectionnable lors d\'un transfert de courrier.') }}
-                        @endif
-                    </flux:text>
-                </div>
-            @endif
+            <div class="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
+                <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>
+                <flux:button type="submit" variant="primary" icon="check">{{ $noeudEnEditionId ? __('Enregistrer') : __('Créer') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 
-            <flux:textarea wire:model="descriptionNoeud" :label="__('Description')" rows="2" />
+    <flux:modal name="organisation-form-service" class="w-full max-w-xl">
+        <form wire:submit="enregistrerNoeud" class="space-y-6">
+            <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier le service / l\'unité') : __('Ajouter un service / une unité') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-500">{{ __('Un service/unité — rattaché à un département, peut lui-même contenir des Sous-services.') }}</flux:text>
+
+            <x-organisation.champs-formulaire avec-service-pont creation-auto :responsables="$this->responsablesPotentiels" :services-reels="$this->servicesReels" />
+
+            <div class="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
+                <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>
+                <flux:button type="submit" variant="primary" icon="check">{{ $noeudEnEditionId ? __('Enregistrer') : __('Créer') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    <flux:modal name="organisation-form-sub-service" class="w-full max-w-xl">
+        <form wire:submit="enregistrerNoeud" class="space-y-6">
+            <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier le sous-service') : __('Ajouter un sous-service') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-500">{{ __('Un sous-service — le niveau le plus fin, rattaché à un Service.') }}</flux:text>
+
+            <x-organisation.champs-formulaire avec-service-pont creation-auto :responsables="$this->responsablesPotentiels" :services-reels="$this->servicesReels" />
 
             <div class="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
                 <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>

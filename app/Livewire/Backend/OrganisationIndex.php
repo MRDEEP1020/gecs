@@ -82,16 +82,6 @@ class OrganisationIndex extends Component
         if ($nom === 'recherche' || $nom === 'filtreType' || $nom === 'filtreStatut') {
             $this->resetPage();
         }
-
-        // 2026-09-23, demande explicite de l'utilisateur ("make all the
-        // tabs here to work") — le champ "Service réel lié" n'est affiché
-        // que pour department/service (voir la vue) ; sans ce reset, un
-        // pont choisi puis un changement de type vers site/sous_service
-        // resterait en mémoire et serait quand même enregistré tel quel par
-        // enregistrerNoeud(), invisible à l'écran.
-        if ($nom === 'typeNoeud' && ! in_array($this->typeNoeud, [OrganizationUnit::TYPE_DEPARTMENT, OrganizationUnit::TYPE_SERVICE], true)) {
-            $this->servicePontNoeud = null;
-        }
     }
 
     // ===== Arborescence =====
@@ -284,6 +274,22 @@ class OrganisationIndex extends Component
 
     // ===== Créer / Modifier =====
 
+    // 2026-10-06 ("seperate the site modal, department,service and sou
+    // service modal") — un type = une modale dédiée, plus de sélecteur
+    // "Type" dans l'UI : le type est toujours déterminé par le contexte
+    // (typeEnfantPropose() du parent, ou le type du nœud en édition), jamais
+    // choisi librement, donc le sélecteur n'offrait que des choix déjà
+    // cohérents et faisait doublon avec le garde-fou serveur ci-dessous.
+    private function modalPourType(string $type): string
+    {
+        return match ($type) {
+            OrganizationUnit::TYPE_DEPARTMENT => 'organisation-form-department',
+            OrganizationUnit::TYPE_SERVICE => 'organisation-form-service',
+            OrganizationUnit::TYPE_SUB_SERVICE => 'organisation-form-sub-service',
+            default => 'organisation-form-site',
+        };
+    }
+
     // Le type proposé par défaut découle du type du parent (spec §7/§8).
     public function ouvrirCreation(?int $parentId = null): void
     {
@@ -295,7 +301,7 @@ class OrganisationIndex extends Component
         $this->parentPourCreationId = $parentId;
         $this->resetValidation();
 
-        Flux::modal('organisation-form')->show();
+        Flux::modal($this->modalPourType($this->typeNoeud))->show();
     }
 
     public function ouvrirModification(int $id): void
@@ -313,7 +319,7 @@ class OrganisationIndex extends Component
         $this->servicePontNoeud = $noeud->service_id;
         $this->resetValidation();
 
-        Flux::modal('organisation-form')->show();
+        Flux::modal($this->modalPourType($this->typeNoeud))->show();
     }
 
     public function enregistrerNoeud(ServiceReelSynchroniseur $synchroniseur): void
@@ -363,7 +369,7 @@ class OrganisationIndex extends Component
         // des courriers) et y reporte nom/responsable/statut (2026-09-23).
         $synchroniseur->synchroniser($noeud, $avant);
 
-        Flux::modal('organisation-form')->close();
+        Flux::modal($this->modalPourType($data['typeNoeud']))->close();
         $this->selectionnerNoeud($noeud->id);
         unset($this->tousLesNoeuds, $this->arbre);
         Flux::toast(variant: 'success', text: __('Entité enregistrée.'));

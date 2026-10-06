@@ -118,28 +118,26 @@ class OrganisationIndexTest extends TestCase
         $this->assertSame($serviceReel->id, $unite->service_id);
     }
 
-    // 2026-09-23, demande explicite de l'utilisateur ("make all the tabs
-    // here to work") — le sélecteur "Type" (wire:model.live) doit rafraîchir
-    // immédiatement le champ "Service réel lié" (visible seulement pour
-    // department/service, voir la vue) ; un changement de type qui masque
-    // ce champ doit aussi vider la valeur déjà choisie, jamais l'enregistrer
-    // en silence pour un type qui ne devrait pas en avoir.
-    public function test_changer_le_type_rafraichit_le_champ_service_reel_lie(): void
+    // 2026-10-06 ("seperate the site modal, department,service and sou
+    // service modal") — remplace l'ancien test de rafraîchissement réactif
+    // du sélecteur "Type" (retiré, l'UI n'a plus de sélecteur : chaque type
+    // a sa propre modale, ouverte directement par OuvrirCreation/
+    // ouvrirModification via modalPourType()). On vérifie désormais que
+    // ouvrirCreation() pointe simplement vers le bon type selon le parent.
+    public function test_ouvrir_creation_determine_le_type_depuis_le_parent(): void
     {
         $admin = $this->utilisateurAvecProfil('Administrateur');
-        $serviceReel = Service::factory()->create();
         $this->actingAs($admin);
 
-        $composant = Livewire::test(OrganisationIndex::class)
+        Livewire::test(OrganisationIndex::class)
             ->call('ouvrirCreation')
-            ->set('typeNoeud', OrganizationUnit::TYPE_SERVICE)
-            ->assertSee('Service réel lié')
-            ->set('servicePontNoeud', $serviceReel->id);
+            ->assertSet('typeNoeud', OrganizationUnit::TYPE_SITE);
 
-        $composant
-            ->set('typeNoeud', OrganizationUnit::TYPE_SITE)
-            ->assertDontSee('Service réel lié')
-            ->assertSet('servicePontNoeud', null);
+        $site = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_SITE]);
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('ouvrirCreation', $site->id)
+            ->assertSet('typeNoeud', OrganizationUnit::TYPE_DEPARTMENT);
     }
 
     // 2026-09-23, demande explicite de l'utilisateur ("on the form it shows

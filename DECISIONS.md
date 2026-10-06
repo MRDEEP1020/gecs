@@ -4309,3 +4309,47 @@ panneau compact de showCourrier (texte visible, hors du nouveau chrome)
 faisait doublon avec l'icône "agrandir" du nouveau chrome — supprimé, seule
 l'icône du chrome subsiste (même patron que les 3 autres pages, qui
 n'avaient jamais eu ce bouton texte séparé).
+
+## [2026-10-06] Entretien terrain réceptionniste — confirmations et un point net-nouveau
+Contexte : premier vrai entretien terrain mené avec une réceptionniste Nsia
+(guide d'entretien construit le 2026-09-?? pour ce module), dont les
+réponses recoupent plusieurs choix déjà pris dans ce projet et en ajoutent
+un nouveau, jamais discuté jusqu'ici : le plan de délégation en l'absence du
+DGA ET de l'Adjoint DGA simultanément.
+Décision :
+- **Confidentiel = mention "CONFIDENTIEL" visible sur l'enveloppe**
+  (exemples cités : RH, retour de contrat, DAO). Confirme et précise la
+  règle déjà en place (PRD §1 point 2 / CLAUDE.md) : la détection ne
+  nécessite pas d'ouvrir le pli, elle est purement visuelle côté
+  réceptionniste — aucun changement de code nécessaire, juste une
+  confirmation terrain que la règle existante est la bonne.
+- **Absence simultanée DGA + Adjoint DGA → bascule informelle vers les RH**
+  aujourd'hui (processus papier). POINT NET-NOUVEAU, jamais tranché dans ce
+  projet (voir memory circuit_courrier_entrant_dga.md, qui ne couvrait que
+  le cas DGA seul absent). Pas encore implémenté côté workflow — à
+  reprendre explicitement avant de considérer le Module 4 (circuit de
+  validation) complet : il faudra un mécanisme de délégation (DGA → RH)
+  déclenché par une indisponibilité des deux rôles, pas seulement un
+  privilège statique supplémentaire sur les RH.
+- **La recherche (texte/objet/expéditeur/date, Module 8) est perçue comme
+  LA fonctionnalité à plus fort gain de temps.** Confirme que l'OCR et
+  l'indexation plein texte (déjà livrés, voir memory module2_points_ouverts)
+  doivent rester fiables en priorité pour l'adoption au pilote — pas un
+  changement de scope, un signal de priorité.
+- **Volumes réels observés** : 14 à 100 courriers/jour à la réception selon
+  le jour (pics lundi/vendredi), soit environ 200 à 860+/semaine à l'échelle
+  de l'entreprise. Amplitude large, à affiner avec d'autres entretiens avant
+  de s'en servir pour dimensionner la charge (Règle n°1).
+- **Trajet scan → DGA/ADJ ≈ une demi-journée aujourd'hui**, sans perte
+  constatée ensuite jusqu'à la distribution au service (preuve de remise =
+  signature papier, non recherchable). Objectif implicite du dossier
+  surveillé/OCR (déjà livré) : réduire ce délai, pas le fiabiliser — il
+  n'y avait pas de problème de perte à corriger.
+- **Automatisation prioritaire selon le terrain** : les dossiers de
+  remboursement santé — à garder en tête si une phase ultérieure du Module
+  3 (règles de classement) ou une extension cible un type de courrier en
+  particulier.
+Alternatives envisagées : aucune — ce sont des constats d'entretien, pas un
+choix d'architecture ; seul le point "délégation DGA+ADJ absents" ouvre une
+vraie décision à prendre plus tard (non tranchée ici, juste consignée pour
+ne pas être oubliée).
