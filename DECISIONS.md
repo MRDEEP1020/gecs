@@ -3009,6 +3009,101 @@ directement", il n'y a pas d'étape de validation DGA du service puisque
 la classification n'a jamais lieu ; l'envoi EST l'enregistrement, pas une
 action séparée après coup.
 
+**Mise à jour 2026-10-07 (demande utilisateur : "a toggle that switch
+between confidentiel and normal")** — la séparation ci-dessus N'A PAS été
+rouverte : `RegistrationForm` et `RegistrationFormConfidentiel` restent
+deux composants entièrement distincts, aucune fusion, aucun `if`. Seule la
+NAVIGATION entre les deux pages a été rendue plus immédiate : un petit
+composant Blade `<x-courrier-mode-toggle>` (deux liens `wire:navigate`,
+visible seulement avec `courriers.creer_confidentiel`) ajouté en haut des
+deux pages, remplaçant l'ancien encart "Courrier confidentiel ?" de
+`RegistrationForm` (qui faisait déjà la même navigation, juste moins
+visible). La garantie structurelle "jamais scanné" (pas de
+`WithFileUploads` sur `RegistrationFormConfidentiel`) reste donc intacte.
+
+**Mise à jour 2026-10-07 (bis) — fusion explicitement demandée, décision
+rouverte en connaissance de cause.** Retour utilisateur sur le ressenti du
+toggle ci-dessus ("shouldn't take long to change thos form") : mesuré en
+direct (voir CHANGELOG-AGENT.md 13:40) — le rendu serveur de chaque page
+est déjà rapide une fois le cache de vue chaud (~20ms), la lenteur
+observée était un recompilation Blade ponctuelle. `wire:navigate.hover`
+ajouté comme correctif ciblé. L'utilisateur a ensuite demandé explicitement
+"it should on a same file not two different files", et face au choix
+("une seule page mais deux composants séparés dessous" vs "fusion réelle
+en un seul composant Livewire") a choisi explicitement la fusion réelle,
+après avoir été prévenu que cela transforme la garantie "jamais scanné" de
+STRUCTURELLE (mécanisme d'upload absent) à CODÉE (vérification à
+l'exécution). Décision : `RegistrationFormConfidentiel` est supprimé,
+fusionné dans `RegistrationForm` derrière une propriété
+`$modeConfidentiel`. Ce que la fusion change concrètement :
+- `WithFileUploads` reste présent sur la classe (ne peut pas être retiré
+  conditionnellement, c'est un trait PHP) — la protection devient donc un
+  GARDE-FOU EXPLICITE plutôt qu'une absence : `enregistrer()` bascule tout
+  de suite vers une méthode privée dédiée `enregistrerConfidentiel()`
+  quand `$modeConfidentiel` est vrai, qui ne touche JAMAIS
+  `$this->pieceJointe`/`$this->document`/`$this->brouillon` (même
+  structure de code que l'ancien composant, copiée telle quelle, juste
+  déplacée) ; `numeriserAutomatique()`/`importerFichier()` (les deux
+  points d'entrée du scan) retournent immédiatement si
+  `$modeConfidentiel` est vrai, AVANT toute écriture — défense en
+  profondeur contre une requête Livewire forgée qui activerait l'upload
+  pendant que le mode confidentiel est actif côté serveur (Règle n°6).
+- Les deux routes (`courriers.nouveau` et `courriers.confidentiel`)
+  pointent désormais vers LE MÊME composant `RegistrationForm` — la
+  route `courriers.confidentiel` reste un nom de route valide (liens
+  existants du tableau de bord/sidebar inchangés), mais sert maintenant la
+  même page avec `$modeConfidentiel` initialisé à `true` dans `mount()`
+  (et `authorize('creerConfidentiel', ...)` vérifié À CE moment précis —
+  donc toujours un vrai 403 sur accès direct sans le privilège, comme
+  avant, voir `MenuPrivilegesTest`).
+- Bascule de mode : un simple `wire:click` sur le composant déjà monté
+  (plus de navigation du tout, `wire:navigate.hover` devient inutile pour
+  CE toggle précis) — au passage en confidentiel, tout état propre au scan
+  (brouillon, pièce jointe, indicateurs "proposé automatiquement") est
+  réinitialisé ; au retour en normal, `destinataireChoix` et le niveau de
+  confidentialité (forcé ≥2 en mode confidentiel) sont réinitialisés.
+- Champs `destinataire`/`confidentialite` du `CourrierForm` existant
+  RÉUTILISÉS pour le mode confidentiel (même colonnes, même échelle 1-5,
+  déjà partagées) plutôt que dupliqués ; seul `destinataireChoix` (le
+  routage système personne/service) reste une propriété à part sur
+  `RegistrationForm`, hors `CourrierForm` — même raisonnement que
+  `referenceExterne` juste au-dessus (EditForm) : un champ qui ne concerne
+  qu'un sous-flux précis n'a pas sa place dans le Form Object partagé.
+
+## [2026-10-07] Destinataire d'un pli confidentiel : un service entier, pas seulement une personne
+Contexte : retour terrain de l'utilisateur ("sometimes it been send to the
+Directions general or to the RH SERVICE or sometimes to a specific
+person") — le destinataire réel d'un pli confidentiel n'est pas toujours
+une personne nommée, parfois c'est explicitement l'adresse d'un service
+entier sur l'enveloppe ("Direction Générale", "Service RH"). Confirmé via
+AskUserQuestion : étendre la liste proposée aux services, qui route vers
+le RESPONSABLE du service choisi.
+Décision :
+- Nouvelle table `destinataires_transfert_services` (agent_id, service_id),
+  PARALLÈLE à `destinataires_transfert` (jamais modifiée) — même
+  convention : curatée par l'administrateur, par agent, onglet "Destinataires
+  de transfert" de `UserList` (nouvelle section "Services" sous les
+  "Personnes" existantes, même patron deux-boîtes).
+- `RegistrationFormConfidentiel::destinataireChoix` (remplace l'ancien
+  `destinataireSystemeId` entier) encode `"user-<id>"` ou `"service-<id>"`
+  — une seule liste de choix, deux types d'options, plutôt que deux
+  propriétés à garder mutuellement exclusives à la main.
+- Un service choisi résout vers `service->responsable_id` : **le modèle de
+  données du courrier ne change pas**, `courriers.destinataire_transfert_id`
+  reste toujours un utilisateur (le responsable), qui peut ensuite
+  réaffecter en interne exactement comme pour un courrier normal déjà
+  affecté à son service. Un service SANS responsable désigné est refusé
+  (erreur de validation) — personne ne recevrait réellement le pli sinon.
+- L'historique (Règle n°5) garde le libellé réel choisi ("service :nom
+  (responsable : :resp)"), pas seulement le nom du responsable — la trace
+  doit refléter ce que l'agent a réellement sélectionné.
+Alternatives envisagées : stocker le service directement sur le courrier
+(un nouveau `destinataire_service_id` à côté de `destinataire_transfert_id`)
+— écarté, aurait dupliqué la logique de visibilité/clôture déjà construite
+autour d'un destinataire UTILISATEUR unique (`CourrierPolicy::view()`,
+`cloturerConfidentiel()`) pour un gain nul : un service a de toute façon
+besoin d'un humain responsable pour agir dessus.
+
 **Destinataire système — réutilisation de `destinatairesTransfert()`**
 (voir l'entrée précédente "Destinataires de transfert") plutôt qu'un
 nouveau concept ou une nouvelle table : "à qui l'agent a le droit

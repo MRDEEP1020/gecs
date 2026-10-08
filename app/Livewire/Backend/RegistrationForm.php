@@ -10,6 +10,8 @@ use App\Models\Courrier;
 use App\Models\CourrierBrouillon;
 use App\Models\CourrierHistorique;
 use App\Models\OrganizationUnit;
+use App\Models\Service;
+use App\Models\User;
 use App\Services\BrouillonScanService;
 use App\Services\ClassificationService;
 use App\Services\NumeroReferenceGenerator;
@@ -113,6 +115,22 @@ class RegistrationForm extends Component
     // complémentaires" — Commentaires, 0/500).
     public string $commentaire = '';
 
+    // Propriété directe sur le composant, PAS sur CourrierForm (même
+    // raisonnement qu'EditForm::$referenceExterne, voir son commentaire) :
+    // RegistrationForm n'avait jusqu'ici aucune UI pour ce champ, le
+    // mutualiser dans le Form Object partagé l'exposerait aussi au courrier
+    // normal/sortant. 2026-10-07, demande explicite de l'utilisateur après
+    // un vrai courrier "Cabinet LADO Assistance" (V/Réf, V/DOS) : un
+    // dossier sinistre cite quasi toujours la référence que le cabinet/
+    // garage/expert adverse donne à NSIA dans son courrier — utile pour
+    // rapprocher les échanges ultérieurs sur le même dossier. Visible
+    // uniquement pour un sinistre (voir registrationForm.blade.php,
+    // $form->estUnSinistre()), jamais extrait automatiquement (aucune
+    // convention structurelle fixe repérée contrairement à "Objet :"/"à
+    // l'attention de" — "V/Réf"/"V/DOS" varient trop d'un correspondant à
+    // l'autre pour un motif fiable).
+    public ?string $referenceExterne = null;
+
     // Module "Organisation" v2 (2026-09-22, spec §16) — cascade Site →
     // Département → Service/Unité pour le sélecteur "sortant" (agent),
     // remplace le sélecteur plat unique. Le pont OrganizationUnit::service_id
@@ -125,21 +143,121 @@ class RegistrationForm extends Component
 
     public ?int $uniteSelectionneeId = null;
 
+    // 2026-10-07 — fusion de RegistrationFormConfidentiel dans ce composant
+    // (voir DECISIONS.md "fusion explicitement demandée") : bascule entre
+    // les deux formulaires, sans plus aucune navigation entre deux pages.
+    // $form->destinataire/$form->confidentialite (CourrierForm, déjà
+    // existants) sont RÉUTILISÉS pour ce mode (mêmes colonnes, même
+    // échelle 1-5) — seul le routage système personne/service
+    // ($destinataireChoix juste en dessous) n'a pas d'équivalent dans
+    // CourrierForm et reste une propriété à part, même raisonnement que
+    // $referenceExterne ci-dessus.
+    public bool $modeConfidentiel = false;
+
+    // Format "user-<id>" ou "service-<id>" (porté tel quel depuis
+    // RegistrationFormConfidentiel, voir DECISIONS.md "Destinataires de
+    // transfert — services") : un pli confidentiel est parfois adressé à
+    // une personne nommée, parfois à tout un service ("Direction
+    // Générale", "RH").
+    public ?string $destinataireChoix = null;
+
     public function mount(): void
     {
         $this->authorize('create', Courrier::class);
 
         $this->agentId = (int) Auth::id();
 
+        // La route courriers.confidentiel sert désormais CE MÊME composant
+        // (voir routes/web.php) — authorize() ICI, pas seulement dans
+        // enregistrerConfidentiel(), pour qu'un accès DIRECT à cette route
+        // sans le privilège reste un vrai 403 (Règle n°6), comme avant la
+        // fusion (voir MenuPrivilegesTest).
+        if (request()->routeIs('courriers.confidentiel')) {
+            $this->authorize('creerConfidentiel', Courrier::class);
+            $this->activerModeConfidentiel();
+        }
+
         // brouillon déclenche déjà authorize('utiliser', ...) — 403 immédiat si
         // le brouillon appartient à quelqu'un d'autre (Règle n°6), pas un
         // paramètre ignoré silencieusement.
-        if ($brouillon = $this->brouillon) {
+        if (! $this->modeConfidentiel && ($brouillon = $this->brouillon)) {
             $this->appliquerBrouillon($brouillon);
         }
 
         $this->typeDocumentPersonnalise = $this->form->type_document !== ''
             && ! in_array($this->form->type_document, CourrierForm::typesDocument(), true);
+    }
+
+    // Bascule déclenchée par <x-courrier-mode-toggle> (wire:click, plus de
+    // navigation du tout entre les deux modes depuis la fusion). Chaque
+    // sens de bascule efface l'état qui n'a plus sa place dans l'autre mode
+    // — jamais une valeur fantôme d'un mode qui resterait enregistrée après
+    // être passée par l'autre.
+    public function basculerModeConfidentiel(bool $confidentiel): void
+    {
+        if ($confidentiel) {
+            $this->authorize('creerConfidentiel', Courrier::class);
+            $this->activerModeConfidentiel();
+
+            return;
+        }
+
+        $this->modeConfidentiel = false;
+        $this->reset('destinataireChoix');
+        $this->form->confidentialite = 1;
+    }
+
+    // Factorisé entre mount() (accès direct à /courriers/confidentiel) et
+    // basculerModeConfidentiel() (bascule en place) : état propre au scan
+    // (brouillon, pièce jointe, indicateurs "proposé automatiquement")
+    // réinitialisé au passage en confidentiel — jamais une référence de
+    // document scanné qui traînerait côté client pendant que le mode
+    // confidentiel est actif, même si enregistrerConfidentiel() ne la lirait
+    // de toute façon jamais (défense en profondeur, pas la seule garde).
+    private function activerModeConfidentiel(): void
+    {
+        $this->modeConfidentiel = true;
+        $this->reset('brouillonId', 'document', 'pieceJointe', 'champsProposesAutomatiquement', 'modeReceptionProposeAutomatiquement');
+        unset($this->brouillon, $this->brouillonsEnAttente);
+
+        if ($this->form->confidentialite < 2) {
+            $this->form->confidentialite = 2;
+        }
+
+        // Porté depuis l'ancien RegistrationFormConfidentiel::mount() —
+        // aucun scan/brouillon ne renseigne jamais cette date en mode
+        // confidentiel, donc rien d'autre ne la pré-remplirait. Jamais
+        // écrasée si déjà saisie (ex. agent déjà en train de remplir le
+        // mode normal avant de basculer).
+        if ($this->form->date_mouvement === '') {
+            $this->form->date_mouvement = now()->format('Y-m-d');
+        }
+    }
+
+    // Même liste que ShowCourrier/MesCourriers — voir leur commentaire pour
+    // le détail du design (DECISIONS.md "Destinataires de transfert").
+    // authorize() ICI (pas seulement dans la vue derrière @if($modeConfidentiel))
+    // — PENTEST (voir ShowCourrier::courrier()) : une #[Computed] s'exécute
+    // dès qu'elle est référencée, jamais seulement parce que le bloc Blade
+    // qui l'entoure est visuellement caché ; sans ce garde-fou, un agent
+    // sans courriers.creer_confidentiel qui forcerait $modeConfidentiel à
+    // true verrait quand même la liste des destinataires système fuiter.
+    #[Computed]
+    public function destinatairesTransfert()
+    {
+        $this->authorize('creerConfidentiel', Courrier::class);
+
+        return Auth::user()->destinatairesTransfert()->orderBy('name')->get(['users.id', 'users.name']);
+    }
+
+    // Services qu'il a le droit d'adresser directement — voir
+    // User::destinatairesTransfertServices() (2026-10-07).
+    #[Computed]
+    public function servicesTransfert()
+    {
+        $this->authorize('creerConfidentiel', Courrier::class);
+
+        return Auth::user()->destinatairesTransfertServices()->orderBy('nom')->get(['services.id', 'services.nom']);
     }
 
     // Bascule "Autre" du select vers le champ libre — voir $typeDocumentPersonnalise.
@@ -456,6 +574,17 @@ class RegistrationForm extends Component
     public function numeriserAutomatique(): array
     {
         $this->authorize('create', Courrier::class);
+
+        // Défense en profondeur (voir DECISIONS.md "fusion explicitement
+        // demandée") : un pli confidentiel n'est jamais scanné, quel que
+        // soit le point d'entrée — ce garde-fou vaut même si une requête
+        // Livewire forgée appelait cette action pendant que
+        // $modeConfidentiel est actif côté serveur, la vue ne proposant
+        // normalement même pas ce bouton dans ce mode.
+        if ($this->modeConfidentiel) {
+            return [];
+        }
+
         $this->validate(['document' => BrouillonScanService::reglesValidation(ScanForm::resolutionMinimale())]);
 
         $brouillon = app(BrouillonScanService::class)->creer($this->document, CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE);
@@ -480,6 +609,12 @@ class RegistrationForm extends Component
     public function importerFichier(): void
     {
         $this->authorize('create', Courrier::class);
+
+        // Défense en profondeur — voir numeriserAutomatique() ci-dessus.
+        if ($this->modeConfidentiel) {
+            return;
+        }
+
         $this->validate(['document' => BrouillonScanService::reglesValidation(ScanForm::resolutionMinimale())]);
 
         $brouillon = app(BrouillonScanService::class)->creer($this->document, CourrierBrouillon::SOURCE_MANUEL);
@@ -569,6 +704,18 @@ class RegistrationForm extends Component
     {
         $this->authorize('create', Courrier::class);
 
+        // Bascule tout de suite vers le chemin confidentiel, isolé dans sa
+        // propre méthode privée (voir enregistrerConfidentiel() plus bas) —
+        // ni $this->pieceJointe, ni $this->document, ni $this->brouillon ne
+        // sont JAMAIS lus dans cette branche, qui remplace désormais la
+        // garantie structurelle que donnait l'absence de WithFileUploads
+        // sur l'ancien composant séparé (voir DECISIONS.md).
+        if ($this->modeConfidentiel) {
+            $this->enregistrerConfidentiel($generateur);
+
+            return;
+        }
+
         $brouillon = $this->brouillon;
 
         // 'non_traite' (job pas encore démarré — file d'attente de la queue,
@@ -590,11 +737,23 @@ class RegistrationForm extends Component
         // laisse passer '' jusqu'à Rule::in(['materiel','corporel']) et échoue.
         $this->form->sous_type_sinistre = $this->form->sous_type_sinistre ?: null;
 
+        // Champ visible seulement pour un sinistre (voir
+        // registrationForm.blade.php) : une valeur tapée puis laissée
+        // affichée après que l'agent soit revenu sur un type non-sinistre
+        // ne doit jamais être enregistrée (le champ a disparu de la vue,
+        // mais Livewire garde la valeur en mémoire tant qu'elle n'est pas
+        // explicitement effacée).
+        if (! $this->form->estUnSinistre()) {
+            $this->referenceExterne = null;
+        }
+
         $data = $this->form->validate();
         $this->validate([
             'pieceJointe' => ['nullable', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
             'commentaire' => ['nullable', 'string', 'max:500'],
+            'referenceExterne' => ['nullable', 'string', 'max:255'],
         ]);
+        $data['reference_externe'] = $this->referenceExterne;
 
         // Module 1/4 — demande explicite de l'utilisateur (2026-09-08, précisée
         // le 2026-09-15 par SRS-GEC.pdf, voir DECISIONS.md) : le service n'est
@@ -675,7 +834,7 @@ class RegistrationForm extends Component
         // précédent brouillon restaient affichés sous des valeurs ensuite
         // saisies à la main pour le courrier suivant — bug réel constaté
         // lors de la revue du 2026-09-04, voir DECISIONS.md.
-        $this->reset('pieceJointe', 'commentaire', 'champsProposesAutomatiquement', 'modeReceptionProposeAutomatiquement', 'typeDocumentPersonnalise');
+        $this->reset('pieceJointe', 'commentaire', 'champsProposesAutomatiquement', 'modeReceptionProposeAutomatiquement', 'typeDocumentPersonnalise', 'referenceExterne');
         $this->brouillonId = 0;
         unset($this->brouillon, $this->brouillonsEnAttente);
 
@@ -701,6 +860,115 @@ class RegistrationForm extends Component
     public function nouveauCourrier(): void
     {
         $this->reset('derniereReference', 'derniereCourrierId');
+    }
+
+    // Porté depuis RegistrationFormConfidentiel::enregistrer() (voir
+    // DECISIONS.md "fusion explicitement demandée") — méthode ISOLÉE et
+    // volontairement COURTE pour rester facile à auditer en entier d'un
+    // coup d'œil : ne construit son propre tableau Courrier::create() que
+    // depuis des valeurs qu'elle valide elle-même ici (jamais
+    // $this->form->validate() : CourrierForm::rules() exigerait
+    // objet/type_document/mode_reception, qui n'existent pas dans ce mode),
+    // et ne touche JAMAIS pieceJointe/document/brouillon — c'est ce qui
+    // remplace la garantie structurelle "jamais scanné" de l'ancien
+    // composant séparé.
+    private function enregistrerConfidentiel(NumeroReferenceGenerator $generateur): void
+    {
+        $this->authorize('creerConfidentiel', Courrier::class);
+
+        $data = $this->validate([
+            'form.destinataire' => ['required', 'string', 'max:255'],
+            'form.date_mouvement' => ['required', 'date'],
+            'form.confidentialite' => ['required', 'integer', 'between:2,'.User::niveauConfidentialiteMax()],
+        ])['form'];
+
+        // Règle n°6 — jamais fait confiance à l'ID posté, même si la liste
+        // affichée vient déjà de $this->destinatairesTransfert/servicesTransfert.
+        // "destinataireChoix" encode soit "user-<id>" soit "service-<id>" —
+        // un service se résout vers SON responsable : lui seul reçoit
+        // réellement le pli (courriers.destinataire_transfert_id reste
+        // toujours un utilisateur), il peut ensuite réaffecter en interne
+        // exactement comme pour un courrier normal.
+        [$type, $id] = array_pad(explode('-', (string) $this->destinataireChoix, 2), 2, null);
+        $destinataire = null;
+        $libelleDestinataire = null;
+
+        if ($type === 'user') {
+            $destinataire = Auth::user()->destinatairesTransfert()->where('users.id', (int) $id)->first();
+            $libelleDestinataire = $destinataire?->name;
+        } elseif ($type === 'service') {
+            $service = Auth::user()->destinatairesTransfertServices()->where('services.id', (int) $id)->first();
+
+            if ($service && $service->responsable_id === null) {
+                $this->addError('destinataireChoix', __('Ce service n\'a pas de responsable désigné — impossible de lui adresser un pli directement.'));
+
+                return;
+            }
+
+            $destinataire = $service?->responsable;
+            $libelleDestinataire = $service ? __('service :nom (responsable : :resp)', ['nom' => $service->nom, 'resp' => $destinataire?->name]) : null;
+        }
+
+        if (! $destinataire) {
+            $this->addError('destinataireChoix', __('Choisissez un destinataire.'));
+
+            return;
+        }
+
+        $courrier = DB::transaction(function () use ($data, $generateur, $destinataire, $libelleDestinataire) {
+            // "Enregistré avec un minimum d'informations... transmis
+            // directement, sans passer par la classification automatique" —
+            // service_id reste null (jamais de Module 3 ici), statut passe
+            // directement à 'enregistre' (pas de circuit de transfert/
+            // validation DGA, le courrier est déjà "chez" son destinataire).
+            // fichier_path/texte_ocr restent null : ce chemin ne les
+            // renseigne jamais.
+            $courrier = Courrier::create([
+                'numero_reference' => $generateur->generer(),
+                'sens' => 'entrant',
+                'date_mouvement' => $data['date_mouvement'],
+                'destinataire' => $data['destinataire'],
+                'objet' => __('Correspondance confidentielle (non ouverte)'),
+                'type_document' => __('Correspondance confidentielle'),
+                'mode_reception' => 'depot_physique',
+                'service_id' => null,
+                'statut' => 'enregistre',
+                'confidentialite' => $data['confidentialite'],
+                // Marque explicite de ce flux (2026-09-24) — accès et clôture
+                // par le destinataire, voir CourrierPolicy::view()/cloturerConfidentiel().
+                'confidentiel_direct' => true,
+                'destinataire_transfert_id' => $destinataire->id,
+            ]);
+
+            CourrierHistorique::create([
+                'courrier_id' => $courrier->id,
+                'auteur_id' => Auth::id(),
+                'action' => 'creation',
+                'commentaire' => null,
+            ]);
+
+            // Règle n°5 — trace explicite de l'envoi direct, même esprit que
+            // WorkflowService::transferer() pour un courrier normal (mais
+            // sans passer par lui : il n'y a pas d'étape "en attente de
+            // transfert" à quitter ici, l'envoi est immédiat dès la création).
+            CourrierHistorique::create([
+                'courrier_id' => $courrier->id,
+                'auteur_id' => Auth::id(),
+                'action' => 'transfert',
+                'commentaire' => "Courrier confidentiel envoyé directement à {$libelleDestinataire}",
+            ]);
+
+            return $courrier;
+        });
+
+        $this->derniereReference = $courrier->numero_reference;
+        $this->derniereCourrierId = $courrier->id;
+
+        $this->form->reset();
+        $this->form->confidentialite = 2;
+        $this->reset('destinataireChoix');
+
+        Flux::toast(variant: 'success', text: __('Courrier confidentiel enregistré sous la référence :ref.', ['ref' => $courrier->numero_reference]));
     }
 
     // Déplace le document du brouillon vers son chemin final et lui copie les

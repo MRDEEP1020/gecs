@@ -527,6 +527,49 @@
                                     </flux:checkbox.group>
                                 </div>
                             </div>
+
+                            {{-- Services — un pli confidentiel est parfois
+                                 adressé à tout un service ("Direction
+                                 Générale", "RH"), pas seulement à une
+                                 personne nommée (2026-10-07). --}}
+                            <flux:separator class="my-6" />
+                            <flux:text class="mb-3 text-zinc-500">{{ __('Services que cet utilisateur peut choisir comme destinataire (pli confidentiel adressé au responsable du service).') }}</flux:text>
+                            <div class="grid gap-4 sm:grid-cols-[1fr_auto_1fr]">
+                                <div class="rounded-xl border border-brand-border p-3 dark:border-zinc-700">
+                                    <flux:input size="sm" wire:model.live.debounce.300ms="rechercheServicesDisponibles" icon="magnifying-glass" :placeholder="__('Rechercher…')" />
+                                    <flux:checkbox.group wire:model.live="selectionServicesDisponibles">
+                                        <ul class="mt-2 max-h-48 divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800">
+                                            @forelse ($this->servicesDisponibles as $service)
+                                                <li class="flex items-center justify-between gap-2 py-1.5">
+                                                    <flux:checkbox value="{{ $service->id }}" :label="$service->nom" />
+                                                    <flux:button size="sm" variant="ghost" icon="arrow-right" wire:click="ajouterServiceDestinataire({{ $service->id }})" />
+                                                </li>
+                                            @empty
+                                                <li class="py-2 text-sm text-zinc-400">{{ __('Aucun service.') }}</li>
+                                            @endforelse
+                                        </ul>
+                                    </flux:checkbox.group>
+                                </div>
+                                <div class="flex flex-row items-center justify-center gap-2 sm:flex-col">
+                                    <flux:button size="sm" icon="arrow-right" :variant="$selectionServicesDisponibles ? 'primary' : 'ghost'" :disabled="! $selectionServicesDisponibles" wire:click="ajouterSelectionServices" />
+                                    <flux:button size="sm" icon="arrow-left" :variant="$selectionServicesAssignes ? 'primary' : 'ghost'" :disabled="! $selectionServicesAssignes" wire:click="retirerSelectionServices" />
+                                </div>
+                                <div class="rounded-xl border border-brand-border p-3 dark:border-zinc-700">
+                                    <flux:input size="sm" wire:model.live.debounce.300ms="rechercheServicesAssignes" icon="magnifying-glass" :placeholder="__('Rechercher…')" />
+                                    <flux:checkbox.group wire:model.live="selectionServicesAssignes">
+                                        <ul class="mt-2 max-h-48 divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800">
+                                            @forelse ($this->servicesDeLutilisateurSelectionne as $service)
+                                                <li class="flex items-center justify-between gap-2 py-1.5">
+                                                    <flux:checkbox value="{{ $service->id }}" :label="$service->nom" />
+                                                    <flux:button size="sm" variant="ghost" icon="arrow-left" wire:click="retirerServiceDestinataire({{ $service->id }})" />
+                                                </li>
+                                            @empty
+                                                <li class="py-2 text-sm text-zinc-400">{{ __('Aucun service autorisé.') }}</li>
+                                            @endforelse
+                                        </ul>
+                                    </flux:checkbox.group>
+                                </div>
+                            </div>
                         </div>
 
                         {{-- Périmètre d'accès (Module "Organisation" v2, spec

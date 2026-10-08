@@ -111,6 +111,15 @@ class User extends Authenticatable implements PasskeyUser
         return $this->belongsToMany(User::class, 'destinataires_transfert', 'agent_id', 'destinataire_id');
     }
 
+    // Module 1 — pli confidentiel adressé à tout un SERVICE plutôt qu'à une
+    // personne nommée (2026-10-07, voir DECISIONS.md "Destinataires de
+    // transfert — services"). Table parallèle à destinataires_transfert,
+    // même convention de curation par agent.
+    public function destinatairesTransfertServices(): BelongsToMany
+    {
+        return $this->belongsToMany(Service::class, 'destinataires_transfert_services', 'agent_id', 'service_id');
+    }
+
     // Module "Organisation" v2 (2026-09-22, spec §5) — rattachement de
     // TRAVAIL de cet utilisateur à une ou plusieurs unités organisationnelles.
     public function organizationUnits(): BelongsToMany

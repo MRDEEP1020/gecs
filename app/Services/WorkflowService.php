@@ -172,7 +172,8 @@ class WorkflowService
     // la réceptionniste reste la valeur de DÉPART (pré-remplie dans le
     // formulaire, voir ShowCourrier::mount()) — indispensable pour un
     // courrier réellement confidentiel dès l'enveloppe, jamais ouvert par
-    // la réceptionniste (RegistrationFormConfidentiel) : elle DOIT pouvoir
+    // la réceptionniste (mode confidentiel de RegistrationForm, voir
+    // DECISIONS.md "fusion explicitement demandée") : elle DOIT pouvoir
     // le marquer confidentiel dès l'enregistrement, sans attendre la DGA.
     public function validerService(Courrier $courrier, int $serviceId, int $confidentialite, User $auteur): void
     {

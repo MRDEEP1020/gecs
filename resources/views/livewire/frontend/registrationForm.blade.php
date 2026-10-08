@@ -1,29 +1,157 @@
-<section
-    class="w-full max-w-6xl"
-    x-data="{
-        etape: {{ $derniereReference ? 5 : 1 }},
-        aller(n) { this.etape = n; },
-        suivant() {
-            const formulaire = this.$root.querySelector('form');
+<section class="w-full max-w-6xl">
+    {{-- 2026-10-07 — RegistrationForm et RegistrationFormConfidentiel
+         fusionnés en un seul composant/fichier (demande explicite de
+         l'utilisateur, "it should on a same file not two different
+         files" — décision rouverte en connaissance de cause, voir
+         DECISIONS.md "fusion explicitement demandée"). $modeConfidentiel
+         bascule entre les deux formulaires SANS navigation (wire:click,
+         plus de wire:navigate entre deux pages) ; en-tête partagé
+         ci-dessous, contenu entièrement séparé par branche @if pour ne
+         pas risquer de déstabiliser le wizard en 5 étapes du mode normal
+         (voir son propre commentaire plus bas) avec des champs qui ne le
+         concernent pas. --}}
+    <flux:breadcrumbs>
+        <flux:breadcrumbs.item href="{{ route('dashboard') }}" wire:navigate>{{ __('Accueil') }}</flux:breadcrumbs.item>
+        <flux:breadcrumbs.item>{{ __('Courrier') }}</flux:breadcrumbs.item>
+        <flux:breadcrumbs.item>{{ $modeConfidentiel ? __('Enregistrer un courrier confidentiel') : __('Enregistrer un courrier') }}</flux:breadcrumbs.item>
+    </flux:breadcrumbs>
 
-            if (formulaire) {
-                const champInvalide = Array.from(formulaire.elements).find(
-                    (champ) => champ.offsetParent !== null && ! champ.checkValidity()
-                );
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full {{ $modeConfidentiel ? 'bg-brand-secure' : 'bg-brand-blue' }} text-white">
+                @if ($modeConfidentiel)
+                    <flux:icon.lock-closed class="size-5" />
+                @else
+                    <flux:icon.envelope class="size-5" />
+                @endif
+            </div>
+            <div>
+                <flux:heading level="1">{{ $modeConfidentiel ? __('Enregistrer un courrier confidentiel') : __('Enregistrer un courrier') }}</flux:heading>
+                <flux:subheading>
+                    {{ $modeConfidentiel
+                        ? __('Le courrier reste fermé — vous ne relevez que le nom visible sur l\'enveloppe, sans jamais l\'ouvrir ni le scanner.')
+                        : __('Scannez ou importez le document, puis vérifiez et complétez les informations.') }}
+                </flux:subheading>
+            </div>
+        </div>
+        <x-courrier-mode-toggle :actuel="$modeConfidentiel ? 'confidentiel' : 'normal'" />
+    </div>
 
-                if (champInvalide) {
-                    champInvalide.reportValidity();
-                    return;
+    @if ($modeConfidentiel)
+        {{-- Mode confidentiel — porté tel quel depuis l'ancien composant
+             dédié RegistrationFormConfidentiel (voir DECISIONS.md) : AUCUN
+             champ d'upload ici (contrairement au mode normal ci-dessous),
+             c'est maintenant le SEUL rempart contre un envoi accidentel de
+             fichier pour un pli confidentiel — WithFileUploads reste sur
+             la classe (trait PHP, ne peut pas être retiré conditionnellement),
+             donc la garantie "jamais scanné" dépend de cette séparation de
+             vue + du garde-fou serveur dans enregistrerConfidentiel()/
+             numeriserAutomatique()/importerFichier(), plus d'une absence
+             structurelle du mécanisme. --}}
+        <flux:callout variant="warning" class="mt-6" icon="lock-closed">
+            <flux:callout.text>{{ __('N\'ouvrez pas l\'enveloppe. Ce formulaire n\'a volontairement pas de champ pour joindre un document — un courrier confidentiel n\'est jamais scanné.') }}</flux:callout.text>
+        </flux:callout>
+
+        @if ($derniereReference)
+            <flux:callout variant="success" class="mt-6" icon="check-circle">
+                <flux:callout.heading>{{ __('Courrier confidentiel enregistré') }}</flux:callout.heading>
+                <flux:callout.text>{{ __('Référence attribuée :') }} <strong>{{ $derniereReference }}</strong></flux:callout.text>
+                <x-slot name="actions">
+                    <flux:button href="{{ route('courriers.accuse-reception', $derniereCourrierId) }}" target="_blank" size="sm" icon="arrow-down-tray">
+                        {{ __('Télécharger l\'accusé de réception') }}
+                    </flux:button>
+                    <flux:button :href="route('courriers.show', $derniereCourrierId)" wire:navigate size="sm" variant="ghost">
+                        {{ __('Voir le courrier') }}
+                    </flux:button>
+                </x-slot>
+            </flux:callout>
+        @endif
+
+        <form wire:submit="enregistrer" class="mt-6 max-w-2xl space-y-6">
+            <flux:input wire:model="form.destinataire" :label="__('Nom visible sur l\'enveloppe (destinataire)')" placeholder="{{ __('ex. Monsieur le Directeur Général') }}" required />
+
+            <flux:input type="date" wire:model="form.date_mouvement" :label="__('Date de réception')" required />
+
+            {{-- Niveaux 2-5 uniquement — jamais 1 (Normal), ce mode dédié
+                 implique déjà que le courrier est confidentiel (même
+                 contrainte que l'ancien composant séparé). --}}
+            <flux:radio.group wire:model="form.confidentialite" :label="__('Niveau de confidentialité')">
+                @foreach (range(2, \App\Models\User::niveauConfidentialiteMax()) as $niveau)
+                    <flux:radio value="{{ $niveau }}" label="{{ __('Niveau :n', ['n' => $niveau]) }}" />
+                @endforeach
+            </flux:radio.group>
+
+            <div>
+                @if ($this->destinatairesTransfert->isEmpty() && $this->servicesTransfert->isEmpty())
+                    <flux:text class="mb-2 block font-medium text-brand-text-primary">{{ __('Envoyer directement à') }}</flux:text>
+                    <flux:text class="text-zinc-500">{{ __('Aucun destinataire autorisé pour votre compte. Contactez un administrateur.') }}</flux:text>
+                @else
+                    {{-- Menu déroulant natif (2026-10-07, voir
+                         DECISIONS.md/CHANGELOG-AGENT.md 12:30 : la variante
+                         Flux "listbox/combobox" documentée en ligne n'existe
+                         pas dans la version réellement installée ici). --}}
+                    <flux:select
+                        wire:model="destinataireChoix"
+                        :label="__('Envoyer directement à')"
+                        :placeholder="__('Choisir un destinataire…')"
+                    >
+                        @if ($this->destinatairesTransfert->isNotEmpty())
+                            <flux:select.group :label="__('Personnes')">
+                                @foreach ($this->destinatairesTransfert as $destinataire)
+                                    <flux:select.option value="user-{{ $destinataire->id }}">{{ $destinataire->name }}</flux:select.option>
+                                @endforeach
+                            </flux:select.group>
+                        @endif
+
+                        @if ($this->servicesTransfert->isNotEmpty())
+                            <flux:select.group :label="__('Services')">
+                                @foreach ($this->servicesTransfert as $service)
+                                    <flux:select.option value="service-{{ $service->id }}">{{ $service->nom }}</flux:select.option>
+                                @endforeach
+                            </flux:select.group>
+                        @endif
+                    </flux:select>
+                    @error('destinataireChoix') <flux:text class="mt-2 block text-sm text-brand-danger">{{ $message }}</flux:text> @enderror
+                @endif
+            </div>
+
+            <div class="flex items-center gap-4">
+                @if ($derniereCourrierId)
+                    <flux:button :href="route('courriers.show', $derniereCourrierId)" wire:navigate>
+                        {{ __('Voir le courrier') }}
+                    </flux:button>
+                @endif
+                <flux:button variant="primary" type="submit" :disabled="$this->destinatairesTransfert->isEmpty() && $this->servicesTransfert->isEmpty()" @class(['ms-auto' => $derniereCourrierId])>
+                    {{ __('Enregistrer le courrier confidentiel') }}
+                </flux:button>
+            </div>
+        </form>
+    @else
+    <div
+        x-data="{
+            etape: {{ $derniereReference ? 5 : 1 }},
+            aller(n) { this.etape = n; },
+            suivant() {
+                const formulaire = this.$root.querySelector('form');
+
+                if (formulaire) {
+                    const champInvalide = Array.from(formulaire.elements).find(
+                        (champ) => champ.offsetParent !== null && ! champ.checkValidity()
+                    );
+
+                    if (champInvalide) {
+                        champInvalide.reportValidity();
+                        return;
+                    }
                 }
-            }
 
-            this.etape = Math.min(this.etape + 1, 4);
-            this.$wire.$refresh();
-        },
-        precedent() { this.etape = Math.max(this.etape - 1, 1); },
-    }"
-    x-on:courrier-enregistre.window="etape = 5"
->
+                this.etape = Math.min(this.etape + 1, 4);
+                this.$wire.$refresh();
+            },
+            precedent() { this.etape = Math.max(this.etape - 1, 1); },
+        }"
+        x-on:courrier-enregistre.window="etape = 5"
+    >
     {{-- Maquette utilisateur du 2026-09-17 ("Enregistrer un courrier", vue
          en 5 étapes) — combine sur une seule page ce qui existait déjà
          séparément (scan-first, informations générales, OCR pré-rempli,
@@ -34,21 +162,6 @@
          wizard multi-requêtes — aucun champ n'est retiré du DOM entre les
          étapes (x-show, pas de v-if), donc rien ne se perd en changeant
          d'étape. --}}
-    <flux:breadcrumbs>
-        <flux:breadcrumbs.item href="{{ route('dashboard') }}" wire:navigate>{{ __('Accueil') }}</flux:breadcrumbs.item>
-        <flux:breadcrumbs.item>{{ __('Courrier') }}</flux:breadcrumbs.item>
-        <flux:breadcrumbs.item>{{ __('Enregistrer un courrier') }}</flux:breadcrumbs.item>
-    </flux:breadcrumbs>
-
-    <div class="mt-3 flex items-center gap-3">
-        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
-            <flux:icon.envelope class="size-5" />
-        </div>
-        <div>
-            <flux:heading level="1">{{ __('Enregistrer un courrier') }}</flux:heading>
-            <flux:subheading>{{ __('Scannez ou importez le document, puis vérifiez et complétez les informations.') }}</flux:subheading>
-        </div>
-    </div>
 
     {{-- Indicateur d'étapes — purement visuel (voir commentaire ci-dessus),
          cliquable pour revenir en arrière une fois qu'une étape a déjà été
@@ -333,6 +446,10 @@
                         <flux:select.option value="materiel">{{ __('Matériel') }}</flux:select.option>
                         <flux:select.option value="corporel">{{ __('Corporel') }}</flux:select.option>
                     </flux:select>
+
+                    @if ($form->estUnSinistre())
+                        <flux:input wire:model="referenceExterne" :label="__('Référence externe')" placeholder="{{ __('ex. V/Réf ou V/DOS indiqué par le cabinet/garage/expert') }}" />
+                    @endif
 
                     <flux:field>
                         <flux:select wire:model="form.mode_reception" :label="__('Mode de réception')" class="invalid:border-brand-danger valid:border-brand-success" required>
@@ -853,21 +970,8 @@
                 @endif
             </div>
 
-            {{-- Même privilège que la page cible (courriers.creer_confidentiel, 2026-09-23). --}}
-            @can('creerConfidentiel', App\Models\Courrier::class)
-                <div class="rounded-2xl bg-brand-navy p-4 text-white shadow-sm">
-                    <div class="mb-2 flex items-center gap-2">
-                        <flux:icon.lock-closed class="size-4" />
-                        <flux:heading level="3" class="text-white!">{{ __('Courrier confidentiel ?') }}</flux:heading>
-                    </div>
-                    <p class="text-sm text-white/80">
-                        {{ __('Ne pas ouvrir, ne pas scanner le contenu. Seul le nom du destinataire (visible sur l\'enveloppe) sera enregistré.') }}
-                    </p>
-                    <flux:button size="sm" class="mt-3" variant="outline" icon="arrow-top-right-on-square" :href="route('courriers.confidentiel')" wire:navigate>
-                        {{ __('Voir la procédure') }}
-                    </flux:button>
-                </div>
-            @endcan
         </div>
     </form>
+    </div>
+    @endif
 </section>

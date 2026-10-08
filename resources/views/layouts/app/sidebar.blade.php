@@ -143,7 +143,7 @@
                      l'utilisateur et survit à toute navigation ultérieure. --}}
                 <ui-disclosure-group exclusive>
                 @if ($groupe('courriers_'))
-                <flux:sidebar.group :heading="__('Courriers')" expandable :expanded="request()->routeIs(['courriers.rechercher', 'courriers.nouveau', 'courriers.numeriser-nouveau', 'courriers.calendrier']) && request()->query('sens') === null" icon="envelope" class="grid">
+                <flux:sidebar.group :heading="__('Courriers')" expandable :expanded="request()->routeIs(['courriers.rechercher', 'courriers.nouveau', 'courriers.confidentiel', 'courriers.numeriser-nouveau', 'courriers.calendrier']) && request()->query('sens') === null" icon="envelope" class="grid">
                     @if ($menu['courriers_tous'])
                         <flux:sidebar.item icon="list-bullet" :href="route('courriers.rechercher')" :current="request()->routeIs('courriers.rechercher') && request()->query('sens') === null" wire:navigate>
                             {{ __('Tous les courriers') }}

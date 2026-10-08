@@ -77,8 +77,8 @@ class ScanForm extends Component
 
         // Module 1/3 — "le champ confidentiel désactive tout le pipeline
         // OCR/extraction/classification" (specifications-modules-GEC.md) :
-        // défense en profondeur, indépendante de RegistrationFormConfidentiel
-        // (qui ne propose jamais cette action) — un courrier confidentiel ne
+        // défense en profondeur, indépendante du mode confidentiel de
+        // RegistrationForm (qui ne propose jamais cette action) — un courrier confidentiel ne
         // doit jamais être scanné, quel que soit le point d'entrée.
         if ($courrier->confidentialite > 1) {
             Flux::toast(variant: 'danger', text: __('Un courrier confidentiel ne peut pas être scanné — voir "Courrier confidentiel" dans le menu.'));

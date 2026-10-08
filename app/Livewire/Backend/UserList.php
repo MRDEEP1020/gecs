@@ -5,6 +5,7 @@ namespace App\Livewire\Backend;
 use App\Models\OrganizationUnit;
 use App\Models\Privilege;
 use App\Models\Profil;
+use App\Models\Service;
 use App\Models\User;
 use App\Services\AvatarService;
 use Flux\Flux;
@@ -154,6 +155,18 @@ class UserList extends Component
     public array $selectionDestinatairesDisponibles = [];
 
     public array $selectionDestinatairesAssignes = [];
+
+    // Même principe, pour les SERVICES (2026-10-07, voir DECISIONS.md
+    // "Destinataires de transfert — services") — un pli confidentiel est
+    // parfois adressé à tout un service ("Direction Générale", "RH"),
+    // pas seulement à une personne nommée.
+    public string $rechercheServicesDisponibles = '';
+
+    public string $rechercheServicesAssignes = '';
+
+    public array $selectionServicesDisponibles = [];
+
+    public array $selectionServicesAssignes = [];
 
     // ===== Onglet "Périmètre d'accès" (Module "Organisation" v2, spec §19)
     // — même patron "deux boîtes" que "Destinataires de transfert" ci-dessus,
@@ -590,7 +603,7 @@ class UserList extends Component
         $this->editionActif = $user->actif;
         $this->editionPhoto = null;
         $this->resetValidation();
-        $this->reset(['selectionDestinatairesDisponibles', 'selectionDestinatairesAssignes', 'selectionPerimetreDisponibles', 'selectionPerimetreAssignes', 'recherchePerimetreDisponibles', 'recherchePerimetreAssignes']);
+        $this->reset(['selectionDestinatairesDisponibles', 'selectionDestinatairesAssignes', 'selectionServicesDisponibles', 'selectionServicesAssignes', 'selectionPerimetreDisponibles', 'selectionPerimetreAssignes', 'recherchePerimetreDisponibles', 'recherchePerimetreAssignes']);
 
         Flux::modal('user-edition')->show();
     }
@@ -926,6 +939,99 @@ class UserList extends Component
         $this->utilisateurEnEdition->destinatairesTransfert()->detach($this->selectionDestinatairesAssignes);
 
         $this->selectionDestinatairesAssignes = [];
+        unset($this->utilisateurEnEdition);
+    }
+
+    // ===== Même onglet "Destinataires de transfert", section SERVICES
+    // (2026-10-07) — strictement le même patron "deux boîtes" que les
+    // méthodes ci-dessus, juste sur Service plutôt que User. =====
+    #[Computed]
+    public function servicesDisponibles()
+    {
+        $utilisateur = $this->utilisateurEnEdition;
+
+        $services = Service::query()->orderBy('nom')->get(['id', 'nom'])
+            ->when($utilisateur, fn ($s) => $s->whereNotIn('id', $utilisateur->destinatairesTransfertServices->pluck('id')));
+
+        return $this->filtrerServices($services, $this->rechercheServicesDisponibles)->values();
+    }
+
+    #[Computed]
+    public function servicesDeLutilisateurSelectionne()
+    {
+        $utilisateur = $this->utilisateurEnEdition;
+
+        if (! $utilisateur) {
+            return collect();
+        }
+
+        $services = Service::query()->whereIn('id', $utilisateur->destinatairesTransfertServices->pluck('id'))->orderBy('nom')->get(['id', 'nom']);
+
+        return $this->filtrerServices($services, $this->rechercheServicesAssignes)->values();
+    }
+
+    private function filtrerServices($services, string $recherche)
+    {
+        $recherche = trim($recherche);
+
+        if ($recherche === '') {
+            return $services;
+        }
+
+        return $services->filter(fn (Service $s) => str_contains(mb_strtolower($s->nom), mb_strtolower($recherche)));
+    }
+
+    public function ajouterServiceDestinataire(int $serviceId): void
+    {
+        $this->autoriserCompteEnEdition();
+
+        if (! $this->utilisateurEditionId) {
+            return;
+        }
+
+        $this->utilisateurEnEdition->destinatairesTransfertServices()->syncWithoutDetaching([$serviceId]);
+
+        unset($this->utilisateurEnEdition);
+    }
+
+    public function retirerServiceDestinataire(int $serviceId): void
+    {
+        $this->autoriserCompteEnEdition();
+
+        if (! $this->utilisateurEditionId) {
+            return;
+        }
+
+        $this->utilisateurEnEdition->destinatairesTransfertServices()->detach($serviceId);
+
+        unset($this->utilisateurEnEdition);
+    }
+
+    public function ajouterSelectionServices(): void
+    {
+        $this->autoriserCompteEnEdition();
+
+        if (! $this->utilisateurEditionId || $this->selectionServicesDisponibles === []) {
+            return;
+        }
+
+        $this->utilisateurEnEdition->destinatairesTransfertServices()->syncWithoutDetaching($this->selectionServicesDisponibles);
+
+        $this->selectionServicesDisponibles = [];
+        unset($this->utilisateurEnEdition);
+    }
+
+    public function retirerSelectionServices(): void
+    {
+        $this->autoriserCompteEnEdition();
+
+        if (! $this->utilisateurEditionId || $this->selectionServicesAssignes === []) {
+            return;
+        }
+
+        $this->utilisateurEnEdition->destinatairesTransfertServices()->detach($this->selectionServicesAssignes);
+
+        $this->selectionServicesAssignes = [];
         unset($this->utilisateurEnEdition);
     }
 

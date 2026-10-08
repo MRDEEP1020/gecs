@@ -594,6 +594,52 @@ class UserListTest extends TestCase
         $this->assertFalse(User::find($agent->id)->destinatairesTransfert->contains('id', $agent->id));
     }
 
+    // 2026-10-07 — même patron "deux boîtes" que les destinataires
+    // personne, sur Service (voir DECISIONS.md "Destinataires de
+    // transfert — services").
+    public function test_ajouter_puis_retirer_un_service_destinataire(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $service = Service::factory()->create(['nom' => 'Ressources Humaines']);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(UserList::class)->call('ouvrirEdition', $agent->id);
+
+        $component->call('ajouterServiceDestinataire', $service->id);
+        $this->assertTrue(User::find($agent->id)->destinatairesTransfertServices->contains('id', $service->id));
+
+        $component->call('retirerServiceDestinataire', $service->id);
+        $this->assertFalse(User::find($agent->id)->destinatairesTransfertServices->contains('id', $service->id));
+    }
+
+    public function test_la_fleche_centrale_ajoute_et_retire_toute_la_selection_de_services(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $rh = Service::factory()->create(['nom' => 'Ressources Humaines']);
+        $dg = Service::factory()->create(['nom' => 'Direction Générale']);
+        $this->actingAs($admin);
+
+        $component = Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $agent->id)
+            ->set('selectionServicesDisponibles', [$rh->id, $dg->id])
+            ->call('ajouterSelectionServices')
+            ->assertSet('selectionServicesDisponibles', []);
+
+        $agentApres = User::find($agent->id);
+        $this->assertTrue($agentApres->destinatairesTransfertServices->contains('id', $rh->id));
+        $this->assertTrue($agentApres->destinatairesTransfertServices->contains('id', $dg->id));
+
+        $component->set('selectionServicesAssignes', [$rh->id, $dg->id])
+            ->call('retirerSelectionServices')
+            ->assertSet('selectionServicesAssignes', []);
+
+        $agentApres = User::find($agent->id);
+        $this->assertFalse($agentApres->destinatairesTransfertServices->contains('id', $rh->id));
+        $this->assertFalse($agentApres->destinatairesTransfertServices->contains('id', $dg->id));
+    }
+
     // 2026-09-24 — lien "Gérer cet utilisateur" de la page Organisation :
     // ouvre directement la modale "Modifier" de ce compte, cascade
     // pré-remplie depuis son service réel.

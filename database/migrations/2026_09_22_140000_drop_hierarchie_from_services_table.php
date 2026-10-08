@@ -13,17 +13,51 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // Gardes d'existence (2026-10-08) — récupération après un incident
+        // réel (migrate:fresh accidentel sur la vraie base `gec`, voir
+        // CHANGELOG-AGENT.md) qui avait laissé cette migration appliquée à
+        // moitié (deleted_at/type déjà supprimés, parent_id/son index/sa FK
+        // pas encore) : sans ces gardes, up() replanterait immédiatement
+        // sur une colonne déjà absente avant même d'atteindre la partie
+        // réellement encore à faire. N'affecte aucun environnement sain
+        // (chaque condition est vraie avant le drop dans le cas normal).
         Schema::table('services', function (Blueprint $table) {
-            $table->dropSoftDeletes();
-            $table->dropColumn('type');
-            // SQLite (tests) n'auto-supprime pas l'index en même temps que la
-            // colonne (contrairement à MySQL) — le retirer explicitement
-            // d'abord, sinon "no such column: parent_id" lors de la
-            // reconstruction de table SQLite (voir memory
-            // utilisateurs_acces_maquette_2026_09_21, même piège déjà rencontré).
-            $table->dropIndex(['parent_id']);
-            $table->dropConstrainedForeignId('parent_id');
+            if (Schema::hasColumn('services', 'deleted_at')) {
+                $table->dropSoftDeletes();
+            }
+
+            if (Schema::hasColumn('services', 'type')) {
+                $table->dropColumn('type');
+            }
         });
+
+        if (Schema::hasColumn('services', 'parent_id')) {
+            // 2026-10-08 — ORDRE CORRIGÉ après l'incident ci-dessus : l'ancien
+            // dropIndex() avant dropConstrainedForeignId() plantait sur MySQL
+            // réel ("Cannot drop index ... needed in a foreign key
+            // constraint") — MySQL refuse de supprimer un index tant que la
+            // contrainte FK qui s'appuie dessus existe encore. Jamais
+            // déclenché avant cet incident car cette migration n'avait
+            // jusqu'ici tourné que sur SQLite (tests, phpunit.xml) puis une
+            // seule fois sur MySQL réel avec une version antérieure du
+            // fichier. Ordre correct : dropForeign (la contrainte seule)
+            // d'abord, PUIS dropIndex (plus rien ne s'appuie dessus) — SQLite
+            // reste couvert, dropIndex s'exécute toujours avant dropColumn
+            // (voir memory utilisateurs_acces_maquette_2026_09_21, même
+            // piège : SQLite ne supprime pas l'index automatiquement avec la
+            // colonne, contrairement à MySQL).
+            Schema::table('services', function (Blueprint $table) {
+                $table->dropForeign(['parent_id']);
+            });
+
+            Schema::table('services', function (Blueprint $table) {
+                $table->dropIndex(['parent_id']);
+            });
+
+            Schema::table('services', function (Blueprint $table) {
+                $table->dropColumn('parent_id');
+            });
+        }
     }
 
     public function down(): void

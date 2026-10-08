@@ -22,7 +22,6 @@ use App\Livewire\Backend\OrganisationIndex;
 use App\Livewire\Backend\ParametreSysteme;
 use App\Livewire\Backend\ProfilList;
 use App\Livewire\Backend\RegistrationForm;
-use App\Livewire\Backend\RegistrationFormConfidentiel;
 use App\Livewire\Backend\RegleList;
 use App\Livewire\Backend\ScanForm;
 use App\Livewire\Backend\ScanPremier;
@@ -57,9 +56,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // courriers.document.apercu, pour un brouillon.
     Route::get('brouillons/{brouillon}/apercu', BrouillonDocumentApercuController::class)->name('brouillons.apercu');
     Route::get('brouillons/{brouillon}/telecharger', BrouillonDocumentDownloadController::class)->name('brouillons.telecharger');
-    // Module 1 — "Cas particulier : courrier confidentiel" (specifications-modules-GEC.md) :
-    // processus séparé, jamais de scan (voir DECISIONS.md "Courrier confidentiel").
-    Route::livewire('courriers/confidentiel', RegistrationFormConfidentiel::class)->name('courriers.confidentiel');
+    // Module 1 — "Cas particulier : courrier confidentiel" (specifications-modules-GEC.md).
+    // 2026-10-07 — sert désormais le MÊME composant que courriers.nouveau
+    // (voir DECISIONS.md "fusion explicitement demandée") : ce nom de
+    // route reste distinct (liens existants du tableau de bord/sidebar
+    // inchangés) mais RegistrationForm::mount() détecte
+    // request()->routeIs('courriers.confidentiel') pour initialiser
+    // $modeConfidentiel à true ET revérifier authorize('creerConfidentiel', ...)
+    // à cet instant précis — un accès direct sans le privilège reste donc
+    // un vrai 403, comme avant la fusion.
+    Route::livewire('courriers/confidentiel', RegistrationForm::class)->name('courriers.confidentiel');
     // Module 1/2 — flux "scan d'abord" (voir DECISIONS.md "Flux scan-first").
     Route::livewire('courriers/numeriser', ScanPremier::class)->name('courriers.numeriser-nouveau');
     // Module 4 — ancienne file d'attente "Transferts" (WorkflowQueue),

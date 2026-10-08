@@ -4079,3 +4079,239 @@ Fichier(s) : resources/views/components/apercu/visionneuse.blade.php (plafond du
 Fichier(s) : resources/css/app.css (barre de défilement de LA PAGE masquée globalement, `html { scrollbar-width: none } html::-webkit-scrollbar { display: none }` — le défilement lui-même reste actif, molette/trackpad/clavier)
 Pourquoi : retour utilisateur direct "THE HIEGHT BROKE" juste après le passage à `h-64` (256px) de l'entrée précédente — vignette devenue trop petite. Vérifié moi-même en conditions réelles (retour utilisateur "CHECK BY YOUR SELF") via Playwright headless, connecté avec le compte de test `admin@test.local` (ComptesTestPiloteSeeder) sur la vraie page /courriers/5 : mesure de la hauteur réelle de la colonne sticky à chaque plafond testé (512px → 37px de marge, 256px → 230px de marge mais vignette trop petite, 384px → ~100px de marge, compromis retenu) et capture d'écran relue directement. Puis second retour "I DON'T NEED THE SCROLL BAR" (capture d'écran de la barre de défilement native du navigateur) — même principe déjà appliqué au panneau de prévisualisation, étendu à toute la page cette fois (changement global, pas limité au module aperçu document). 153/153 tests, `npm run build` OK.
 
+## [2026-10-07 09:00] Système "AI Employee Company" — simulation multi-rôle contre la vraie base (tests/ai-company-sim/)
+Fichier(s) : tests/ai-company-sim/bootstrap.php, README.md, cleanup.php
+Fichier(s) : tests/ai-company-sim/lib/CompanyMemory.php, TaggedFactory.php, Seed.php, Scenario.php
+Fichier(s) : tests/ai-company-sim/personas/00-ceo-test-director.md à 08-ux-researcher.md (9 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/_setup.php
+Fichier(s) : tests/ai-company-sim/scenarios/operations/op-01 à op-05 (5 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/admin/admin-01 à admin-04 (4 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/pm/pm-01 à pm-04 (4 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/external_correspondent/ec-01 à ec-04 (4 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/finance/fin-01 à fin-03 (3 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/security/sec-01 à sec-05 (5 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/ux/ux-01 à ux-03 (3 fichiers)
+Fichier(s) : tests/ai-company-sim/scenarios/qa/qa-verify-bugs.php
+Fichier(s) : tests/ai-company-sim/scenarios/ceo/ceo-01-smoke-test-and-spotcheck.php, ceo-02-generate-report.php
+Fichier(s) : .gitignore (ajout de /tests/ai-company-sim/runs)
+Pourquoi : demande explicite de l'utilisateur (spec complète "AI Employee Company
+— Realistic Application Testing System", 16 sections) — simulation multi-agents
+d'une journée de travail réelle sur GEC (9 rôles : CEO, Product Manager,
+Operations, Finance, Administrator, External Correspondent [rôle "Customer"
+honnêtement remappé — GEC n'a aucune surface libre-service externe], QA
+Engineer, Security Engineer, UX Researcher [périmètre honnêtement limité —
+aucune automatisation de navigateur dans cet environnement]). Architecture
+validée via EnterPlanMode avant toute implémentation (plan sauvegardé dans
+`.claude/plans/lovely-splashing-yeti.md`). Mécanisme technique central validé
+par recherche dédiée : `Livewire::test()` fonctionne hors PHPUnit depuis un
+script autonome qui boote juste `bootstrap/app.php` — permet de piloter les
+VRAIS composants Livewire contre la VRAIE base `gec` (jamais la sqlite
+jetable de `phpunit.xml`), avec authentification/validation/autorisation
+réelles. Chaque run est tagué `AICO-<seed>`, suivi dans `manifest.json`/
+`events.jsonl`/`bugs/*.json`, et nettoyé via `cleanup.php` (dry-run par
+défaut, `--confirm` pour supprimer réellement, vérification "zéro résidu"
+après coup — jamais automatique). 1er run complet (seed 11437, 28 scénarios,
+5 phases) : 0 bug confirmé, rapport `daily-report.md` généré (santé PASS,
+recommandation READY FOR PRODUCTION). 3 faux positifs trouvés ET corrigés
+PENDANT la construction (pas dans le run final) — voir memory
+ai_company_sim_2026_10_07 pour le piège principal découvert (un authorize()
+qui échoue EN COURS d'une méthode Livewire corrompt le snapshot retourné par
+le harnais de test, ne jamais juger sur l'exception levée, toujours sur
+l'effet réel en base) et 2 pièges secondaires (deux Affectation sur le même
+courrier ; method_exists() ne détecte jamais withTrashed()). Portée
+explicitement réduite pour cette 1ère itération (voir le plan, §8) : pas de
+concurrence contrôlée, pas d'historique de régression complet, pas
+d'exécution automatique/planifiée.
+
+## [2026-10-07 09:35] AI Employee Company — correctif de concurrence réelle (TaggedFactory::utilisateur)
+Fichier(s) : tests/ai-company-sim/lib/TaggedFactory.php
+Pourquoi : demande explicite de l'utilisateur de lancer les 9 rôles en VRAIS
+processus simultanés (pas la boucle séquentielle du run initial) — a
+immédiatement révélé que `TaggedFactory::utilisateur()` faisait un
+check-puis-create NON atomique : 3 scénarios Opérations partagent le même
+compte tagué "ops-agent" (réalisme voulu, un même employé fait plusieurs
+tâches), donc 3 processus simultanés ont pu tous voir "n'existe pas encore"
+et se faire concurrence sur l'INSERT (`Duplicate entry ... users_email_unique`).
+Corrigé avec le même patron que `NumeroReferenceGenerator` ailleurs dans ce
+projet : tenter la création, attraper la violation de contrainte (code
+23000), relire le compte du processus gagnant plutôt que de planter.
+Re-testé 2 fois en vrai parallèle après correctif (28 processus, puis 30
+processus incluant QA et le smoke-test CEO) : 0 erreur, `events.jsonl`/
+`manifest.json` intacts malgré les écritures concurrentes (`flock()` de
+`CompanyMemory` tient), 0 bug applicatif GEC trouvé. Voir memory
+ai_company_sim_2026_10_07 pour le détail complet.
+
+## [2026-10-07 10:45] Bascule Normal/Confidentiel — navigation unifiée sans fusionner les composants
+Fichier(s) : resources/views/components/courrier-mode-toggle.blade.php (nouveau)
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationFormConfidentiel.blade.php
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Fichier(s) : DECISIONS.md
+Pourquoi : demande explicite de l'utilisateur ("can the form of the courier
+confidentiel be... like a toggle that switch between confidentiel and
+normal"). Vérifié AVANT implémentation que DECISIONS.md [2026-09-15]
+tranchait déjà explicitement contre une fusion des deux composants
+("composant dédié, pas une branche conditionnelle" — garantie structurelle
+"jamais scanné" via l'ABSENCE de `WithFileUploads`, pas une validation
+contournable) : signalé à l'utilisateur avant de coder, puis implémenté une
+version qui satisfait la demande SANS rouvrir cette décision — les deux
+composants restent entièrement séparés, seule la navigation entre eux est
+devenue un vrai toggle visuel (`<x-courrier-mode-toggle>`, deux liens
+`wire:navigate`, visible seulement avec `courriers.creer_confidentiel`)
+plutôt qu'un encart "Courrier confidentiel ?" enterré en bas de
+`RegistrationForm` (supprimé, remplacé). Ajout de `courriers.confidentiel`
+à la liste des routes qui gardent le groupe sidebar "Courriers" ouvert.
+Vérifié : 68/68 tests (RegistrationFormTest + RegistrationFormConfidentielTest),
+Pint propre, et test HTTP réel (session authentifiée, compte jetable
+nettoyé après coup) confirmant le toggle sur les deux vraies pages avec
+l'avertissement "jamais scanné" toujours présent sur la page confidentielle.
+
+## [2026-10-07 11:20] Pli confidentiel adressé à un service entier (pas seulement à une personne)
+Fichier(s) : database/migrations/2026_10_07_100000_create_destinataires_transfert_services_table.php (nouveau)
+Fichier(s) : app/Models/User.php (nouvelle relation destinatairesTransfertServices())
+Fichier(s) : app/Livewire/Backend/UserList.php (section "Services" de l'onglet Destinataires de transfert — même patron deux-boîtes)
+Fichier(s) : resources/views/livewire/frontend/userList.blade.php
+Fichier(s) : app/Livewire/Backend/RegistrationFormConfidentiel.php (destinataireSystemeId remplacé par destinataireChoix, encode user-<id>/service-<id>)
+Fichier(s) : resources/views/livewire/frontend/registrationFormConfidentiel.blade.php
+Fichier(s) : tests/Feature/Admin/UserListTest.php (2 nouveaux tests, section Services)
+Fichier(s) : tests/Feature/Courriers/RegistrationFormConfidentielTest.php (destinataireSystemeId → destinataireChoix dans les tests existants, + 2 nouveaux tests : envoi à un service, service sans responsable refusé)
+Fichier(s) : DECISIONS.md
+Pourquoi : retour terrain de l'utilisateur ("sometimes it been send to the
+Directions general or to the RH SERVICE... sometimes to a specific
+person") — confirmé via AskUserQuestion que le vrai besoin est d'étendre
+le destinataire proposé aux SERVICES entiers, pas seulement aux personnes
+déjà curatées via `destinataires_transfert`. Table parallèle (jamais
+touché l'existante), curatée de la même façon par agent. Un service choisi
+résout vers son RESPONSABLE (`service->responsable_id`) : le modèle de
+données du courrier ne change pas, `destinataire_transfert_id` reste
+toujours un utilisateur — il peut ensuite réaffecter en interne comme pour
+un courrier normal. Un service sans responsable désigné est explicitement
+refusé (erreur de validation). 106/106 tests (UserListTest + les deux
+suites RegistrationForm*), Pint propre, vérifié aussi en conditions réelles
+contre la vraie base `gec` (section Services visible et fonctionnelle dans
+l'admin, nettoyé après coup). Migration appliquée (`php artisan migrate --force`).
+
+## [2026-10-07 11:40] Sélecteur de destinataire du pli confidentiel — refonte visuelle (liste de radios nues → "contact picker")
+Fichier(s) : resources/views/livewire/frontend/registrationFormConfidentiel.blade.php
+Pourquoi : retour direct de l'utilisateur sur capture d'écran ("change the
+design what that it ugly search for design online and change it") — la
+liste `<flux:radio.group>` plate (boutons radio natifs + texte, "Direction
+Commerciale (service)" en suffixe texte) jugée moche une fois peuplée de
+vrais destinataires/services. Recherche de patron ("recipient picker UI
+design pattern") avant refonte : liste sectionnée (Personnes/Services),
+chaque option en carte cliquable avec avatar (personne, `<flux:avatar>` à
+initiales) ou pastille d'icône (service, `building-office-2` sur fond
+brand-navy — même convention que le module Organisation), état sélectionné
+visible (bordure + fond + icône de coche, via `has-checked:`/`peer-checked:`
+Tailwind v4, input natif cachê en `sr-only` pour rester accessible),
+recherche instantanée en Alpine pur (pas de round-trip Livewire) au-delà de
+4 options. Piège évité (voir memory livewire_flux_gotchas) : le nom/service
+n'est JAMAIS interpolé brut dans une expression `x-show` (un nom avec
+apostrophe casserait le JS) — lu via `$el.dataset.recherche`, un attribut
+HTML normalement échappé par Blade. 8/8 tests toujours verts, Pint propre,
+rendu vérifié contre la vraie base (sections Personnes/Services présentes,
+sélection fonctionnelle).
+
+## [2026-10-07 12:30] Sélecteur de destinataire du pli confidentiel — remplacé par un vrai menu déroulant (remplace l'entrée 11:40)
+Fichier(s) : resources/views/livewire/frontend/registrationFormConfidentiel.blade.php
+Pourquoi : retour direct de l'utilisateur sur le "contact picker" en cartes
+("dropdown") — a redemandé explicitement un menu déroulant plutôt que la
+grille de cartes. 1ère tentative avec `<flux:select variant="listbox"
+searchable>` (syntaxe documentée sur fluxui.dev/components/select) a cassé
+en direct : "Flux component [select.variants.listbox] does not exist."
+Vérifié dans vendor/livewire/flux (version installée v2.18.0) — seule la
+variante "default" du composant select existe réellement ici (un `<select>`
+HTML natif délégué, voir select/variants/default.blade.php) ; "listbox" est
+une variante d'une version de Flux plus récente que celle installée dans ce
+projet, pas un bug de syntaxe. Remplacé par `<flux:select>` sans variant, ni
+`searchable` (non supporté par cette variante), avec de vrais `<optgroup>`
+via `<flux:select.group label="Personnes/Services">` — plus d'icône par
+option (un `<option>` natif ne peut pas en afficher), mais un vrai menu
+déroulant natif, ce qui correspond littéralement à la demande. Value
+`user-<id>`/`service-<id>` inchangée côté `RegistrationFormConfidentiel::enregistrer()`.
+8/8 tests de nouveau verts, Pint propre, vérifié en direct contre la vraie
+base (rendu sans erreur Flux, select natif avec les 2 groupes, soumission
+"personne" et "service" testées, 0 résidu après nettoyage).
+
+## [2026-10-07 13:15] "Référence externe" ajoutée au formulaire d'enregistrement, uniquement pour un sinistre
+Fichier(s) : app/Livewire/Backend/RegistrationForm.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : tests/Feature/Courriers/RegistrationFormTest.php
+Pourquoi : demande explicite de l'utilisateur, après avoir partagé la photo
+d'un vrai courrier de dossier sinistre (Cabinet LADO Assistance, "V/Réf :
+NSIA/DCO/DS/DNCF/…07/26", "V/DOS : CM2023105820300019") — le champ
+`reference_externe` existait déjà en base et dans EditForm ("Référence
+donnée par l'expéditeur, si connue") mais UNIQUEMENT en modification après
+coup, jamais à la saisie initiale. Ajouté comme propriété directe sur
+RegistrationForm (PAS dans CourrierForm — même raisonnement déjà documenté
+dans EditForm::$referenceExterne, éviter d'exposer ce champ au courrier
+normal/sortant), visible dans la vue seulement quand
+`$form->estUnSinistre()` est vrai (juste à côté de "Sous-type (si
+sinistre)"), jamais auto-extrait (aucune convention structurelle fixe
+repérée pour "V/Réf"/"V/DOS", contrairement à "Objet :"/"à l'attention
+de"). Garde-fou : une valeur tapée puis laissée en mémoire Livewire après
+retour sur un type non-sinistre est explicitement remise à null avant
+l'enregistrement, pour ne jamais persister malgré la disparition du champ
+de la vue. 2 tests ajoutés (persistée pour un sinistre / ignorée hors
+sinistre) ; 64/64 tests RegistrationForm verts, Pint propre, vérifié en
+direct contre la vraie base (champ affiché/masqué selon le type, valeur
+bien enregistrée sur un vrai sinistre sortant, 0 résidu après nettoyage).
+
+## [2026-10-07 14:00] Fusion de RegistrationFormConfidentiel dans RegistrationForm ("same file")
+Fichier(s) : app/Livewire/Backend/RegistrationForm.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/components/courrier-mode-toggle.blade.php
+Fichier(s) : routes/web.php
+Fichier(s) : tests/Feature/Courriers/RegistrationFormConfidentielTest.php
+Fichier(s) : app/Livewire/Backend/RegistrationFormConfidentiel.php (supprimé)
+Fichier(s) : resources/views/livewire/frontend/registrationFormConfidentiel.blade.php (supprimé)
+Pourquoi : demande explicite de l'utilisateur ("it should on a same file
+not two different files"), confirmée via AskUserQuestion en connaissance
+de cause après avoir rappelé le compromis sécurité — voir DECISIONS.md
+"fusion explicitement demandée". `$modeConfidentiel` bascule le même
+composant sans navigation (wire:click sur basculerModeConfidentiel()) ;
+`enregistrerConfidentiel()` isolée et courte (ne touche jamais pieceJointe/
+document/brouillon) + garde-fous explicites sur numeriserAutomatique()/
+importerFichier() remplacent la garantie structurelle "jamais scanné" que
+donnait l'absence de WithFileUploads sur l'ancien composant séparé. Vue
+restructurée en un seul `@if ($modeConfidentiel)` au niveau racine (pas
+d'interleaving dans le wizard 5 étapes du mode normal, pour ne pas le
+déstabiliser) ; `destinatairesTransfert()`/`servicesTransfert()` réautorisent
+`creerConfidentiel` en interne (PENTEST — une #[Computed] s'exécute dès
+qu'elle est référencée, pas seulement si le bloc Blade qui l'entoure est
+visible). Route `courriers.confidentiel` conservée (liens dashboard/sidebar
+inchangés) mais sert désormais RegistrationForm::class ; mount() détecte
+`request()->routeIs('courriers.confidentiel')` et revérifie le privilège à
+cet instant (même 403 qu'avant sur accès direct sans droit, voir
+MenuPrivilegesTest). 17/17 tests du fichier confidentiel-mode verts
+(dont 2 nouveaux : refus Collaborateur, garde-fou importerFichier), 64/64
+RegistrationFormTest toujours verts, Pint propre.
+
+## [2026-10-08 00:30] INCIDENT — migrate:fresh accidentel sur la vraie base `gec` + récupération
+Fichier(s) : database/migrations/2026_09_22_140000_drop_hierarchie_from_services_table.php
+Pourquoi : en déboguant un test (MenuPrivilegesTest) sans rapport avec le
+reste de cette session, un script PHP autonome visant la base SQLite de
+test a en réalité touché la vraie base MySQL `gec` (APP_ENV=testing seul
+ne charge PAS les surcharges de connexion de phpunit.xml hors du runner
+PHPUnit) — RefreshDatabase y a déclenché un `migrate:fresh` RÉEL,
+supprimant TOUTES les tables puis les recréant vides. Résultat : perte
+TOTALE des données réelles (users=0, courriers=0, historiques=0,
+services=0 constatés) — pas seulement les migrations récentes. Aucune
+sauvegarde disponible (confirmé avec l'utilisateur) ; décision explicite
+de l'utilisateur : reconstruire le schéma et reseeder des données de test,
+sans tentative de récupération de données. `php artisan migrate --force`
+a révélé un second problème latent (préexistant, jamais déclenché avant
+cet incident) dans cette migration : `dropIndex(['parent_id'])` AVANT
+`dropConstrainedForeignId('parent_id')` échoue sur MySQL réel ("needed in
+a foreign key constraint") — fonctionnait uniquement parce que cette
+migration n'avait jusqu'ici tourné que sur SQLite (tests) ou avec une
+version antérieure du fichier sur MySQL. Corrigé : dropForeign() d'abord,
+PUIS dropIndex(), PUIS dropColumn() séparément (plus de
+dropConstrainedForeignId combiné), gardes Schema::hasColumn()/étapes
+idempotentes pour tolérer l'état partiellement appliqué laissé par
+l'incident. `php artisan migrate --force` complet (17 migrations), puis
+`php artisan db:seed --force` (profils/privilèges/services/comptes
+pilotes) — base reconstruite avec données de test de base, PAS les
+données réelles perdues. Voir memory "never_run_test_tooling_outside_phpunit"
+pour la règle permanente qui en découle.
+

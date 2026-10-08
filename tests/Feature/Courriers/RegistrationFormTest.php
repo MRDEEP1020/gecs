@@ -264,6 +264,54 @@ class RegistrationFormTest extends TestCase
         $this->assertSame('materiel', $service->courriers()->firstOrFail()->sous_type_sinistre);
     }
 
+    // 2026-10-07 — "Référence externe" (V/Réf, V/DOS...) demandée explicitement
+    // dans le formulaire d'enregistrement, mais UNIQUEMENT pour un sinistre
+    // (voir RegistrationForm::$referenceExterne) : un vrai courrier "Cabinet
+    // LADO Assistance" cite systématiquement sa propre référence de dossier,
+    // utile pour rapprocher des échanges ultérieurs sur le même sinistre.
+    public function test_la_reference_externe_est_enregistree_pour_un_sinistre(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $service = Service::factory()->create(['code' => 'DIR']);
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'sortant')
+            ->set('form.date_mouvement', now()->format('Y-m-d'))
+            ->set('form.service_id', $service->id)
+            ->set('form.objet', 'Accident de la route')
+            ->set('form.type_document', 'Sinistre')
+            ->set('form.sous_type_sinistre', 'materiel')
+            ->set('referenceExterne', 'NSIA/DCO/DS/DNCF/.......07/26')
+            ->call('enregistrer')
+            ->assertHasNoErrors();
+
+        $this->assertSame('NSIA/DCO/DS/DNCF/.......07/26', $service->courriers()->firstOrFail()->reference_externe);
+    }
+
+    // Garde-fou — champ masqué hors sinistre (voir registrationForm.blade.php,
+    // $form->estUnSinistre()) : une valeur laissée en mémoire Livewire après
+    // que l'agent soit revenu sur un type non-sinistre ne doit jamais être
+    // enregistrée malgré elle.
+    public function test_la_reference_externe_est_ignoree_hors_sinistre(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $service = Service::factory()->create(['code' => 'DIR']);
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'sortant')
+            ->set('form.date_mouvement', now()->format('Y-m-d'))
+            ->set('form.service_id', $service->id)
+            ->set('form.objet', 'Réponse à un client')
+            ->set('form.type_document', 'Lettre')
+            ->set('referenceExterne', 'Une valeur qui ne devrait jamais être enregistrée')
+            ->call('enregistrer')
+            ->assertHasNoErrors();
+
+        $this->assertNull($service->courriers()->firstOrFail()->reference_externe);
+    }
+
     public function test_une_piece_jointe_est_stockee_sur_le_disque_s3(): void
     {
         Storage::fake('s3');

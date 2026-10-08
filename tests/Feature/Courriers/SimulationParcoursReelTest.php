@@ -10,16 +10,18 @@ use App\Livewire\Backend\DossierClassementList;
 use App\Livewire\Backend\MesCourriers;
 use App\Livewire\Backend\OrganisationIndex;
 use App\Livewire\Backend\RegistrationForm;
-use App\Livewire\Backend\RegistrationFormConfidentiel;
 use App\Livewire\Backend\RegleList;
 use App\Livewire\Backend\ScanPremier;
 use App\Livewire\Backend\ShowCourrier;
 use App\Livewire\Backend\UserList;
 use App\Models\Courrier;
 use App\Models\CourrierBrouillon;
+use App\Models\DossierClassement;
 use App\Models\OrganizationUnit;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\ClassificationService;
+use App\Services\WorkflowService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -202,7 +204,7 @@ class SimulationParcoursReelTest extends TestCase
         $this->ok("Agent : courrier enregistré ({$courrierA->numero_reference}), statut « en attente de transfert », PDF rangé sous {$courrierA->fichier_path}.");
 
         Queue::assertPushedOn('indexation', IndexCourrierJob::class);
-        (new IndexCourrierJob($courrierA))->handle(app(\App\Services\ClassificationService::class));
+        (new IndexCourrierJob($courrierA))->handle(app(ClassificationService::class));
         $courrierA->refresh();
         $this->verifier($courrierA->service_propose_id === $di->id, 'Classement automatique : DI proposé.', 'Classement automatique : aucune proposition DI (service_propose_id = '.var_export($courrierA->service_propose_id, true).').');
 
@@ -286,7 +288,7 @@ class SimulationParcoursReelTest extends TestCase
             ->set('nomDossier', 'Contrats fournisseurs 2026')
             ->call('creerDossier')
             ->assertHasNoErrors();
-        $dossier = \App\Models\DossierClassement::where('nom', 'Contrats fournisseurs 2026')->firstOrFail();
+        $dossier = DossierClassement::where('nom', 'Contrats fournisseurs 2026')->firstOrFail();
         Livewire::test(ShowCourrier::class, ['courrierId' => $courrierA->id])
             ->call('ouvrirClassement')
             ->set('dossierAClasserId', $dossier->id)
@@ -356,12 +358,20 @@ class SimulationParcoursReelTest extends TestCase
         $this->ok('Pièce reçue : reprise, soumission, validation par le responsable DSIN → « traité ».');
 
         // ============ Courrier C — confidentiel ============
+        // 2026-10-07 — RegistrationFormConfidentiel fusionné dans
+        // RegistrationForm (voir DECISIONS.md "fusion explicitement
+        // demandée") : basculerModeConfidentiel(true) remplace le mount()
+        // direct d'un composant dédié, form.destinataire/form.confidentialite
+        // (CourrierForm, déjà réutilisés par ce mode) remplacent
+        // nomEnveloppe/niveauConfidentialite, destinataireChoix (format
+        // "user-<id>") remplace destinataireSystemeId.
         $this->section('Courrier C — courrier confidentiel (jamais ouvert, niveau 3)');
         $this->actingAs($agent);
-        Livewire::test(RegistrationFormConfidentiel::class)
-            ->set('nomEnveloppe', 'Monsieur le Directeur Général — PERSONNEL')
-            ->set('niveauConfidentialite', 3)
-            ->set('destinataireSystemeId', $dga->id)
+        Livewire::test(RegistrationForm::class)
+            ->call('basculerModeConfidentiel', true)
+            ->set('form.destinataire', 'Monsieur le Directeur Général — PERSONNEL')
+            ->set('form.confidentialite', 3)
+            ->set('destinataireChoix', "user-{$dga->id}")
             ->call('enregistrer')
             ->assertHasNoErrors();
         $courrierC = Courrier::where('destinataire', 'Monsieur le Directeur Général — PERSONNEL')->firstOrFail();
@@ -398,7 +408,7 @@ class SimulationParcoursReelTest extends TestCase
 
         // ============ Archivage automatique (Scheduler) ============
         $this->section('Archivage automatique (tâche planifiée)');
-        (new ArchiverCourriersTraitesJob)->handle(app(\App\Services\WorkflowService::class));
+        (new ArchiverCourriersTraitesJob)->handle(app(WorkflowService::class));
         $this->assertSame('archive', $courrierA->fresh()->statut);
         $this->assertSame('archive', $courrierB->fresh()->statut);
         $this->assertSame('archive', $courrierC->fresh()->statut);
@@ -517,7 +527,7 @@ class SimulationParcoursReelTest extends TestCase
 
     private function ecrireRapport(): void
     {
-        $entete = "# Simulation du parcours réel — ".now()->format('Y-m-d H:i')."\n\nComptes : ".implode(', ', array_map(fn (User $u) => "{$u->name} ({$u->email})", $this->comptes))."\n";
+        $entete = '# Simulation du parcours réel — '.now()->format('Y-m-d H:i')."\n\nComptes : ".implode(', ', array_map(fn (User $u) => "{$u->name} ({$u->email})", $this->comptes))."\n";
 
         file_put_contents(storage_path('logs/simulation-parcours.md'), $entete.implode("\n", $this->journal)."\n");
     }

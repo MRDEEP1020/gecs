@@ -24,3 +24,4 @@ yarn-error.log
 /.zed
 /.claude/logs
 /.claude/settings.local.json
+/tests/ai-company-sim/runs
