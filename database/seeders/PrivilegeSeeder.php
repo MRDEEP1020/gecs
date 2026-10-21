@@ -46,11 +46,54 @@ class PrivilegeSeeder extends Seeder
             'courriers.affecter_tout' => ['Affecter tous les courriers', 'Affecter/réaffecter n\'importe quel courrier à un collaborateur.', 'ecriture', []],
             'courriers.affecter_service' => ['Affecter les courriers de son service', 'Affecter/réaffecter les courriers du service dont on est responsable.', 'ecriture', ['Responsable de service']],
             'courriers.traiter_tout' => ['Traiter tous les courriers', 'Démarrer le traitement de n\'importe quel courrier.', 'ecriture', []],
-            'courriers.traiter_affecte' => ['Traiter les courriers qui lui sont affectés', 'Démarrer le traitement des courriers affectés à soi-même.', 'ecriture', ['Collaborateur']],
+            // "Responsable de service" ajouté le 2026-10-13 (demande
+            // explicite de l'utilisateur, "can a responsable traite his own
+            // courier" puis "yes") — jusque-là accordé seulement à la main
+            // sur la vraie base via la page Profils ; ajouté ici pour que ce
+            // soit le comportement par défaut d'une nouvelle installation
+            // aussi, cohérent avec courriers.soumettre_validation ci-dessous
+            // (même raison : sans les deux ensemble, "Traiter moi-même" ne
+            // sert à rien, le cycle reste bloqué juste après démarré).
+            'courriers.traiter_affecte' => ['Traiter les courriers qui lui sont affectés', 'Démarrer le traitement des courriers affectés à soi-même.', 'ecriture', ['Collaborateur', 'Responsable de service']],
             'courriers.valider_tout' => ['Valider tous les courriers', 'Valider/renvoyer/rejeter n\'importe quel courrier.', 'ecriture', []],
             'courriers.valider_service' => ['Valider les courriers de son service', 'Valider/renvoyer/rejeter les courriers du service dont on est responsable.', 'ecriture', ['Responsable de service']],
             'courriers.dga_valider_service' => ['Valider le service proposé (DGA)', 'Confirmer/changer le service proposé pour un courrier entrant non-sinistre.', 'ecriture', ['DGA']],
+            // 2026-10-09 — extension du circuit générique (entretien terrain
+            // Sinistres, voir DECISIONS.md "Signature DG / Trésorerie") : un
+            // courrier peut avoir besoin de la signature DG avant clôture
+            // (ex. une facture), parfois suivi d'un passage en trésorerie
+            // (décaissement) — jamais un circuit Sinistres à part, une
+            // extension opt-in de la MÊME machine à états (voir
+            // WorkflowService). Aucun profil par défaut pour le premier
+            // privilège (hors Administrateur) : à assigner explicitement au
+            // département qui en a besoin, depuis Utilisateurs & Accès/Profils.
+            'courriers.envoyer_signature_dg' => ['Envoyer un courrier en signature DG', 'Envoyer un courrier validé en signature DG avant clôture, au lieu de clôturer directement (ex. une facture).', 'ecriture', []],
+            'courriers.dga_signer' => ['Signer un courrier (DG)', 'Signer un courrier reçu en attente de signature DG — clôturer directement, ou transmettre à la trésorerie pour un courrier de décaissement.', 'ecriture', ['DGA']],
+            'courriers.traiter_tresorerie' => ['Traiter un courrier en trésorerie', 'Clôturer un courrier de décaissement une fois transmis par la DG à la trésorerie.', 'ecriture', []],
+            // 2026-10-08 — demande explicite de l'utilisateur ("make the
+            // agent start sending courier to the service concerné without
+            // passing throught the direction service... make that option
+            // as a priviledge") : par défaut un agent n'a PAS ce privilège
+            // (aucun profil ci-dessous, hors Administrateur qui reçoit
+            // automatiquement tout le catalogue) — à assigner
+            // explicitement, par profil ou par utilisateur, depuis
+            // Utilisateurs & Accès/Profils, à qui on veut réellement
+            // autoriser ce raccourci. Même mécanisme que le routage direct
+            // d'un sinistre (voir RegistrationForm::enregistrer()) : SI
+            // l'agent choisit un service, le courrier entrant lui est
+            // envoyé directement, sans attendre la validation DGA/ADJ DGA —
+            // optionnel, pas un remplacement du circuit normal (laisser
+            // vide continue de passer par le DGA comme avant).
+            'courriers.envoyer_direct_service' => ['Envoyer un courrier entrant directement à un service', 'Choisir soi-même le service destinataire d\'un courrier entrant et l\'y envoyer directement, sans attendre la validation du DGA/ADJ DGA.', 'ecriture', []],
             'courriers.rechercher' => ['Rechercher des courriers', 'Accéder à la recherche multi-critères (Module 8).', 'lecture', ['Responsable de service', 'Agent', 'Collaborateur', 'DGA']],
+            // 2026-10-08 — retour utilisateur direct (capture d'écran de
+            // l'en-tête "Tous les courriers" annotée "priveliges") : mêmes
+            // boutons "Importer"/"Exporter" désactivés sans fonctionnalité
+            // réelle que "Répondre"/"Créer une note" plus haut, eux aussi
+            // jusqu'ici sans aucun privilège. Mêmes profils par défaut que
+            // courriers.rechercher, dans le même en-tête de page.
+            'courriers.importer' => ['Importer des courriers', 'Afficher le bouton "Importer" (en-tête de "Tous les courriers") — fonctionnalité à venir, aucun import de masse n\'existe encore.', 'ecriture', ['Responsable de service', 'Agent', 'Collaborateur', 'DGA']],
+            'courriers.exporter' => ['Exporter des courriers', 'Afficher le bouton "Exporter" (en-tête de "Tous les courriers") — fonctionnalité à venir, aucun export n\'existe encore (voir PRD.md, "export personnalisé" explicitement hors périmètre phase 1).', 'ecriture', ['Responsable de service', 'Agent', 'Collaborateur', 'DGA']],
             'courriers.calendrier' => ['Voir le calendrier des échéances', 'Accéder à la vue calendrier des échéances SLA (Module 5/8).', 'lecture', ['Responsable de service', 'Agent', 'Collaborateur', 'DGA']],
             'brouillons.utiliser_tout' => ['Utiliser tous les brouillons scannés', 'Reprendre/finaliser n\'importe quel document scanné en attente, pas seulement les siens.', 'ecriture', []],
             'regles_classement.gerer' => ['Gérer les règles de classement', 'Créer/modifier/supprimer les règles de classement automatique (Module 3).', 'administratif', []],
@@ -115,7 +158,11 @@ class PrivilegeSeeder extends Seeder
             'statistiques.rapports' => ['Consulter les rapports', 'Accéder à "Rapports" (page à venir).', 'lecture', ['DGA', 'Responsable de service']],
             'administration.automatisation' => ['Gérer l\'automatisation', 'Accéder à "Automatisation" (page à venir).', 'administratif', []],
             'administration.workflows' => ['Gérer les workflows', 'Accéder à "Workflows" (page à venir).', 'administratif', []],
-            'administration.sla' => ['Gérer les SLA et alertes', 'Accéder à "SLA & Alertes" (page à venir ; délais actuellement dans config/gec.php).', 'administratif', []],
+            // Description tenue à jour le 2026-10-08 : cette page n'est
+            // PLUS un placeholder depuis le 2026-09-23 ("Paramètres
+            // système", voir DECISIONS.md) — le texte "page à venir" était
+            // resté périmé dans le catalogue malgré la page réelle.
+            'administration.sla' => ['Gérer les paramètres système', 'Accéder à "Paramètres système" (numéro de référence, délais SLA par type, listes de référence).', 'administratif', []],
             // 2026-09-24 — page "Dossier surveillé" (configuration de l'import
             // automatique, déplacée depuis Numérisation) : Administrateur seul
             // par défaut, comme les autres pages d'administration.
@@ -142,7 +189,15 @@ class PrivilegeSeeder extends Seeder
             // l'affectation, modifiable ensuite avec motif.
             'courriers.fixer_delai' => ['Fixer le délai de traitement', 'Définir ou modifier (motif obligatoire) le délai du chronomètre de traitement d\'un courrier, dans sa portée d\'affectation.', 'ecriture', ['Responsable de service']],
             'courriers.reaffecter' => ['Réaffecter un courrier', 'Changer le collaborateur affecté (motif obligatoire), dans sa portée d\'affectation.', 'ecriture', ['Responsable de service']],
-            'courriers.soumettre_validation' => ['Soumettre pour validation', 'Envoyer sa réponse/action au responsable pour validation.', 'ecriture', ['Collaborateur']],
+            // 2026-10-13, demande explicite de l'utilisateur (suite directe
+            // de "can a responsable traite his own courier") — un
+            // responsable qui s'affecte un courrier à lui-même (voir
+            // courriers.traiter_affecte plus bas) doit aussi pouvoir
+            // soumettre SA PROPRE réponse pour validation, sinon le cycle
+            // reste bloqué juste après "Démarrer le traitement" : bouton
+            // "Soumettre pour validation" absent (retour utilisateur,
+            // capture d'écran de l'onglet "Circuit de traitement").
+            'courriers.soumettre_validation' => ['Soumettre pour validation', 'Envoyer sa réponse/action au responsable pour validation.', 'ecriture', ['Collaborateur', 'Responsable de service']],
             'courriers.renvoyer_correction' => ['Renvoyer pour correction', 'Refuser une soumission et la renvoyer au collaborateur (motif obligatoire).', 'ecriture', ['Responsable de service']],
             'courriers.rejeter' => ['Rejeter un courrier', 'Clore un courrier comme rejeté (motif obligatoire).', 'ecriture', ['Responsable de service']],
             'courriers.mettre_en_attente' => ['Mettre en attente d\'information', 'Suspendre le traitement en attendant une pièce ou une information (motif obligatoire).', 'ecriture', ['Collaborateur', 'Responsable de service']],
@@ -155,6 +210,22 @@ class PrivilegeSeeder extends Seeder
             'courriers.voir_historique' => ['Voir l\'historique', 'Afficher l\'onglet "Historique" (journal immuable des actions) d\'un courrier consultable.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'courriers.voir_texte_ocr' => ['Voir le texte extrait (OCR)', 'Afficher le texte extrait du document et rechercher dans ce contenu.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'courriers.voir_pieces_jointes' => ['Voir les pièces jointes', 'Afficher la liste des pièces jointes d\'un courrier consultable (le téléchargement exige en plus "Télécharger les documents").', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
+            // 2026-10-12, demande explicite de l'utilisateur ("not everybody
+            // has to see this") — bloc "Document principal (numérisation)"/
+            // OCR + "Classement"/mots-clés de la fiche ; mêmes 4 profils par
+            // défaut que les autres lectures de ce même bloc ci-dessus
+            // (voir_texte_ocr/voir_pieces_jointes), ajustable ensuite par
+            // utilisateur/profil depuis "Utilisateurs & Accès"/"Profils".
+            'courriers.voir_traitement_document' => ['Voir le traitement du document (OCR/Classement)', 'Afficher le statut OCR, la proposition de classement automatique et les mots-clés d\'un courrier consultable.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
+            // 2026-10-08 — retour utilisateur direct ("should be previledges
+            // too") : "Répondre"/"Créer une note" (Actions rapides,
+            // ShowCourrier) étaient les SEULS boutons de cette page sans
+            // aucun privilège, simples placeholders désactivés ("Bientôt
+            // disponible", aucune fonctionnalité réelle derrière). Mêmes
+            // profils par défaut que `courriers.classer`, dans le même
+            // panneau Actions rapides.
+            'courriers.repondre' => ['Répondre à un courrier', 'Afficher le bouton "Répondre" (Actions rapides) — fonctionnalité à venir, aucune réponse distincte de l\'historique n\'existe encore.', 'ecriture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
+            'courriers.creer_note' => ['Créer une note', 'Afficher le bouton "Créer une note" (Actions rapides) — fonctionnalité à venir, aucun modèle de note distinct de l\'historique n\'existe encore.', 'ecriture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             // 2026-09-23 — scindée en 4 clés, une par carte (même traitement
             // que dashboard.statistiques le même jour, "same thing for all
             // the pages, each card should be a permission") : impossible
@@ -191,13 +262,15 @@ class PrivilegeSeeder extends Seeder
             'dashboard.en_attente' => ['Voir "En attente de traitement"', 'Afficher la carte "En attente de traitement" du tableau de bord.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'dashboard.urgents' => ['Voir "Courriers urgents"', 'Afficher la carte "Courriers urgents" du tableau de bord.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'dashboard.en_retard' => ['Voir "En retard"', 'Afficher la carte "En retard" (dépassement SLA) du tableau de bord.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
+            // 2026-10-09, demande explicite de l'utilisateur — nouvelle carte,
+            // même 4 profils par défaut que les autres cartes KPI ci-dessus.
+            'dashboard.non_transferes' => ['Voir "Courriers non transférés"', 'Afficher la carte "Courriers non transférés" (jamais affectés/transférés depuis leur enregistrement) du tableau de bord.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'dashboard.derniers_courriers' => ['Voir les derniers courriers', 'Afficher la liste "Derniers courriers enregistrés" du tableau de bord.', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'dashboard.delai_moyen' => ['Voir le délai moyen de traitement', 'Afficher la carte "Délai moyen de traitement" (toute l\'entreprise avec "Voir tous les courriers", sinon ses services).', 'lecture', ['Responsable de service']],
             // Panneau latéral : cartes "Notifications" et "Calendrier"
             // (contenu décoratif/placeholder, mais chaque carte a désormais
             // sa permission comme le reste — même défaut que general.notifications).
             'dashboard.notifications' => ['Voir la carte Notifications', 'Afficher la carte "Notifications" du tableau de bord (panneau latéral).', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
-            'dashboard.calendrier' => ['Voir la carte Calendrier', 'Afficher la carte "Calendrier" du tableau de bord (panneau latéral).', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             // — Dossiers de classement
             'dossiers_classement.voir' => ['Voir les dossiers de classement', 'Accéder à "Dossiers & Archives" (seuls les dossiers créés, dirigés ou partagés restent visibles).', 'lecture', ['Agent', 'DGA', 'Responsable de service', 'Collaborateur']],
             'dossiers_classement.modifier' => ['Renommer / déplacer ses dossiers', 'Renommer ou déplacer un dossier qu\'on a créé.', 'ecriture', ['Responsable de service', 'Collaborateur']],
@@ -212,8 +285,39 @@ class PrivilegeSeeder extends Seeder
 
         $profils = Profil::pluck('id', 'nom');
 
+        // 2026-10-08 — BUG RÉEL corrigé (retour utilisateur : "stop giving
+        // back all the priveleges to the agents i remove some and you give
+        // him again why") : syncWithoutDetaching() tournait AVANT sur
+        // CHAQUE ligne du catalogue à CHAQUE exécution du seeder, y compris
+        // pour des privilèges déjà existants — ce qui réattachait
+        // silencieusement les profils par défaut même après qu'un
+        // administrateur les ait explicitement retirés via
+        // /admin/profils ou /admin/utilisateurs. Ce seeder est relancé
+        // volontairement après CHAQUE modification de ce fichier (règle
+        // d'exécution, voir memory systeme_privileges) — sans cette garde,
+        // chaque relance effaçait silencieusement toute personnalisation
+        // faite depuis l'interface, même pour des privilèges sans rapport
+        // avec la modification en cours. Les profils par défaut ne sont
+        // désormais assignés QUE lors de la toute première création du
+        // privilège (wasRecentlyCreated) — jamais retouchés ensuite,
+        // laissant les choix faits depuis l'interface intacts pour de bon.
+        // 2026-10-08 — même audit : nom/description/type utilisaient aussi
+        // firstOrCreate(), qui ne les écrit QUE à la création. Contrairement
+        // aux profils (modifiables depuis l'interface, jamais retouchés
+        // ensuite, voir ci-dessus), ce texte n'est PAS éditable depuis l'UI
+        // ("le catalogue lui-même est fixe", voir memory systeme_privileges)
+        // — ce fichier en est la seule source de vérité, donc updateOrCreate()
+        // pour que toute correction de libellé/description faite ici
+        // atteigne réellement la vraie base au prochain reseed (sinon un
+        // texte périmé pouvait rester affiché indéfiniment, découvert sur
+        // administration.sla : "page à venir" laissé alors que la page
+        // réelle existe depuis le 2026-09-23).
         foreach ($catalogue as $cle => [$nom, $description, $type, $nomsProfils]) {
-            $privilege = Privilege::firstOrCreate(['cle' => $cle], ['nom' => $nom, 'description' => $description, 'type' => $type]);
+            $privilege = Privilege::updateOrCreate(['cle' => $cle], ['nom' => $nom, 'description' => $description, 'type' => $type]);
+
+            if (! $privilege->wasRecentlyCreated) {
+                continue;
+            }
 
             $nomsProfils = array_unique([...$nomsProfils, 'Administrateur']);
             $idsProfils = collect($nomsProfils)->map(fn ($nomProfil) => $profils[$nomProfil] ?? null)->filter()->values();
@@ -233,5 +337,12 @@ class PrivilegeSeeder extends Seeder
         // (WorkflowQueue) supprimée, doublon de "Tous les courriers" — même
         // traitement, pas d'entrée morte dans le catalogue.
         Privilege::where('cle', 'courriers.voir_file_attente')->delete();
+        // dashboard.calendrier (2026-10-12) : mini-carte décorative du
+        // tableau de bord retirée (demande explicite de l'utilisateur,
+        // "what does that calendar on the dasboard even do" — purement
+        // décorative, aucune échéance réelle affichée) ; la vraie page
+        // calendrier (/courriers/calendrier, courriers.calendrier) reste
+        // inchangée et accessible depuis la sidebar.
+        Privilege::where('cle', 'dashboard.calendrier')->delete();
     }
 }

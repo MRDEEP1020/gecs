@@ -197,6 +197,15 @@ return [
     |
     */
 
-    'attributes' => [],
+    // Humanisation par défaut de Laravel (snake_case → espaces) illisible
+    // uniquement pour les propriétés camelCase de DelegationDgaIndex
+    // ("delegantId" → "delegant id" au lieu d'un libellé FR naturel) —
+    // seul endroit du projet où une propriété Livewire n'est pas déjà en
+    // snake_case aligné sur une colonne de base (2026-10-09, retour
+    // utilisateur direct sur une capture d'écran de cette page).
+    'attributes' => [
+        'delegantId' => 'DGA/Adjoint DGA absent(e)',
+        'delegataireId' => 'délégataire',
+    ],
 
 ];

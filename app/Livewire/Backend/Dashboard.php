@@ -114,6 +114,19 @@ class Dashboard extends Component
         return $this->courriersVisibles()->enRetard()->count();
     }
 
+    // Module 10 (2026-10-09, demande explicite de l'utilisateur) — courriers
+    // encore au tout premier statut du circuit (Courrier::scopeNonTransfere()),
+    // jamais affectés/transférés depuis leur enregistrement.
+    #[Computed]
+    public function courriersNonTransferes(): ?int
+    {
+        if (! Auth::user()->hasPrivilege('dashboard.non_transferes')) {
+            return null;
+        }
+
+        return $this->courriersVisibles()->nonTransfere()->count();
+    }
+
     // Cartes "Notifications"/"Calendrier" du panneau latéral (2026-09-23) —
     // gouvernées comme toutes les autres.
     #[Computed]
@@ -137,22 +150,6 @@ class Dashboard extends Component
         }
 
         return Auth::user()->notifications()->latest()->take(3)->get();
-    }
-
-    #[Computed]
-    public function peutVoirCalendrier(): bool
-    {
-        return Auth::user()->hasPrivilege('dashboard.calendrier');
-    }
-
-    // Lien "Voir le calendrier des échéances" (2026-10-05) — distinct de
-    // peutVoirCalendrier() ci-dessus (dashboard.calendrier n'autorise que la
-    // mini-carte décorative) : vérifie le vrai privilège de la page
-    // /courriers/calendrier avant d'y proposer un lien, sinon 403 au clic.
-    #[Computed]
-    public function peutOuvrirCalendrierComplet(): bool
-    {
-        return Auth::user()->can('calendrier', Courrier::class);
     }
 
     // Module 10 — "délai moyen" (PRD §3.10), pré-calculé par

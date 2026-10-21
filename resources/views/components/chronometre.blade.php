@@ -56,7 +56,12 @@
         data-label-restant="{{ __('Temps restant') }}"
         data-label-retard="{{ __('Dépassement') }}"
         data-label-traite="{{ __('Traité en') }}"
-        data-label-traite-retard="{{ __('Traité en retard, en') }}"
+        {{-- 2026-10-12 — texte aligné sur le nouveau calcul (app.js) : le
+             badge affiche désormais le VRAI dépassement (arrêt - échéance),
+             plus la durée totale de traitement — "Traité en retard, en"
+             (cadrage "durée totale") prêtait à confusion une fois comparé à
+             l'échéance affichée juste à côté sur la fiche. --}}
+        data-label-traite-retard="{{ __('En retard de') }}"
         data-jour="{{ __('j') }}"
         data-echeance="{{ __('Échéance') }} {{ $finChrono->format('d/m/Y H:i') }}"
     >

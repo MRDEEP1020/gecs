@@ -87,6 +87,16 @@ class Courrier extends Model
                 ->orWhere(fn ($q) => $q->whereNull('chrono_fin_le')->whereDate('date_limite', '<', today())));
     }
 
+    // Module 10 (2026-10-09, carte tableau de bord "Courriers non
+    // transférés") — courrier encore au tout premier statut du circuit,
+    // jamais affecté/transféré depuis son enregistrement (voir
+    // WorkflowService::TRANSITIONS['enregistre'], point d'entrée avant
+    // toute transition).
+    public function scopeNonTransfere(Builder $query): Builder
+    {
+        return $query->where('statut', 'enregistre');
+    }
+
     // "confidentialite" est un ENTIER (1 à 5) depuis le 2026-09-21 —
     // demande explicite de l'utilisateur : "the niveau should be numbers
     // not confidential or what ever but numbers 1,2,3,4,5 etc". Comparé
@@ -365,6 +375,9 @@ class Courrier extends Model
         'en_traitement' => 'En traitement',
         'en_validation' => 'En validation',
         'en_attente_information' => 'En attente d\'information',
+        // 2026-10-09 — extension du circuit générique (Signature DG / Trésorerie).
+        'en_attente_signature_dg' => 'En attente de signature DG',
+        'en_attente_tresorerie' => 'En attente de traitement (trésorerie)',
         'traite' => 'Traité',
         'archive' => 'Archivé',
         'rejete' => 'Rejeté',

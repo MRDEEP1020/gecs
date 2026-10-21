@@ -70,6 +70,21 @@ class DashboardTest extends TestCase
         $this->assertSame(1, $component->get('courrierEntrantAujourdhui')['total']);
     }
 
+    // Module 10 (2026-10-09) — Courrier::scopeNonTransfere() : seul le
+    // statut initial 'enregistre' compte, pas un courrier déjà affecté.
+    public function test_la_carte_non_transferes_compte_seulement_les_courriers_au_statut_enregistre(): void
+    {
+        $service = Service::factory()->create();
+        $this->courrier(['statut' => 'enregistre', 'service_id' => $service->id]);
+        $this->courrier(['statut' => 'affecte', 'service_id' => $service->id]);
+
+        $this->actingAs($this->utilisateurAvecProfil('Administrateur'));
+
+        $component = Livewire::test(Dashboard::class);
+
+        $this->assertSame(1, $component->get('courriersNonTransferes'));
+    }
+
     public function test_un_administrateur_voit_toutes_les_statistiques(): void
     {
         $service = Service::factory()->create();
@@ -206,15 +221,6 @@ class DashboardTest extends TestCase
         $this->actingAs($this->utilisateurAvecProfil('Agent'));
 
         $this->assertNull(Livewire::test(Dashboard::class)->get('tachesDuJour'));
-    }
-
-    public function test_les_actions_rapides_de_creation_ne_sapparaissent_qua_ceux_qui_ont_le_privilege(): void
-    {
-        $this->actingAs($this->utilisateurAvecProfil('Agent'));
-        Livewire::test(Dashboard::class)->assertSee('Enregistrer un courrier');
-
-        $this->actingAs($this->utilisateurAvecProfil('Collaborateur'));
-        Livewire::test(Dashboard::class)->assertDontSee('Enregistrer un courrier');
     }
 
     // 2026-10-05 (Module 7) — la carte "Notifications" affichait jusqu'ici

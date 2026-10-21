@@ -11,7 +11,7 @@
 
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                 <flux:icon.folder class="size-5" />
             </div>
             <div>
@@ -47,13 +47,13 @@
 
                 <nav class="space-y-[2px]">
                     <button type="button" wire:click="selectionnerNoeud('')"
-                        class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium {{ $dossierId === null && $noeud === '' ? 'bg-brand-blue-pale text-brand-blue' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60' }}">
+                        class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium {{ $dossierId === null && $noeud === '' ? 'bg-brand-accent-pale text-brand-accent' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60' }}">
                         <span class="flex items-center gap-2"><flux:icon.squares-2x2 class="size-4" />{{ __('Tous les dossiers') }}</span>
                         <span class="text-xs text-zinc-400">{{ $this->tousLesDossiersAccessibles->sum('courriers_count') }}</span>
                     </button>
 
                     <button type="button" wire:click="selectionnerNoeud('generaux')"
-                        class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm {{ $noeud === 'generaux' ? 'bg-brand-blue-pale font-medium text-brand-blue' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60' }}">
+                        class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm {{ $noeud === 'generaux' ? 'bg-brand-accent-pale font-medium text-brand-accent' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60' }}">
                         <span class="flex items-center gap-2"><flux:icon.inbox class="size-4" />{{ __('Courriers généraux') }}</span>
                     </button>
 
@@ -72,7 +72,7 @@
                     {{-- dossiers_classement.archives (2026-09-23) — aussi vérifié côté serveur. --}}
                     @if (auth()->user()->hasPrivilege('dossiers_classement.archives'))
                         <button type="button" wire:click="selectionnerNoeud('archives')"
-                            class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm {{ $noeud === 'archives' ? 'bg-brand-blue-pale font-medium text-brand-blue' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60' }}">
+                            class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm {{ $noeud === 'archives' ? 'bg-brand-accent-pale font-medium text-brand-accent' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60' }}">
                             <span class="flex items-center gap-2"><flux:icon.archive-box class="size-4" />{{ __('Archives') }}</span>
                         </button>
                     @endif
@@ -100,7 +100,7 @@
             <div x-data="squeletteMinimum()" class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                 <table class="w-full text-sm">
-                    <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+                    <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                         <tr>
                             <th class="py-3 pl-4 pr-3">{{ __('N° Courrier') }}</th>
                             <th class="py-3 pr-3">{{ __('Objet') }}</th>
@@ -174,7 +174,7 @@
                 <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="flex items-start justify-between gap-2">
                         <div class="flex items-center gap-3">
-                            <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                            <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                                 <flux:icon.folder class="size-5" />
                             </div>
                             <div class="min-w-0">
@@ -288,7 +288,7 @@
     <flux:modal name="dossier-creation" class="w-full max-w-lg">
         <form wire:submit="creerDossier" class="space-y-6">
             <div class="flex items-center gap-3">
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                     <flux:icon.folder-plus class="size-5" />
                 </div>
                 <div>
@@ -299,7 +299,12 @@
 
             <flux:input wire:model="nomDossier" :label="__('Nom du dossier')" required />
             <flux:textarea wire:model="descriptionDossier" :label="__('Description')" rows="2" />
-            <flux:select wire:model="serviceIdDossier" :label="__('Service')" :placeholder="__('— Aucun —')">
+            {{-- Pas de :placeholder (2026-10-12) — voir showCourrier.blade.php
+                 "Classer dans un dossier" pour le mécanisme exact (option
+                 désactivée peu fiable après un morph Livewire, le <select>
+                 natif retombe sur la première option RÉELLE). --}}
+            <flux:select wire:model="serviceIdDossier" :label="__('Service')">
+                <flux:select.option value="">{{ __('— Aucun —') }}</flux:select.option>
                 @foreach ($this->services as $service)
                     <flux:select.option value="{{ $service->id }}">{{ $service->nom }}</flux:select.option>
                 @endforeach
@@ -330,7 +335,10 @@
     <flux:modal name="dossier-deplacement" class="w-full max-w-lg">
         <div class="space-y-6">
             <flux:heading level="2">{{ __('Déplacer le dossier') }}</flux:heading>
-            <flux:select wire:model="nouveauParentId" :label="__('Nouveau dossier parent')" :placeholder="__('— Racine —')">
+            {{-- Pas de :placeholder (2026-10-12) — voir showCourrier.blade.php
+                 "Classer dans un dossier" pour le mécanisme exact. --}}
+            <flux:select wire:model="nouveauParentId" :label="__('Nouveau dossier parent')">
+                <flux:select.option value="">{{ __('— Racine —') }}</flux:select.option>
                 @foreach ($this->tousLesDossiersAccessibles as $candidat)
                     @if ($candidat->id !== $dossierADeplacerId)
                         <flux:select.option value="{{ $candidat->id }}">{{ $candidat->cheminComplet($this->tousLesDossiersAccessibles) }}</flux:select.option>

@@ -11,7 +11,7 @@
     </flux:breadcrumbs>
 
     <div class="mt-3 flex items-center gap-3">
-        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
             <flux:icon.folder-open class="size-5" />
         </div>
         <div>
@@ -37,6 +37,7 @@
         data-mode="config"
         data-msg-erreur-acces="{{ __('Impossible d\'accéder à ce dossier.') }}"
         data-msg-acces-refuse="{{ __('Accès au dossier refusé.') }}"
+        data-msg-fichiers-reinitialises="{{ __('Fichiers déjà traités oubliés — tout ce qui se trouve dans le dossier sera réimporté au prochain cycle.') }}"
     >
         <flux:heading level="2">{{ __('Configuration sur ce poste') }}</flux:heading>
 
@@ -62,7 +63,7 @@
                 <dl class="grid gap-4 sm:grid-cols-3">
                     <div>
                         <dt class="text-xs text-zinc-500">{{ __('Dossier') }}</dt>
-                        <dd class="mt-1 flex items-center gap-2 font-medium"><flux:icon.folder class="size-4 text-brand-blue" /><span x-text="nomDossier"></span></dd>
+                        <dd class="mt-1 flex items-center gap-2 font-medium"><flux:icon.folder class="size-4 text-brand-accent" /><span x-text="nomDossier"></span></dd>
                     </div>
                     <div>
                         <dt class="text-xs text-zinc-500">{{ __('Import automatique') }}</dt>
@@ -85,12 +86,21 @@
                     <flux:button x-show="actif && permission !== 'granted'" variant="primary" icon="lock-open" x-on:click="activer()">{{ __('Autoriser l\'accès') }}</flux:button>
                     <flux:button x-show="actif" variant="outline" icon="pause" x-on:click="desactiver()">{{ __('Arrêter la surveillance') }}</flux:button>
                     <flux:button variant="outline" icon="folder-open" x-on:click="choisirDossier()">{{ __('Changer de dossier') }}</flux:button>
+                    {{-- 2026-10-08, retour utilisateur ("reset the app so
+                         those olds ones can be new again") — un fichier déjà
+                         importé/rejeté par le passé est autrement ignoré en
+                         silence (voir scan-watcher.js, fichierTraite()) ;
+                         ce bouton ne touche QUE ce suivi, jamais la
+                         configuration du dossier elle-même (reste actif,
+                         pas besoin de re-choisir le dossier). --}}
+                    <flux:button variant="outline" icon="arrow-path" x-on:click="reinitialiserFichiersTraites()">{{ __('Réinitialiser les fichiers déjà traités') }}</flux:button>
                     <flux:button variant="ghost" icon="trash" x-on:click="oublier()">{{ __('Retirer la configuration') }}</flux:button>
                 </div>
             </div>
         </template>
 
         <flux:text x-show="messageErreur" x-text="messageErreur" class="mt-3 text-sm text-brand-danger"></flux:text>
+        <flux:text x-show="messageConfirmation" x-text="messageConfirmation" class="mt-3 text-sm text-brand-success-dark"></flux:text>
     </div>
 
     {{-- Derniers imports, tous postes confondus : preuve que la configuration

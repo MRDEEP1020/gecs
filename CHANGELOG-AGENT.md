@@ -12,6 +12,619 @@ règle et donc toujours à jour même si une entrée manque ici).
 
 ---
 
+## [2026-10-14 15:30] Sidebar : vrai bâtiment NSIA + slogan sorti du calque absolu
+Fichier(s) : resources/views/components/sidebar-artwork.blade.php
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Fichier(s) : resources/views/layouts/auth/split.blade.php
+Pourquoi : demande explicite de l'utilisateur ("YES DO BOTH" — passer la
+sidebar au vrai bâtiment ET versionner les images). x-sidebar-artwork :
+building.jpeg (généré) remplacé par building-real.jpg, ancré en bas à
+droite (w-[70%], ratio natif), mix-blend-lighten, étages supérieurs ET
+bord gauche fondus (deux masques en intersect) — façade crème claire,
+contrairement à l'ancienne : un groupe de nav déplié peut descendre
+jusque-là. Filets dorés passés DERRIÈRE l'immeuble (leur brume en screen
+délavait la façade) avec haut fondu. Slogan "Protéger aujourd'hui, bâtir
+demain." déplacé du calque absolu (bottom-5) vers le flux de
+sidebar.blade.php, après <flux:spacer /> : il se superposait à
+"Déconnexion" dès qu'un groupe déplié allongeait la nav (constaté sur
+capture authentifiée via le protocole DevTools de Chrome, 1366×768,
+groupe "Courriers" ouvert) — défaut antérieur, rendu plus visible par la
+nouvelle façade. Rendu replié inchangé au pixel près. Commentaire de
+split.blade.php corrigé (building.jpeg n'est plus utilisé nulle part).
+Images versionnées : commit 935f230 (abstract-curves, gold-light-trails,
+sidebar-background, building-real — jamais committées jusqu'ici) ;
+building.jpeg laissé non suivi sur le disque, inutilisé. Aucun push.
+
+---
+
+## [2026-10-14 14:30] Page de connexion — photo du VRAI bâtiment NSIA
+Fichier(s) : public/images/nsia/building-real.jpg
+Fichier(s) : resources/views/layouts/auth/split.blade.php
+Pourquoi : retour utilisateur direct ("check nsia2.jpeg is the real
+building") — la v2 utilisait building.jpeg (façade vitrée bleue,
+visiblement générée). nsia2.jpg (déposé à la racine du repo, non suivi
+par git) déplacé vers public/images/nsia/building-real.jpg, même
+convention que les autres assets NSIA (déplacés de la racine le
+2026-10-09). Fond noir pur mesuré (canal max = 2) -> mix-blend-lighten
+comme avant. Photo PORTRAIT (853×1280, l'ancienne était paysage) :
+composition refaite — immeuble ancré en bas à droite du panneau, bord
+gauche fondu, colonne de texte resserrée (max-w-108) pour que le texte
+blanc ne passe jamais sur la façade crème. Hauteurs calées sur captures
+(1920/1440/1366/1280/1024) : 45 % sous xl (paragraphe masqué), 64 % en
+xl, 72 % en 2xl. Retiré du bandeau mobile (aucune place sans recouvrir
+le titre sur 390 px). building.jpeg conservé : toujours utilisé par la
+sidebar (x-sidebar-artwork), non modifiée. Tests tests/Feature/Auth
+21/21, page et image servies (200).
+
+---
+
+## [2026-10-14 13:00] Page de connexion — refonte v2 avec les vrais assets NSIA
+Fichier(s) : resources/views/layouts/auth/split.blade.php
+Fichier(s) : resources/views/livewire/auth/login.blade.php
+Fichier(s) : resources/views/components/passkey-verify.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : retour utilisateur direct ("redesing it") sur la v1 (entrée
+ci-dessous). Diagnostic sur capture headless Chrome : v1 = dégradé navy
+uni + icône scaffold Laravel, alors que public/images contient les VRAIS
+assets de marque (logo NSIA, immeuble NSIA de nuit, filets dorés, courbes
+— ceux de x-sidebar-artwork). v2 : panneau héros avec logo NSIA réel
+(biseau intégré au PNG retiré par clip-path, mesuré au pixel), immeuble
+en mix-blend-lighten (le fond noir du JPEG disparaît sans délaver la
+photo), courbes/filets en mix-blend-screen avec mask-image (arêtes
+rectangulaires constatées sans fondu), titre bicolore blanc/or, slogan
+déjà utilisé par la sidebar. Formulaire aligné à gauche, icônes dans les
+champs, clé d'accès déplacée SOUS le formulaire (nouvelle prop
+rétrocompatible separatorPosition sur passkey-verify — confirm-password
+inchangé), encart "Pas encore d'accès ?" (inscription publique
+désactivée). Bandeau de marque + feuille blanche arrondie sur mobile.
+Vérifié : captures 1440×900 / 1366×768 (tient sans défilement) /
+1024×768 / 390 px (rendu via iframe — Chrome desktop impose ~500 px de
+largeur minimale à une fenêtre headless), connexion réelle valide →
+/dashboard et invalide → retour avec message d'erreur français,
+tests tests/Feature/Auth 21/21. Clés anglaises de la v1 devenues
+inutilisées retirées de lang/en.json (vérifié par grep).
+
+---
+
+## [2026-10-14 11:30] Page de connexion redessinée (branding NSIA)
+Fichier(s) : resources/views/layouts/auth/split.blade.php
+Fichier(s) : resources/views/livewire/auth/login.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : demande explicite de l'utilisateur ("design the login page").
+La page était restée le scaffold Laravel/Livewire par défaut depuis le
+début du projet (anglais, layout "simple" sans habillage), jamais
+retouchée malgré le reste de l'app entièrement en français et sur la
+palette de marque NSIA. Layout `layouts/auth/split.blade.php` (scaffold
+"citation inspirante" générique, jamais utilisé par aucune page avant ce
+jour — vérifié par grep) réécrit en panneau de marque : même dégradé
+navy que la vraie sidebar (--color-brand-sidebar-bg-from/-to), icône de
+marque existante (x-app-logo-icon, déjà réutilisée partout), 3 points
+reflétant des modules RÉELS du produit (traçabilité/Règle n°5, SLA/
+Module 5, confidentialité par niveau/Module 9) plutôt qu'un argumentaire
+marketing inventé. `login.blade.php` traduit intégralement en français
+(locale par défaut 'fr', voir config/app.php) et basculé sur ce nouveau
+layout. Volontairement limité à la page de connexion (confirm-password/
+register/forgot-password restent scaffold, hors périmètre de la
+demande). `npm run build` lancé (pas de watcher sur ce projet), page
+vérifiée servie correctement (200, contenu français présent, aucune
+trace d'erreur) après relance manuelle de Herd (services arrêtés entre
+les deux sessions).
+
+---
+
+## [2026-10-14 10:30] "Valider directement" : raccourci quand traiteur = validateur
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : retour utilisateur direct ("why can he validate directly" —
+si un responsable s'est auto-affecté via "Traiter moi-même", il est à la
+fois le traiteur ET le validateur, donc cliquer "Soumettre pour
+validation" puis "Valider" séparément est une formalité redondante pour
+une seule personne). Nouvelle ability CourrierPolicy::validerDirectement()
+qui compose soumettreValidation() + valider() + le statut 'en_traitement' —
+jamais une nouvelle règle de périmètre, seulement la combinaison des deux
+abilities déjà existantes pour détecter "même personne des deux côtés".
+Nouveau bouton primaire "Valider directement" affiché EN PLUS de
+"Soumettre pour validation" (toujours disponible, inchangé pour tout le
+monde d'autre) dans ce cas précis. Les deux vraies transitions du circuit
+générique (en_traitement→en_validation→traite) restent appelées l'une
+après l'autre côté WorkflowService — aucun raccourci dans la machine à
+états elle-même, uniquement dans le nombre de clics (historique complet
+conservé, Règle n°5).
+
+---
+
+## [2026-10-14 10:00] "Traiter moi-même" ne disparaissait pas après usage
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : retour utilisateur direct ("the button traite moi meme should
+hide when we have already use it right"). CourrierPolicy::traiterMoiMeme()
+déléguait entièrement à affecter(), qui n'a volontairement aucune
+restriction de statut au-delà de "pas archivé" (il sert aussi à la
+réaffectation) — mais WorkflowService::affecter() (réellement appelé par
+ce raccourci) ne transitionne QUE depuis 'enregistre' (première
+affectation). Le bouton restait donc visible après un premier usage ; un
+second clic aurait échoué avec une RuntimeException de transition. Ajouté
+`$courrier->statut === 'enregistre'` dans la policy (même restriction que
+le formulaire "Affecter à" classique, qui l'a déjà côté vue) pour que
+peutTraiterMoiMeme reflète fidèlement ce que l'action va réellement faire.
+
+---
+
+## [2026-10-14 09:00] Cycle complet Responsable : privilège "Soumettre pour validation" manquant
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : capture d'écran de l'onglet "Circuit de traitement" montrant les
+actions disponibles sur un courrier déjà en_traitement affecté à un
+Responsable de service ("Modifier le délai", "Réaffecter", "Mettre en
+attente", "Rejeter") mais sans "Soumettre pour validation". Diagnostic par
+script direct contre la vraie base (courrier GEC-2026-000008) :
+can('traiter')=true, mais CourrierPolicy::soumettreValidation() exige EN
+PLUS le privilège courriers.soumettre_validation, qui ne listait que
+Collaborateur par défaut. Ajouté "Responsable de service" à ce privilège.
+Au passage, constaté que courriers.traiter_affecte lui-même n'avait jamais
+été ajouté aux défauts du seeder (seulement accordé manuellement sur la
+vraie base suite à une demande précédente de l'utilisateur) — ajouté aussi,
+pour qu'une installation neuve dispose du même comportement. Seeder réappliqué
+sur la vraie base (`db:seed --class=PrivilegeSeeder --force`) + caches vidés
++ Herd redémarré. Tests CircuitCourrierTest mis à jour (détachement explicite
+du privilège dans les 2 tests "sans privilège", devenu un défaut de profil) et
+nouveau test de bout en bout (traiterMoiMeme → soumettrePourValidation →
+valider → statut "traite"). Suite complète : 745/745 tests, 2205 assertions.
+
+---
+
+## [2026-10-13] "Traiter moi-même" : ajout d'un champ délai (modale)
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : retour utilisateur direct ("je ne peut pa mettre un delais") —
+le bouton de l'en-tête ajouté juste avant n'avait aucun champ délai à
+proximité (contrairement au bloc "Affecter", qui en a un). Transformé en
+déclencheur de modale (ouvrirTraiterMoiMeme(), même patron que "Émettre
+une décharge") avec son propre champ délai, préempli au SLA par défaut du
+courrier plutôt que de dépendre silencieusement d'un état partagé non
+rempli. Le bouton "ghost" redondant dans le bloc "Affecter" retiré (un
+seul point d'entrée, désormais complet). Au passage : évité de réintroduire
+le bug Règle n°18 (@error manuel redondant avec <flux:with-field>) dans la
+nouvelle modale.
+
+---
+
+## [2026-10-13] Raccourci "Traiter moi-même" (1 clic, sans chercher son nom)
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : suite directe du correctif précédent (auto-affectation) —
+l'utilisateur a demandé une meilleure UX ("isnt the another way to that
+without selecting his name"), confirmée. Nouveau bouton "Traiter moi-même"
+(CourrierPolicy::traiterMoiMeme(), compose affecter() + privilège
+courriers.traiter_affecte) qui auto-affecte ET démarre le traitement en un
+clic, sans passer par le menu "Affecter à". Placé à DEUX endroits sur
+demande explicite de l'utilisateur ("add the button here", capture
+d'écran de l'en-tête) : dans l'en-tête de la fiche (à côté de "Modifier"/
+"Télécharger"/"Imprimer") ET dans le bloc "Affecter" existant.
+
+---
+
+## [2026-10-13] Responsable ne pouvait jamais s'auto-affecter un courrier
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : retour utilisateur ("it is not working") après avoir accordé
+courriers.traiter_affecte au profil "Responsable de service" (demande
+précédente, "can a responsable traite his own courier"). Vérifié que le
+privilège était bien actif (hasPrivilege() = true) — le vrai blocage était
+ailleurs : collaborateursDuService() (liste affichée dans le menu
+"Affecter") ET collaborateurDuServiceOuEchec() (re-vérification
+serveur dupliquée, Règle n°6) ne filtraient QUE le profil "Collaborateur" —
+un responsable ne pouvait donc JAMAIS être choisi comme collaborateur,
+quel que soit son privilège. "Responsable de service" ajouté aux DEUX
+(gardés synchronisés). Sans le privilège, demarrerTraitement() reste
+correctement refusé même auto-affecté (testé explicitement).
+
+---
+
+## [2026-10-12] Carte "Notifications" du dashboard : couleur de texte + repère lu/non lu
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Pourquoi : retour utilisateur avec capture d'écran ("change the design",
+carte Notifications du tableau de bord). VRAI bug trouvé : le libellé de
+chaque notification n'avait AUCUNE couleur de texte explicite (juste
+"truncate text-sm" sur <flux:text>, à l'intérieur d'un <a href> nu) —
+hérite donc du bleu/violet de lien PAR DÉFAUT du navigateur (teinte
+brun-orangé une fois visité, exactement ce que montrait la capture) ;
+notification-bell.blade.php/notifications-index.blade.php n'ont jamais ce
+problème (Flux menu.item ou un @class y posent déjà une couleur). Ajouté
+text-brand-text-primary explicitement + repère lu/non lu renforcé
+(border-s-4, même patron que notification-bell.blade.php plus tôt le même
+jour) pour que les 3 surfaces de notification restent cohérentes.
+
+---
+
+## [2026-10-12] Courrier envoyé directement au service : responsable jamais notifié
+Fichier(s) : app/Services/WorkflowService.php
+Fichier(s) : app/Livewire/Backend/RegistrationForm.php
+Fichier(s) : tests/Feature/Courriers/RegistrationFormTest.php
+Pourquoi : retour utilisateur direct, capture d'écran ("no notification of
+the new courrier been transfere to him why") — trouvé en auditant
+GEC-2026-000007 (historique : SEULEMENT creation+numerisation, alors que
+service_id était déjà résolu). Cause réelle : les deux chemins qui sautent
+DÉLIBÉRÉMENT la validation DGA (sinistre auto-routé via ClassificationService,
+et agent avec le privilège courriers.envoyer_direct_service) résolvent
+service_id DIRECTEMENT dans RegistrationForm::enregistrer(), sans jamais
+passer par WorkflowService::validerService() — seul endroit qui créait à la
+fois la trace d'historique (Règle n°5) ET la notification au responsable
+du service. Même événement métier (un courrier rejoint la file d'un
+service), déclencheur différent (l'agent, pas le DGA) : nouvelle méthode
+publique étroite WorkflowService::notifierArriveeDansService() (notifier()
+reste privée, Règle n°6) réutilisée depuis les deux branches concernées —
+même action 'service_valide_dga', même libellé de notification que le
+circuit DGA normal.
+
+---
+
+## [2026-10-12] En-tête du tableau "Derniers courriers" (dashboard) recoloré
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Pourquoi : retour utilisateur direct avec capture d'écran annotée ("i want
+a disgue soft color"), portée confirmée par AskUserQuestion — repris SUR
+CETTE SEULE table (pas les 9 autres neutralisées plus tôt le même jour) :
+bg-brand-table-header (neutre) → bg-brand-accent-soft (#F7FAFF, le token
+nommé "soft" du système de couleurs GEC existant, pas une teinte inventée).
+
+---
+
+## [2026-10-12] Retrait du mini-calendrier décoratif du tableau de bord
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : tests/Feature/DashboardKpiPrivilegesTest.php
+Pourquoi : demande explicite de l'utilisateur ("what does that calendar on
+the dasboard even do" puis "remove it") — la carte était purement
+décorative (aucune échéance réelle affichée, juste un mois navigable),
+son seul vrai rôle était un lien vers la vraie page calendrier
+(/courriers/calendrier, INCHANGÉE, toujours accessible depuis la sidebar).
+Retiré : le bloc Blade complet, les computed peutVoirCalendrier()/
+peutOuvrirCalendrierComplet() (plus utilisés), le privilège
+dashboard.calendrier (supprimé explicitement du catalogue, même
+convention que dashboard.statistiques/courriers.voir_file_attente).
+
+---
+
+## [2026-10-12] Cloche de notifications : repère lu/non lu renforcé
+Fichier(s) : resources/views/livewire/frontend/notification-bell.blade.php
+Pourquoi : retour utilisateur direct ("am talking about the highlight") —
+clarifie que "i can't disting between them" visait le repère lu/non lu
+(teinte de fond seule, 40% d'opacité), pas les icônes (déjà corrigées
+juste avant). Repris le même repère fort déjà en place sur la page
+Notifications complète : barre verticale pleine couleur à gauche
+(border-s-4, accent si non lu, transparente si lu) en plus de la teinte de
+fond — l'épaisseur ne change jamais, seule la couleur.
+
+---
+
+## [2026-10-12] Cloche de notifications : icônes enfin colorées par type
+Fichier(s) : resources/views/livewire/frontend/notification-bell.blade.php
+Fichier(s) : tests/Feature/NotificationBellTest.php
+Pourquoi : retour utilisateur direct avec capture d'écran ("i can't disting
+between them") — toutes les icônes du menu déroulant se ressemblaient.
+Cause réelle : <flux:menu.item icon="..."> délègue à <flux:icon>, que le
+vendor Flux force en gris neutre sans exception
+(`**:data-flux-menu-item-icon:text-zinc-400`) — aucune classe de couleur
+posée sur l'icône ne peut l'emporter, jamais de patch vendor. Remplacé par
+le même patron déjà utilisé sur la page Notifications complète (rond de
+couleur pleine construit dans le contenu de l'item, pas via sa prop icon).
+Un test existant (NotificationBellTest) utilisait 'bg-brand-danger' comme
+proxy incident pour "le badge de compteur a disparu" — cette classe
+apparaît désormais légitimement sur la pastille d'une notification "en
+retard" même une fois lue ; corrigé pour vérifier le vrai signal
+(data-notifications-non-lues="0").
+
+---
+
+## [2026-10-12] Badge "en retard" : dépassement réel, pas durée totale
+Fichier(s) : resources/js/app.js
+Fichier(s) : resources/views/components/chronometre.blade.php
+Fichier(s) : lang/en.json
+Pourquoi : retour utilisateur avec capture d'écran annotée ("look at does
+date is there no different between them") — un courrier clôturé en retard
+affichait "2j 21:40:00" alors que l'échéance n'était dépassée que d'environ
+21h40 ; le badge affichait la durée TOTALE de traitement (arrêt - début,
+ici depuis l'affectation) même une fois en retard, se lisant à tort comme
+le dépassement. Clarifié avec l'utilisateur (AskUserQuestion) : le badge
+"en retard" doit désormais afficher le VRAI dépassement (arrêt - échéance)
+; la durée totale reste inchangée pour une clôture dans les temps. Libellé
+de l'infobulle aligné ("Traité en retard, en" → "En retard de").
+
+---
+
+## [2026-10-12] Nouveau privilège : visibilité du bloc OCR/Classement
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : tests/Feature/ActionsLecturesPrivilegesTest.php
+Pourquoi : demande explicite de l'utilisateur ("not everybody has to see
+this ... if you don't have the permision the card stop at detail
+complentaire") — nouveau privilège courriers.voir_traitement_document
+(lecture) gouvernant tout le bloc "Document principal (numérisation)"/OCR
++ "Classement"/mots-clés de la fiche courrier ; sans lui, la carte
+"Détails complémentaires" s'arrête juste après ses champs habituels.
+Mêmes 4 profils par défaut que les lectures voisines déjà existantes sur
+ce même bloc (voir_texte_ocr/voir_pieces_jointes) — ajustable ensuite par
+utilisateur/profil. Distinct des privilèges d'ACTION déjà présents sur ce
+bloc (validerClassement/gererMotsCles/renumeriser), qui gouvernent chacun
+un bouton précis plutôt que la visibilité de la section.
+
+---
+
+## [2026-10-12] Notifications : affichage de l'auteur réel de l'action
+Fichier(s) : app/Notifications/CourrierNotification.php
+Fichier(s) : app/Notifications/OrganisationRattachementNotification.php
+Fichier(s) : app/Notifications/CompteUtilisateurNotification.php
+Fichier(s) : app/Notifications/DelegationDgaNotification.php
+Fichier(s) : app/Notifications/DossierPartageNotification.php
+Fichier(s) : app/Services/WorkflowService.php
+Fichier(s) : app/Livewire/Backend/OrganisationIndex.php
+Fichier(s) : app/Livewire/Backend/UserList.php
+Fichier(s) : app/Livewire/Backend/DelegationDgaIndex.php
+Fichier(s) : app/Livewire/Backend/DossierClassementList.php
+Fichier(s) : resources/views/livewire/frontend/notifications-index.blade.php
+Fichier(s) : tests/Feature/NotificationsIndexTest.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Fichier(s) : tests/Feature/Admin/OrganisationIndexTest.php
+Fichier(s) : tests/Feature/Admin/UserListTest.php
+Fichier(s) : tests/Feature/Admin/DelegationDgaIndexTest.php
+Fichier(s) : tests/Feature/Dossiers/DossierClassementListTest.php
+Pourquoi : demande explicite de l'utilisateur ("make each notification to
+show who send it") — nouveau paramètre optionnel `?User $envoyePar = null`
+(nullable pour rester compatible avec tout job déjà en file d'attente) sur
+les 5 classes de notification à auteur humain, ajouté à l'enveloppe
+générique (`envoye_par`) et affiché sur la page Notifications sous le
+libellé. WorkflowService::notifier() reçoit désormais `$auteur` (déjà
+disponible comme paramètre explicite sur chaque méthode publique du
+service) et le transmet à CourrierNotification. CourrierEnRetardNotification
+(alerte SLA automatique, SendMailAlertJob) volontairement NON modifiée —
+aucun auteur humain réel, la ligne "Envoyé par" reste absente pour ce type.
+
+---
+
+## [2026-10-12] Sélecteurs "Classer"/"Décharge"/déplacement : erreur dupliquée + valeur trompeuse
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/delegationDgaIndex.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Pourquoi : capture d'écran utilisateur sur la modale "Classer dans un
+dossier" — "Choisissez un dossier" affiché DEUX fois malgré un dossier
+visiblement affiché dans le menu. Deux bugs réels distincts, trouvés en
+inspectant le vendor Flux puis les vraies données (un seul dossier existait
+en base, ce qui rendait le symptôme particulièrement visible) : (1)
+<flux:select>/<flux:textarea> rendent DÉJÀ leur propre <flux:error>
+via <flux:with-field> (vendor) — le @error(...) manuel ajouté en plus
+dupliquait le message ; (2) :placeholder="..." rend un <option value=""
+disabled selected> que le navigateur ne garde PAS fiablement "sélectionné"
+après un morph Livewire quand la propriété liée est null — il retombe sur
+la première option RÉELLE (activée), l'affichant comme choisie alors que
+la propriété reste null côté serveur (d'où le rejet correct à la
+soumission, mais trompeur visuellement). Remplacé partout par une première
+<flux:select.option value=""> explicite et ACTIVÉE, fiable sur un <select>
+natif — appliqué aux 6 select concernés (dossierAClasserId, dossierChoisi,
+dechargeEmprunteurId, delegantId, delegataireId, serviceIdDossier, et les 2
+nouveauParentId) une fois le mécanisme identifié, pas seulement celui
+signalé.
+
+---
+
+## [2026-10-12] Sidebar scrollait de quelques pixels sans raison réelle
+Fichier(s) : resources/views/components/sidebar-artwork.blade.php
+Pourquoi : retour utilisateur ("why does the sidebar scroll when am
+scrolling on it") — le calque décoratif utilisait -inset-4 (destiné à
+compenser le p-4 du vendor Flux pour atteindre les bords réels de la
+sidebar), mais <flux:sidebar> est à la fois le conteneur overflow-y-auto
+ET l'ancêtre positionné de ce calque : -inset-4 étendait donc sa boîte
+1rem au-delà du bord bas de la zone de padding, ce qui contribue au
+scrollHeight du conteneur même pour un élément absolute/-z-10/
+overflow-hidden (l'overflow-hidden ne retire jamais sa propre
+contribution de taille au calcul de défilement de son ANCÊTRE). inset-0
+élimine ce débordement fantôme ; le dégradé déjà posé sur <flux:sidebar>
+lui-même comble la fine bande de padding sans coupure visible.
+
+---
+
+## [2026-10-12] VRAI correctif du code JS visible en texte sur le dashboard
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Pourquoi : le correctif précédent (guillemet droit dans un commentaire
+Blade imbriqué dans x-data) corrigeait un vrai problème mais n'était PAS la
+cause de ce symptôme précis, confirmé par 3 vérifications directes contre
+le vrai Kernel HTTP (pas seulement Livewire::test) après un herd restart
+complet. Cause réelle : @json($nomsMoisCalendrier)/@json($joursSemaineCalendrier)
+produisent des guillemets droits LITTÉRAUX (json_encode brut, pensé pour un
+<script>, pas pour un attribut HTML) — le premier guillemet termine
+prématurément x-data="..." lui-même ; le navigateur continue alors à
+"lire" le reste comme attributs bruts jusqu'au premier ">" rencontré, qui
+se trouve être celui d'une fonction fléchée JS ("(_, i) => i") plus bas
+dans ce même code — ce ">" ferme la balise <div>, et tout ce qui suit
+devient du texte de page bien réel (correspond exactement à l'endroit où
+le texte apparaissait). Fix : Illuminate\Support\Js::from() au lieu de
+@json — seul le premier échappe aussi les guillemets pour un usage sûr
+dans un attribut HTML (JSON.parse('..."...') plutôt que du JSON brut).
+Vérifié par inspection directe de l'attribut rendu (0 guillemet droit
+restant à l'intérieur, fermeture correcte par "}\"" immédiatement suivi de
+">").
+
+---
+
+## [2026-10-12] Correctif calendrier dashboard + retrait Actions rapides
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : tests/Feature/DashboardTest.php
+Pourquoi : bug réel signalé par l'utilisateur ("why does the calender not
+showing any dates") — x-for itérait sur un NOMBRE brut (.getDate()) au lieu
+d'un tableau, Alpine n'affichait donc aucune case de jour (seuls les
+libellés de jours de semaine, un vrai tableau via @json, s'affichaient) ;
+les deux getters retournent désormais un vrai tableau. Retrait complet des
+4 tuiles "Actions rapides" (demande explicite, "remove those quick action
+button") — décision du 2026-09-16 abandonnée ; test dédié à leur gating par
+privilège supprimé avec la fonctionnalité.
+
+---
+
+## [2026-10-12] Cartes KPI + en-têtes de tableau recalés sur toutes les pages
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/components/skeleton/card.blade.php
+Fichier(s) : resources/views/livewire/frontend/courriersEnregistres.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : resources/views/livewire/frontend/mesCourriers.blade.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Fichier(s) : resources/views/livewire/frontend/profilList.blade.php
+Fichier(s) : resources/views/livewire/frontend/regleList.blade.php
+Fichier(s) : resources/views/livewire/frontend/scanPremier.blade.php
+Fichier(s) : resources/views/livewire/frontend/userList.blade.php
+Pourquoi : demande explicite de l'utilisateur ("do the same thing on each
+page not the dashboard alone") — étend le traitement visuel appliqué au
+tableau de bord (icônes KPI en cercle + chevron, maquette de référence) à
+courrierList.blade.php, seule autre page partageant exactement le même
+motif de carte KPI (vérifié par grep avant modification) ; neutralise
+l'en-tête de tableau bleu (bg-brand-accent-pale → bg-brand-table-header,
+token déjà existant) sur les 9 pages qui partagent exactement le même
+en-tête coloré que l'ancien tableau "Derniers courriers" du dashboard.
+
+---
+
+## [2026-10-12 00:00] Contenu principal : brand-blue (gold) → brand-accent (bleu)
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : resources/views/livewire/frontend/notifications-index.blade.php
+Fichier(s) : resources/views/livewire/frontend/notification-bell.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Fichier(s) : resources/views/components/organization-tree-node.blade.php
+Fichier(s) : resources/views/livewire/frontend/userList.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/delegationDgaIndex.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierSurveille.blade.php
+Fichier(s) : resources/views/livewire/frontend/courrierCalendar.blade.php
+Fichier(s) : resources/views/livewire/frontend/parametreSysteme.blade.php
+Fichier(s) : resources/views/livewire/frontend/editForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/dossierClassementList.blade.php
+Fichier(s) : resources/views/livewire/frontend/courriersEnregistres.blade.php
+Fichier(s) : resources/views/livewire/frontend/scanPremier.blade.php
+Fichier(s) : resources/views/livewire/frontend/regleList.blade.php
+Fichier(s) : resources/views/livewire/frontend/profilList.blade.php
+Fichier(s) : resources/views/components/dossier-tree-node.blade.php
+Fichier(s) : resources/views/livewire/frontend/mesCourriers.blade.php
+Pourquoi : retour utilisateur direct ("change those yellow color on the
+main contents to blue") — le système de couleurs GEC avait reçu un
+habillage doré (NSIA) sur `--color-brand-blue` et ses variantes il y a deux
+jours, pensé pour la SEULE sidebar ; mais ces classes `brand-blue*` étaient
+aussi utilisées partout dans le contenu principal (tableau de bord, listes
+de courriers, formulaires, pages admin), qui se retrouvait donc doré par
+effet de bord alors que l'utilisateur ne voulait le doré que sur la
+sidebar. Un nouveau token séparé `--color-brand-accent` (bleu, valeurs
+pré-dorure restaurées) a été ajouté dans resources/css/app.css ; ces 21 vues
+du contenu principal sont renommées `brand-blue*` → `brand-accent*` pour
+suivre ce nouveau token, tandis que `--color-brand-blue` (doré) reste
+inchangé et continue d'habiller uniquement la sidebar
+(resources/views/layouts/app/sidebar.blade.php et sidebar-artwork.blade.php,
+non touchés).
+
+---
+
+## [2026-10-12] Tableau de bord recalé sur nouvelle maquette de référence
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Pourquoi : capture d'écran de référence fournie par l'utilisateur ("this
+instead") — icônes des cartes KPI en cercle plein (rounded-full) avec
+chevron à droite ; carte "Non transférés" recolorée en indigo (seule
+exception à la règle "alias plutôt que nouvelle teinte", aucune couleur du
+système GEC ne correspondait) ; "Délai moyen de traitement" devient une
+rangée pleine largeur sous la grille 2x3 plutôt qu'une 7ème cellule étroite ;
+en-tête "⚡ Actions rapides" + pastille de compte ajoutés (absents de la
+maquette du 2026-09-16, remplacés par cette nouvelle référence) ; en-tête du
+tableau "Derniers courriers" neutre (bg-brand-table-header) au lieu de
+teinté bleu ; bandeaux colorés retirés des en-têtes "Tâches du jour"/
+"Notifications" pour rester cohérents avec "Calendrier" (déjà neutre).
+
+---
+
+## [2026-10-10 01:20] Barre de défilement de la sidebar masquée
+Fichier(s) : resources/css/app.css
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : retour utilisateur sur capture d'écran de l'habillage NSIA
+("i dont need the scrollbar") — même technique déjà utilisée pour la page
+(html { scrollbar-width: none }) et le panneau "Aperçu" : défilement
+toujours fonctionnel, seul le rendu visuel masqué. scrollbar-gutter-stable
+retiré de <flux:sidebar> (n'a plus d'utilité une fois la barre masquée —
+hidden/none retire aussi la barre du calcul de layout, donc plus besoin de
+lui réserver de l'espace).
+
+---
+
+## [2026-10-10 01:05] Sidebar : SVG dessiné à la main → 4 vrais assets NSIA
+Fichier(s) : public/images/nsia/sidebar-background.jpeg (déplacé depuis la racine du repo)
+Fichier(s) : public/images/nsia/abstract-curves.jpeg (déplacé depuis la racine du repo)
+Fichier(s) : public/images/nsia/building.jpeg (déplacé depuis la racine du repo)
+Fichier(s) : public/images/nsia/gold-light-trails.jpeg (déplacé depuis la racine du repo)
+Fichier(s) : resources/views/components/sidebar-artwork.blade.php
+Pourquoi : l'utilisateur a fourni 4 vrais fichiers JPEG (déposés à la
+racine du repo, hors public/ — déplacés ici pour être servables) ;
+remplace la première version 100% SVG dessinée à la main. JPEG = aucun
+canal alpha (vérifié en ouvrant chaque fichier avant intégration, comme
+demandé) : fond noir pur pour courbes/filets dorés → mix-blend-mode:
+screen (techniquement correct sur un fond noir pur) ; immeuble en grande
+partie bleu marine (pas juste son fond) → mask-image radial plutôt que
+screen, qui aurait délavé toute la photo. w-full h-auto sur l'immeuble
+(ratio natif préservé, jamais de stretch).
+
+---
+
+## [2026-10-10 00:20] Habillage décoratif sidebar (courbes/immeuble/filets or) [SVG, remplacé ci-dessus]
+Fichier(s) : resources/views/components/sidebar-artwork.blade.php (nouveau)
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Fichier(s) : resources/css/app.css
+Pourquoi : demande explicite de l'utilisateur, spec détaillée + capture
+d'écran de référence (immeuble NSIA, courbes bleues abstraites, filets
+dorés, slogan "Protéger aujourd'hui, bâtir demain.") — nouveau composant
+SVG dessiné à la main (AUCUN outil de génération d'image disponible dans
+cet environnement, donc pas de PNG photoréaliste ni de tracé depuis la
+capture réelle) inséré en calque -z-10 derrière le contenu normal de la
+sidebar (relative isolate sur <flux:sidebar>, jamais de patch vendor,
+pointer-events-none) ; nouveaux tokens --color-brand-sidebar-bg-from/-to
+(dégradé dédié, hex fournis par l'utilisateur) SANS toucher à
+--color-brand-navy (global, inchangé ailleurs). Logo NSIA réel (symbole)
+volontairement non redessiné — fichier source réel encore attendu.
+
+---
+
+## [2026-10-09 23:40] Carte tableau de bord "Courriers non transférés"
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Livewire/Backend/Dashboard.php
+Fichier(s) : resources/views/livewire/frontend/dashboard.blade.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : tests/Feature/DashboardTest.php
+Fichier(s) : tests/Feature/DashboardKpiPrivilegesTest.php
+Pourquoi : demande explicite de l'utilisateur — nouvelle carte KPI Module 10
+comptant les courriers encore au statut initial 'enregistre' (jamais
+affecté/transféré) ; nouveau Courrier::scopeNonTransfere(), nouvelle clé
+dashboard.non_transferes (même 4 profils par défaut que les autres cartes
+KPI, Règle n°6 — toujours scopé par courriersVisibles()/visiblePar()),
+tests nominal + privilège refusé (Règle n°7).
+
+---
+
+## [2026-10-09 23:10] Design sidebar "blend" façon NSIA réel (or + puces)
+Fichier(s) : resources/css/app.css
+Pourquoi : demande explicite de l'utilisateur ("create a design that blend
+inside the sidebar like the one on the screenshot i send", capture d'écran
+du pied de page nsiaassurances.cm réel) — ajoute le motif or (puce "—" après
+les titres de groupe, icônes d'en-tête de groupe teintées or, ligne
+connectrice des groupes dépliés recolorée) en réutilisant les points de
+sélection CSS déjà stables du projet ([data-flux-sidebar-group], jamais de
+patch vendor) ; --color-brand-sidebar-divider recoloré en or (alias de
+--color-brand-blue-medium) au lieu de l'ancien navy quasi invisible.
+Logo/marque NSIA eux-mêmes non reproduits (hors périmètre, outil interne).
+
+---
+
 ## [2026-10-05 03:45] Fuseau horaire applicatif : UTC → Africa/Douala
 Fichier(s) : config/app.php
 Fichier(s) : .env
@@ -4283,9 +4896,15 @@ visible). Route `courriers.confidentiel` conservée (liens dashboard/sidebar
 inchangés) mais sert désormais RegistrationForm::class ; mount() détecte
 `request()->routeIs('courriers.confidentiel')` et revérifie le privilège à
 cet instant (même 403 qu'avant sur accès direct sans droit, voir
-MenuPrivilegesTest). 17/17 tests du fichier confidentiel-mode verts
+MenuPrivilegesTest). 9/9 tests du fichier confidentiel-mode verts
 (dont 2 nouveaux : refus Collaborateur, garde-fou importerFichier), 64/64
-RegistrationFormTest toujours verts, Pint propre.
+RegistrationFormTest et 1/1 SimulationParcoursReelTest (mis à jour pour le
+composant fusionné) toujours verts, Pint propre. Vérifié en direct contre
+la vraie base `gec` après l'incident/récupération ci-dessous (2026-10-08
+01:00) : rendu normal/confidentiel sans erreur, bascule dans les deux sens,
+soumission confidentielle (fichier_path NULL, destinataire_transfert_id
+correct) et normale toutes deux fonctionnelles sur le même composant,
+importerFichier() neutralisé en mode confidentiel, 0 résidu après nettoyage.
 
 ## [2026-10-08 00:30] INCIDENT — migrate:fresh accidentel sur la vraie base `gec` + récupération
 Fichier(s) : database/migrations/2026_09_22_140000_drop_hierarchie_from_services_table.php
@@ -4312,6 +4931,797 @@ idempotentes pour tolérer l'état partiellement appliqué laissé par
 l'incident. `php artisan migrate --force` complet (17 migrations), puis
 `php artisan db:seed --force` (profils/privilèges/services/comptes
 pilotes) — base reconstruite avec données de test de base, PAS les
-données réelles perdues. Voir memory "never_run_test_tooling_outside_phpunit"
-pour la règle permanente qui en découle.
+données réelles perdues. Voir memory "never-migrate-fresh-real-db"
+(mise à jour avec ce second incident) pour la règle permanente qui en
+découle.
+
+## [2026-10-08 01:15] MenuPrivilegesTest — fausse alerte corrigée (attentes DGA obsolètes, pas un bug de privilèges)
+Fichier(s) : tests/Feature/MenuPrivilegesTest.php
+Pourquoi : `test_chaque_profil_voit_ses_menus_par_defaut` échouait depuis
+avant même l'incident ci-dessus (c'est en le déboguant que l'incident est
+arrivé). Investigation correcte (un premier script de debug maison avait
+lui-même un bug — comparaison sans échappement HTML, ex. "Numérisation &
+OCR" vs "Numérisation &amp; OCR" dans le rendu réel — qui a généré 7 fausses
+alertes ; refait avec `e($libelle)` pour reproduire exactement ce que fait
+`assertSee()`) : UN SEUL écart réel existait — la DGA voit désormais le
+groupe "Administration" dans la sidebar, listé à tort dans son `pas`. Cause
+réelle : `administration.delegation_dga` a été ajouté par défaut à DGA le
+2026-10-06 (voir DECISIONS.md "Délégation DGA/ADJ absents") pour qu'elle
+puisse gérer sa propre délégation en cas d'absence — ce test n'avait jamais
+été mis à jour pour refléter ce changement, déjà correct côté application.
+"Administration" déplacé de `pas` vers `voit` pour DGA, avec commentaire
+expliquant pourquoi. Confirmé : l'architecture "chaque entrée de sidebar
+pilotée par un privilège" (voir DECISIONS.md "Menus pilotés par privilège")
+est intacte et correcte — ce n'était jamais un bug de gating, seulement une
+attente de test périmée. 9/9 MenuPrivilegesTest verts, 18/18 en combiné
+avec RegistrationFormConfidentielTest, Pint propre.
+
+## [2026-10-08 01:30] Dashboard — audit privilèges propre, mais crash réel trouvé/corrigé dans le menu profil ("icon=fr")
+Fichier(s) : resources/views/partials/user-menu-items.blade.php
+Pourquoi : demande explicite de l'utilisateur ("the dashboard too") après
+l'audit sidebar ci-dessus — même méthode appliquée au tableau de bord.
+`DashboardKpiPrivilegesTest`/`DashboardTest` (19 tests, "chaque carte/KPI sa
+propre clé", voir memory systeme_privileges) étaient déjà 100 % verts —
+aucun écart de gating trouvé, l'audit du 2026-09-23 tient toujours. En
+élargissant la vérification aux tests qui rendent la page COMPLÈTE (pas
+seulement le composant Livewire isolé), `RefreshDashboardStatsJobTest`
+plantait réellement (500, pas un flux de test) : "Flux component [icon.fr]
+does not exist." dans `partials/user-menu-items.blade.php` (menu profil
+navbar, partagé mobile/desktop) — `<flux:menu.item icon='fr' ...>` pour le
+sélecteur de langue "Fr" : "fr" n'a jamais été un nom d'icône Flux valide,
+probablement un reliquat de maquette où "fr" désignait la langue, pas une
+icône. L'item "Eng" juste à côté n'a lui-même aucun attribut `icon`,
+confirmant que l'intention était bien "pas d'icône" — attribut retiré pour
+cohérence. Sans rapport avec le système de privilèges (bug de template
+préexistant, découvert seulement parce que ce test précis rend le layout
+complet). 26/26 tests du groupe Dashboard verts après correctif (dont les
+2 qui plantaient), Pint propre, vérifié en direct (rendu sans erreur,
+sélecteur de langue toujours fonctionnel).
+
+## [2026-10-08 02:00] Sidebar élargie (w-64 → w-72) — libellés longs tronqués
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : demande explicite de l'utilisateur avec capture d'écran montrant
+"Référentiels (règles de..." coupé dans la sidebar. Flux fixe la largeur
+par défaut à w-64 (256px) via un sélecteur `:where()` (zéro spécificité,
+explicitement pensé pour être surchargé) sur `vendor/livewire/flux/.../
+sidebar/index.blade.php` — une classe `w-72` (288px) ajoutée directement
+sur `<flux:sidebar>` gagne normalement et laisse assez de place aux
+libellés les plus longs sans élargir disproportionnellement. Pint propre,
+9/9 MenuPrivilegesTest toujours verts après le changement (aucune
+assertion ne dépend de la largeur, mais confirme que rien d'autre n'a
+cassé dans le rendu de la sidebar).
+
+## [2026-10-08 02:10] Sidebar — scrollbar-gutter-stable (la barre de défilement cachait du texte)
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : retour utilisateur avec capture d'écran, flèche rouge — la
+barre de défilement du navigateur s'affichait EN SURIMPRESSION du texte de
+la sidebar (ex. "Accès" → "Acc[espace]ès", "Paramètres syst[è]me" coupés)
+plutôt que de lui laisser sa propre place. `sticky` sur `<flux:sidebar>`
+ajoute `overflow-y-auto` sur ce même élément déjà `p-4` (voir
+vendor/livewire/flux/.../sidebar/index.blade.php) — sans réservation
+d'espace, la scrollbar mord sur le padding/texte. Classe utilitaire
+Tailwind `scrollbar-gutter-stable` ajoutée (le linter IDE a signalé
+l'équivalent canonique à la propriété arbitraire `[scrollbar-gutter:stable]`
+initialement écrite) — réserve en permanence la largeur de la scrollbar
+plutôt qu'au moment où elle apparaît, pour que le texte ne se décale pas
+non plus selon le contenu visible. `npm run build` relancé (manuel, pas de
+watcher, voir memory livewire_flux_gotchas) — classe confirmée présente
+dans le CSS compilé. Pint propre.
+
+## [2026-10-08 02:45] OCR — les deux passes Tesseract par page parallélisées (~53s → ~34s, aucun changement de précision)
+Fichier(s) : app/Jobs/ProcessDocumentOcr.php
+Pourquoi : retour utilisateur direct ("why does it take much time like
+that", "can you reduce that time like 20 to 30 sec") après avoir constaté
+~53s pour l'OCR d'une page via le dossier surveillé. Deux options plus
+agressives (revenir à 300 dpi, ou ne lancer la passe bannière inversée que
+si la passe normale semble faible) ont été explicitement écartées avec
+l'utilisateur (choix confirmé via AskUserQuestion) car elles rouvriraient
+deux vrais bugs déjà corrigés le 2026-09-18 (bandeau de pied de page
+illisible à 300 dpi ; bandeau clair-sur-sombre invisible même quand le
+reste de la page se lit bien, donc pas détectable par un seuil de
+confiance global). Option retenue : paralléliser les deux passes Tesseract
+(normale + bannière inversée) au lieu de les exécuter en série — même
+rendu 600 dpi, même double passage par page, AUCUN changement de
+précision, seulement le temps RÉEL d'exécution (deux cœurs CPU au lieu
+d'un). `TesseractOCR::run()` combine démarrage ET attente en un seul appel
+bloquant (impossible à chevaucher) ; reconstruit nous-mêmes le
+"démarrage puis attente" en réutilisant telles quelles les briques
+PUBLIQUES de la bibliothèque (`Command` déjà construit par les mêmes
+->lang()/->psm()/->configFile()/->tessdataDir() qu'avant,
+`thiagoalessio\TesseractOCR\Process` dont le constructeur démarre déjà le
+process système sans bloquer, `FriendlyErrors::checkCommandExecution()`
+réutilisée telle quelle pour la classification d'erreur) — zéro logique de
+construction de commande ou de détection "page blanche" dupliquée,
+seul l'ORDRE démarrage/attente change. `texteBanniereInversee()` et son
+duplicata de configuration Tesseract remplacés par
+`ocrPageEtBanniereEnParallele()` + `construireTesseract()` (factorisé,
+les deux passes utilisaient des réglages identiques) +
+`nettoyerSortieTesseract()` (équivalent du cleanTempFiles() privé de la
+bibliothèque, inaccessible depuis l'extérieur). 75/75
+ProcessDocumentOcrTest + 2/2 ProcessBrouillonOcrTest verts (mockés, donc
+ne prouvent pas le gain réel), Pint propre. Vérifié en RÉEL sur le vrai
+fichier déjà en base (brouillon #1, "Entretien_DSIN 1 (2).pdf",
+290 Ko) : 33,6s contre ~53s avant (~37% plus rapide), confiance et texte
+EXACTEMENT identiques (93, 9972 caractères) — même résultat, juste plus
+rapide.
+
+## [2026-10-08 03:00] Dossier surveillé — bouton pour réinitialiser le suivi "déjà traité"
+Fichier(s) : resources/js/scan-watcher.js
+Fichier(s) : resources/views/livewire/frontend/dossierSurveille.blade.php
+Pourquoi : retour utilisateur direct ("reset the app so those olds ones
+can be new again") — un fichier du dossier surveillé déjà importé/rejeté
+par le passé (suivi en IndexedDB via fichierTraite()/marquerFichierTraite(),
+par nom+taille+date de modification) est ensuite ignoré en silence à
+chaque cycle, utile normalement (ne jamais réimporter deux fois) mais
+gênant en test/démo quand on veut qu'un ANCIEN fichier reparte comme neuf.
+Nouvelle fonction `viderFichiersTraites(db)` dans scan-watcher.js : vide
+UNIQUEMENT le store IndexedDB STORE_FICHIERS, jamais STORE_DOSSIER (la
+configuration/le handle du dossier reste intact, pas besoin de re-choisir
+le dossier ni de couper la surveillance). Bouton "Réinitialiser les
+fichiers déjà traités" ajouté sur Administration › Dossier surveillé
+(mode 'config' uniquement — ce réglage n'a de sens qu'à cet endroit),
+avec un message de confirmation dédié (`messageConfirmation`, distinct de
+messageErreur, effacé au prochain changement d'état réel via charger()).
+`npm run build` relancé (manuel, pas de watcher) — nouvelle fonction
+confirmée présente dans le JS compilé. Pint propre, 5/5
+DossierSurveilleTest toujours verts, page vérifiée en direct (200, aucune
+erreur Flux, script bien le nouveau hash compilé).
+
+## [2026-10-08 03:30] OCR — parallélisation étendue à TOUTES les pages à la fois (~34s → ~22s sur un document réel de 5 pages)
+Fichier(s) : app/Jobs/ProcessDocumentOcr.php
+Pourquoi : retour utilisateur direct ("can you reduce it to 10 to 20sec
+the ocr time") après la première parallélisation (02:45, limitée aux deux
+passes D'UNE SEULE page à la fois). Diagnostic réel (voir CHANGELOG-AGENT.md
+03:00-03:30, scripts de mesure dans le scratchpad) : le document de test
+("Entretien_DSIN 1 (2).pdf") fait en réalité 5 PAGES, pas 1 — la boucle
+page par page de ocrFichier() restait donc séquentielle d'une page à
+l'autre malgré la parallélisation interne à chaque page. Mesuré en isolant
+chaque étape sur ce vrai document (machine 6 cœurs/12 threads) :
+Ghostscript ~5s (tout le PDF d'un coup, incompressible), inversion GD des
+5 pages ~9-10s (coût dominant = décodage/filtrage de ~35M pixels/page à
+600 dpi, pas l'écriture — testé le niveau de compression PNG, gain
+marginal ~15%), 5 pages × 2 passes Tesseract (10 processus) lancées EN
+MÊME TEMPS au lieu de l'une après l'autre ~8s (contre ~25s en série).
+`ocrPageEtBanniereEnParallele()` (une page) remplacée par
+`ocrToutesPagesEnParallele()` (toutes les pages, tous les processus
+construits avant le premier wait()) — même principe de parallélisation
+que la version précédente, juste élargi d'un niveau. AUCUN changement de
+précision (mêmes 600 dpi, même double passage par page). Niveau de
+compression PNG de l'inversion passé à 3 (mesuré : ~15% plus rapide que
+le défaut 6, sans perte — PNG reste sans perte à tout niveau ; niveau 0
+testé aussi, PAS plus rapide, juste un fichier ~400x plus lourd). 77/77
+tests (ProcessDocumentOcrTest + ProcessBrouillonOcrTest) verts, Pint
+propre. Vérifié en RÉEL sur le même document (brouillon #1) : 22,3s
+contre ~33,6s avant (~34% de mieux, ~58% de mieux que l'original ~53s),
+confiance et texte à nouveau EXACTEMENT identiques (93, 9972 caractères).
+N'atteint pas la cible 10-20s demandée — le plancher restant (Ghostscript
++ décodage GD, ~14-15s à eux seuls) est directement lié aux 600 dpi,
+décision déjà explicitement maintenue deux fois par l'utilisateur
+(AskUserQuestion le 2026-10-08 02:00, puis implicitement en redemandant
+seulement "reduce the time" sans rouvrir ce point) — pas retouché ici.
+Avertissement production ajouté en commentaire (Règle n°1) : jusqu'à 2×N
+processus système simultanés par document OCRisé, à surveiller si
+Horizon traite plusieurs brouillons en parallèle à volume réel.
+
+## [2026-10-08 04:30] Dossier surveillé — visibilité élargie aux imports (pas aux brouillons manuels d'autrui)
+Fichier(s) : app/Policies/CourrierBrouillonPolicy.php
+Fichier(s) : app/Livewire/Backend/RegistrationForm.php
+Fichier(s) : app/Livewire/Backend/ScanPremier.php
+Fichier(s) : tests/Feature/Courriers/RegistrationFormTest.php
+Fichier(s) : tests/Feature/Courriers/ScanPremierTest.php
+Pourquoi : retour utilisateur réel, suite directe du diagnostic "why can't
+i aactivate the dossier surveillier"/"let it take one phone number" —
+l'Agent Test connecté sur /courriers/nouveau ne voyait AUCUN des 16
+fichiers que le dossier surveillé venait pourtant bien d'importer
+(confirmé en base : tous avec `cree_par_id=1`, l'Admin, qui était
+connecté dans l'onglet où tournait la surveillance au moment des imports
+— pas forcément l'agent qui consulte ensuite cette page). Première
+tentative : donner `brouillons.utiliser_tout` à Agent par défaut dans
+PrivilegeSeeder.php — EXPLICITEMENT REFUSÉE par l'utilisateur ("no only
+those courier not the whole thing the admin can see") : ce privilège
+aurait aussi exposé les scans MANUELS d'autres agents, hors sujet.
+Entièrement annulée (seeder remis à `[]`, privilège détaché d'Agent sur la
+vraie base) et remplacée par une règle plus étroite : un brouillon
+`source === 'dossier_surveille'` (ressource du POSTE partagé, pas
+personnelle à qui était connecté à l'instant précis de l'import) est
+visible/utilisable par N'IMPORTE QUEL agent ayant `courriers.creer`, SANS
+toucher `brouillons.utiliser_tout` ni affecter les brouillons `manuel`
+(qui restent strictement personnels comme avant). Trois points touchés
+cohéremment : `CourrierBrouillonPolicy::utiliser()` (troisième branche
+dédiée), `RegistrationForm::brouillonsEnAttente()` (dropdown "choisir un
+autre document"), `ScanPremier::importsDossierSurveille()` (déjà
+entièrement restreint à cette source — le filtre par privilège y devient
+simplement inutile, retiré). Tests réécrits pour refléter la distinction
+manuel/dossier_surveille plutôt que la régression temporaire vers le
+privilège large. 81/81 RegistrationFormTest+ScanPremierTest, 6/6
+ScanFormTest verts, Pint propre. Vérifié en direct sur la vraie base :
+Agent Test (`brouillons.utiliser_tout = NON`) voit désormais les 16
+imports dossier_surveille malgré l'absence du privilège.
+
+## [2026-10-08 05:00] Onglet "Historique" du courrier — refonte en frise verticale
+Fichier(s) : app/Models/CourrierHistorique.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Pourquoi : retour utilisateur avec capture d'écran ("CAN IMPROVE THE
+DESIGN OF THIS HISTORIQUE") — liste plate, une icône horloge identique
+répétée pour CHAQUE entrée (aucune distinction visuelle entre une
+création, un rejet, une mise en attente...), libellé brut
+`str_replace('_', ' ', $action)` illisible pour certaines actions (ex.
+"service valide dga"). Ajouté sur `CourrierHistorique` : `libelle()`
+(~30 libellés FR explicites, une par valeur d'action RÉELLEMENT créée
+dans le projet — WorkflowService/RegistrationForm/ShowCourrier/
+DossierClassementService/IndexCourrierJob/PieceJointeService/
+ProcessDocumentOcr/SendMailAlertJob/CourrierList, recensées par grep avant
+d'écrire la liste, pas devinées), `icone()` (une icône Heroicons/Flux
+distincte par catégorie — confirmées présentes dans
+vendor/livewire/flux avant usage, même piège que l'incident "icon=fr"
+plus haut), `classesIcone()` (couleur par catégorie — UNIQUEMENT la
+palette de marque existante dans app.css --color-brand-*, jamais une
+teinte Tailwind nommée arbitraire). Vue : frise verticale avec ligne de
+connexion entre badges circulaires colorés, libellé en noir principal +
+auteur/date en gris secondaire (hiérarchie noire du texte déjà en place,
+voir memory text_color_black_hierarchy), commentaire éventuel mis en
+évidence dans son propre encart plutôt qu'en texte gris clair comme avant.
+Repli neutre (icône horloge, couleur grise) pour toute action non encore
+répertoriée — jamais une erreur. 27/27 ShowCourrierTest + 10/10
+ActionsLecturesPrivilegesTest verts (aucun test ne dépendait du libellé
+brut), Pint propre. Vérifié en direct contre la vraie base : page rendue
+sans erreur Flux, libellés/couleurs/commentaire des 5 types d'action
+testés tous corrects.
+
+## [2026-10-08 05:30] Nouveau privilège courriers.envoyer_direct_service — un agent peut sauter la validation DGA
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : app/Livewire/Backend/RegistrationForm.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : tests/Feature/Courriers/RegistrationFormTest.php
+Pourquoi : demande explicite de l'utilisateur ("make the agent to start
+sending courier to the service concerne without passing throught the
+direction service... make that option as a priviledge"), après avoir
+discuté le compromis (perte de la confirmation DGA pour les courriers
+concernés) — confirmé explicitement malgré l'avertissement. Nouveau
+privilège `courriers.envoyer_direct_service`, AUCUN profil par défaut
+(hors Administrateur, catch-all habituel) — à assigner explicitement par
+profil/utilisateur depuis Utilisateurs & Accès/Profils. Réutilise le même
+mécanisme que le routage direct d'un sinistre déjà existant (même branche
+"saute la validation DGA" dans `RegistrationForm::enregistrer()`) plutôt
+que d'en inventer un nouveau. Cascade Site→Département→Service (déjà
+utilisée pour un courrier sortant) désormais aussi affichée pour un
+courrier ENTRANT si l'agent a ce privilège — mais contrairement à sortant,
+`required` reste conditionné à `$form->sens === 'sortant'` : le choix du
+service reste OPTIONNEL pour un entrant (agent qui laisse vide = circuit
+DGA normal inchangé, agent qui choisit = envoi direct). Règle n°6 — le
+privilège ET la présence d'un service_id sont revérifiés SERVER-SIDE dans
+`enregistrer()`, jamais fait confiance à ce qu'une requête Livewire forgée
+pourrait avoir mis dans `form.service_id` pour un agent sans le privilège.
+Reseed immédiat de PrivilegeSeeder sur la vraie base (règle d'exécution
+systématique, voir memory systeme_privileges). 4 tests ajoutés (routage
+direct avec service choisi, circuit DGA normal si rien choisi, garde-fou
+Règle n°6 contre un service_id forgé, visibilité conditionnelle du
+sélecteur) — piège rencontré et documenté : `hasPrivilege()` mémoïsé via
+`once()` par instance PHP, un test qui attache un privilège en cours de
+route doit relire l'utilisateur (`User::find($id)`) et ré-authentifier
+avant de revérifier, sinon l'ancienne liste de privilèges reste en cache
+(déjà documenté dans memory systeme_privileges, retombé dedans une
+nouvelle fois avant de le corriger). 70/70 RegistrationFormTest verts,
+Pint propre. Vérifié en direct contre la vraie base `gec` : agent sans
+privilège + service_id forgé → ignoré (en_attente_de_transfert/null) ;
+agent avec privilège + service choisi → routage direct confirmé
+(statut=enregistre, bon service_id) ; UI bascule correctement dans les
+deux sens ; 0 résidu après nettoyage.
+
+## [2026-10-08 06:00] Sidebar — entrée "Recherche avancée" dédupliquée (journalisée rétroactivement)
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : repéré en diagnostiquant `test_chaque_profil_voit_ses_menus_par_defaut`
+(voir entrée suivante) — l'entrée de sidebar autonome "Recherche avancée"
+(`route('courriers.rechercher')`) pointait vers EXACTEMENT la même route que
+"Tous les courriers", déjà présente juste au-dessus dans le groupe
+"Courriers" : doublon pur, même raisonnement que le retrait de "Transferts"
+le 2026-09-24. Avait déjà été commentée (`{{-- @if ... --}}`) plus tôt dans
+cette session sans entrée de changelog (oubli, Règle n°8) — aucune
+régression fonctionnelle réelle, juste le test resté périmé. Test mis à
+jour pour refléter l'état actuel (déplacé de `voit` vers `pas` pour Agent).
+
+## [2026-10-08 06:00] MenuPrivilegesTest — deuxième fausse alerte corrigée (libellé "Référentiels" raccourci, pas un bug de privilèges)
+Fichier(s) : tests/Feature/MenuPrivilegesTest.php
+Pourquoi : retour utilisateur ("stop giving back all the priveleges to the
+agents i remove some and you give him again why") — en vérifiant que le
+correctif PrivilegeSeeder (entrée suivante) n'introduisait aucune
+régression, `test_chaque_profil_voit_ses_menus_par_defaut` échouait encore,
+mais pour deux raisons SANS RAPPORT avec le seeder : (1) le libellé
+"Référentiels (règles de classement)" avait été raccourci en "Référentiels"
+dans la sidebar le 2026-10-08 02:00 (élargissement w-64→w-72) sans mise à
+jour de ce test ; (2) l'entrée "Recherche avancée" ci-dessus. Les deux
+confirmées comme des attentes de test périmées, pas des régressions de
+privilèges — même méthode de diagnostic qu'à 01:15 (isoler le needle exact
+de l'assertion avant de conclure). 16/16 MenuPrivilegesTest+PagesCardsPrivilegesTest
+verts après correctif, Pint propre.
+
+## [2026-10-08 06:15] PrivilegeSeeder — ne réattache plus les défauts à un privilège déjà existant (bug réel corrigé)
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Pourquoi : retour utilisateur direct et exact ("stop giving back all the
+priveleges to the agents i remove some and you give him again why") —
+`syncWithoutDetaching()` tournait AVANT sans condition sur CHAQUE ligne du
+catalogue à CHAQUE exécution du seeder, y compris pour des privilèges déjà
+existants en base. Ce seeder est relancé volontairement après CHAQUE
+modification de ce fichier (règle d'exécution établie, voir memory
+systeme_privileges) — sans garde, chaque relance réattachait silencieusement
+les profils par défaut même pour un privilège qu'un administrateur avait
+explicitement retiré depuis /admin/profils ou /admin/utilisateurs, et même
+pour des privilèges totalement SANS RAPPORT avec la modification en cours
+(toute la liste est réévaluée à chaque fois). Deux relances de ce seeder
+plus tôt dans cette même session (retrait de `brouillons.utiliser_tout`
+45:00, ajout de `courriers.envoyer_direct_service` 05:30) ont donc
+probablement annulé des retraits manuels faits par l'utilisateur avant
+cette session — aucune trace de CE qui a été retiré n'existe (pas de
+journal d'audit sur les pivots privilege_profil), donc impossible de
+restaurer automatiquement cet état antérieur : à signaler explicitement à
+l'utilisateur. Correctif : `Privilege::firstOrCreate()` suivi d'un
+`if (! $privilege->wasRecentlyCreated) { continue; }` — les profils par
+défaut ne sont désormais assignés QUE lors de la toute première création
+du privilège, jamais retouchés ensuite. Comportement inchangé sur une base
+de test fraîche (RefreshDatabase + transaction par test ⇒ chaque privilège
+est "recently created" à chaque fois) : 16/16 MenuPrivilegesTest+
+PagesCardsPrivilegesTest confirmés verts après le correctif complet
+(incluant les deux fausses alertes ci-dessus). Pint propre. Reseed PAS
+encore relancé sur la vraie base `gec` suite à ce correctif — à faire
+seulement après avoir confirmé avec l'utilisateur ce qu'il faut
+retirer à nouveau manuellement, pour ne pas lui faire revivre la même
+frustration une troisième fois.
+
+
+
+## [2026-10-08 04:00] extraireExpediteurTelephone() — un seul numéro, pas deux collés
+Fichier(s) : app/Jobs/ProcessDocumentOcr.php
+Fichier(s) : tests/Feature/Jobs/ProcessDocumentOcrTest.php
+Pourquoi : retour utilisateur direct en testant un vrai document ("let it
+take one phone number not all") — champ "Téléphone" pré-rempli avec
+"(00237)658239075/ 6751794" (deux numéros collés). Cause trouvée dans le
+code existant : "/" faisait partie de la classe de caractères capturée,
+ajouté le 2026-09-17 précisément pour ce même document réel ITSC Sarl/NSIA
+("Contacts : (00237)658239075/ 675179454") — à l'époque, coller les deux
+numéros était le comportement voulu. Décision explicitement inversée
+aujourd'hui : "/" retiré de la classe de caractères (les 3 motifs de la
+fonction : "Contacts :", "Tél :", et le repli indicatif international sans
+marqueur) — le motif s'arrête désormais naturellement au premier numéro
+complet. Testé en parallèle (même document réel, même retour utilisateur) :
+le champ "Email" vide n'est PAS un bug — le test existant documentait déjà
+que ce document a un label "- Mail:" vide (aucune adresse email n'y est
+réellement imprimée), confirmé en relisant le texte OCR complet d'un vrai
+brouillon traité aujourd'hui (aucune des fonctions d'extraction, y compris
+email, ne trouve quoi que ce soit sur un document qui n'en contient
+réellement pas — comportement voulu, "jamais une valeur inventée").
+Test existant mis à jour (`'(00237)658239075/ 675179454'` →
+`'(00237)658239075'`). 75/75 ProcessDocumentOcrTest + 80/80
+(RegistrationFormTest + EditFormTest, usages fixes non affectés) verts,
+Pint propre.
+
+## [2026-10-08 06:30] CircuitCourrierTest — needle imprécis cassé par la refonte de l'Historique (vrai effet de bord, pas une fausse alerte)
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : suite de vérification complète (714 tests) lancée après le
+correctif PrivilegeSeeder ci-dessus — SEUL échec restant, sans rapport avec
+les privilèges : `test_le_motif_du_renvoi_disparait_une_fois_resoumis`
+vérifiait `assertDontSee('Renvoyé pour correction')` après resoumission.
+Contrairement aux deux fausses alertes MenuPrivilegesTest ci-dessus, ceci
+est un VRAI effet de bord de la refonte Historique de 05:00 : "Renvoyé pour
+correction" est devenu le libellé PERMANENT (`CourrierHistorique::libelle()`)
+de l'entrée d'historique pour `validation_refusee` — qui reste à jamais
+dans le DOM (onglet cachê en Alpine `x-show`, pas un `@if` Blade ;
+`assertDontSee` lit le HTML brut, ignore la visibilité CSS), alors que
+l'intention réelle du test est que l'ENCART d'alerte (`showCourrier.blade.php`
+ligne ~97-100, gâté par un vrai `@if ($derniereEntreeHistorique?->action
+=== 'validation_refusee')`) disparaisse bien après resoumission — ce qui
+est toujours le cas. Needle changé pour "Motif indiqué par" (texte présent
+UNIQUEMENT dans cet encart, jamais dans la frise d'historique) pour tester
+précisément ce qui doit disparaître, sans dépendre d'un texte désormais
+partagé avec un contenu volontairement permanent. 28/28 CircuitCourrierTest
+verts, Pint propre. Suite complète (hors mémoire, `-d memory_limit=512M`,
+voir memory test_suite_memory_limit) : 714/714 verts.
+
+## [2026-10-08 07:00] "Répondre"/"Créer une note" (Actions rapides) désormais derrière un privilège
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : tests/Feature/ActionsLecturesPrivilegesTest.php
+Pourquoi : retour utilisateur direct avec deux captures d'écran annotées
+("should be previledges too") — ces deux boutons du panneau "Actions
+rapides" (ShowCourrier) étaient les SEULS de toute la page sans aucun
+privilège : simples placeholders désactivés ("Bientôt disponible", aucune
+fonctionnalité de réponse/note distincte de l'historique n'existe encore),
+jamais retrofités lors du passage "chaque action/lecture = un privilège"
+du 2026-09-23 puisqu'ils ne faisaient déjà rien. Nouvelles abilities
+`CourrierPolicy::repondre()`/`creerNote()` (même patron que
+`voirHistorique()`/`voirPiecesJointes()` : `hasPrivilege('cle') &&
+$this->view($user, $courrier)`), nouvelles clés `courriers.repondre`/
+`courriers.creer_note` (mêmes profils par défaut que `courriers.classer`,
+déjà dans le même panneau — Agent/DGA/Responsable de service/
+Collaborateur). Contrairement à "Imprimer" dans ce même panneau (toujours
+visible, juste désactivé sans le privilège), ces deux boutons sont
+désormais entièrement MASQUÉS sans le privilège — cohérent avec la
+convention dominante du reste de l'app (sidebar "Bientôt", etc.) où un
+privilège contrôle la visibilité, pas seulement l'état activé. 38/38
+ActionsLecturesPrivilegesTest+ShowCourrierTest verts, 715/715 suite
+complète, Pint propre. `php artisan db:seed --class=PrivilegeSeeder --force`
+relancé sur la vraie base `gec` (sûr désormais grâce au correctif
+`wasRecentlyCreated` ci-dessus — confirmé n'a créé QUE ces deux nouvelles
+clés, aucune autre assignation existante retouchée) : les deux privilèges
+existent avec Administrateur/Agent/Collaborateur/DGA/Responsable de
+service.
+
+## [2026-10-08 07:15] Sidebar — bloc mort "Recherche avancée" supprimé (plus seulement commenté)
+Fichier(s) : resources/views/layouts/app/sidebar.blade.php
+Pourquoi : demande explicite de l'utilisateur ("remove one then and leave
+one") après avoir confirmé que "Recherche avancée" et "Tous les courriers"
+pointaient vers EXACTEMENT la même route, sans aucune différence
+fonctionnelle. Le bloc avait été commenté (`{{-- @if ... --}}`) plus tôt
+dans la session plutôt que supprimé — remplacé par un vrai retrait + un
+commentaire explicatif court, même convention que le retrait de
+"Transferts" (2026-09-24) : pas de code mort laissé en commentaire. 16/16
+MenuPrivilegesTest+PagesCardsPrivilegesTest verts, Pint propre.
+
+## [2026-10-08 07:30] Audit complet des 94 privilèges — existence en base + usage UI réel, + updateOrCreate pour nom/description
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Pourquoi : demande explicite de l'utilisateur ("go throught all priviledges
+that has been seeded and see if there exist or not", puis "am talking about
+thier page or function if there are in the ui") — audit en deux temps.
+(1) Existence : script autonome (bootstrap/app.php direct, PAS TestCase/
+RefreshDatabase, voir [[never_migrate_fresh_real_db]]) comparant les 94
+clés du catalogue aux 94 clés réelles de `gec` — zéro écart (rien de
+manquant, rien d'orphelin, zéro doublon dans le catalogue). (2) Usage UI
+réel : grep systématique de chaque clé dans app/+resources/views/+routes/
+(hors seeder, hors tests) — 0 clé jamais référencée nulle part, MAIS 8
+clés gatent un VRAI placeholder sans fonction réelle derrière, toutes
+honnêtement documentées comme telles dans leur propre description :
+administration.automatisation/workflows/audit, statistiques.consulter/
+rapports (`<x-sidebar-item-a-venir>`), courriers.repondre/creer_note
+(boutons désactivés, voir entrée 07:00), courriers.archiver (ability
+`archive()` existe dans CourrierPolicy mais jamais appelée dans une vue —
+archivage reste 100% automatique via le Scheduler, Module 9). Trouvé au
+passage : `administration.sla` gate en réalité une page RÉELLE
+("Paramètres système", construite le 2026-09-23) mais son texte de
+catalogue disait encore "page à venir" — texte corrigé. Ce correctif a
+révélé un second bug structurel du même genre que celui du matin (07:15
+plus haut) : `Privilege::firstOrCreate()` n'écrit nom/description/type QUE
+sur la clé jamais déjà vue — toute correction future d'un libellé dans ce
+fichier n'aurait JAMAIS atteint la vraie base, contrairement aux
+assignations profils (ça, c'est voulu, voir wasRecentlyCreated) — le
+catalogue texte n'est PAS éditable depuis l'UI ("fixe", voir memory
+systeme_privileges), ce fichier en est donc la seule source de vérité et
+DOIT pouvoir le corriger. `firstOrCreate()` → `updateOrCreate()` pour
+nom/description/type uniquement ; `wasRecentlyCreated` (toujours valide
+avec `updateOrCreate()`) continue de protéger UNIQUEMENT la sync des
+profils par défaut, inchangé. 27/27 tests de privilèges verts, Pint
+propre. Reseed sur la vraie base : toujours 94/94 clés, zéro assignation
+profil retouchée, `administration.sla` affiche désormais le bon texte.
+
+## [2026-10-08 07:45] "Importer"/"Exporter" (en-tête "Tous les courriers") désormais derrière un privilège
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : resources/views/livewire/frontend/courrierList.blade.php
+Fichier(s) : tests/Feature/ActionsLecturesPrivilegesTest.php
+Pourquoi : retour utilisateur direct avec capture d'écran de l'en-tête de
+"Tous les courriers" annotée "priveliges" — même défaut que "Répondre"/
+"Créer une note" (07:00 plus haut) : boutons désactivés ("Bientôt
+disponible", aucune fonctionnalité réelle derrière) jamais retrofités en
+privilège, découverts par l'audit systématique de 07:30. Nouvelles
+abilities de classe `CourrierPolicy::importer()`/`exporter()` (même patron
+que `create()`/`numeriser()`/`rechercher()` : pas d'instance $courrier),
+nouvelles clés `courriers.importer`/`courriers.exporter` (mêmes profils
+par défaut que `courriers.rechercher`, même en-tête de page). Boutons
+masqués (pas seulement désactivés) sans le privilège, via `@can(...,
+App\Models\Courrier::class)` directement dans la vue — même convention
+que le reste de l'audit du jour. 44/44 ActionsLecturesPrivilegesTest+
+CourrierListTest verts, 716/716 suite complète, Pint propre. Reseed sur la
+vraie base confirmé : les deux clés existent avec Administrateur/Agent/
+Collaborateur/DGA/Responsable de service. Avec cette entrée, les 10
+boutons placeholder identifiés par l'audit 07:30 sont TOUS désormais
+gardés par un privilège (seuls "Bientôt disponible" dans la sidebar
+restaient déjà couverts depuis le 2026-09-23).
+
+## [2026-10-09 09:00] Délégation DGA — "obligatoire" sur les deux sélecteurs malgré une valeur affichée
+Fichier(s) : resources/views/livewire/frontend/delegationDgaIndex.blade.php
+Fichier(s) : lang/fr/validation.php
+Pourquoi : retour utilisateur direct avec capture d'écran — formulaire
+"Activer une délégation" refusait "Le champ delegant id est obligatoire"/
+"delegataire id est obligatoire" alors que les deux `<flux:select>`
+affichaient "Admin Test" (premier utilisateur par ordre alphabétique dans
+les deux listes `delegantsPotentiels()`/`delegatairesPotentiels()`, toutes
+deux `orderBy('name')`). Backend d'abord vérifié SAIN via un script
+autonome (`Livewire::test()` standalone, bootstrap/app.php direct, PAS
+TestCase/RefreshDatabase, voir [[never_migrate_fresh_real_db]]) : la
+validation passe et la délégation se crée correctement dès que
+`delegantId`/`delegataireId` sont réellement définis — reproduit aussi le
+symptôme exact (erreurs "obligatoire" des DEUX côtés) en appelant
+`activerDelegation()` sans jamais faire `set()` au préalable, confirmant
+que la valeur affichée à l'écran n'atteignait jamais le composant côté
+serveur. Cause la plus probable : ces deux `<select>` étaient les SEULS de
+toute l'app à utiliser `wire:model` DIFFÉRÉ sur un sélecteur d'ID
+important — tous les autres (Site/Département/Service/Unité, sens,
+confidentialité dans registrationForm.blade.php) utilisent déjà
+`wire:model.live`. Corrigé : `.live` sur les deux + `wire:key` explicite
+(exclut toute réutilisation de nœud DOM d'une autre page via wire:navigate,
+cause alternative plausible du même symptôme). Au passage : libellés
+d'erreur bruts "delegant id"/"delegataire id" (humanisation par défaut de
+Laravel sur une propriété camelCase, seul endroit du projet où ça arrive —
+partout ailleurs les champs sont déjà en snake_case lisible) — deux
+entrées ajoutées à `lang/fr/validation.php`'attributes'` (vide partout
+ailleurs, jamais réintroduire cette clé pour d'autres champs sans la même
+raison précise). 5/5 DelegationDgaIndexTest + 716/716 suite complète
+verts, Pint propre. Non vérifiable visuellement dans un navigateur réel
+(aucun navigateur disponible dans cet environnement) — correctif basé sur
+la convention `.live` déjà éprouvée ailleurs dans l'app, à confirmer par
+l'utilisateur en testant à nouveau.
+
+## [2026-10-09 10:00] Organigramme réel NSIA Assurances Cameroun reconstruit dans la vraie base
+Fichier(s) : (aucun fichier applicatif — écriture de données réelles via script autonome, voir ci-dessous)
+Pourquoi : suite directe du diagnostic "pourquoi je ne vois pas le champ
+Service pour un agent" (2026-10-09 précédent) — `organization_units` était
+totalement vide depuis l'incident du 2026-10-08 (base reconstruite sans la
+hiérarchie Organisation, jamais semée par DatabaseSeeder puisqu'elle avait
+toujours été saisie à la main via /admin/organisation). L'utilisateur a
+fourni une photo du VRAI organigramme NSIA Assurances Cameroun (tampon
+Direction Générale, "Mise à jour Janvier 2023"). Transcription proposée
+par l'agent puis CORRIGÉE deux fois par l'utilisateur avant exécution
+("Direction Corporate his department are grandes entreprises and para
+etiques, the rest are department on their own") — jamais écrit en base
+sans confirmation explicite, photo tournée et texte dense = risque réel de
+mauvaise lecture sur une donnée qui pilote le routage réel du courrier.
+Arbre final (26 nœuds) : "Direction Générale (DG-DGA)" en racine (type
+site — Président du Conseil d'Administration explicitement exclu, demande
+utilisateur), 10 Directions/Départements de premier niveau, Courtage +
+10 autres services/sous-services, "Réseau de la Bancassurance" etc. en
+sub_service sous Courtage. Script autonome (bootstrap/app.php direct, PAS
+TestCase/RefreshDatabase, voir [[never_migrate_fresh_real_db]]) réutilisant
+EXACTEMENT le même chemin de code que la page Organisation elle-même
+(`OrganizationUnit::create()` puis `ServiceReelSynchroniseur::synchroniser()`
+sur chaque nœud, comme `OrganisationIndex::enregistrerNoeud()`) plutôt que
+de réinventer la logique de pont — chaque nœud service/sous-service a
+créé/lié automatiquement sa ligne `services` réelle (14 → 30, aucun
+doublon). Les 14 anciens services placeholder (DSIN, DI, DC, SANTE…)
+explicitement LAISSÉS INTACTS sur demande de l'utilisateur ("no delet
+them") — coexistent avec les 16 nouveaux sans lien entre eux (noms trop
+différents de l'organigramme réel pour risquer un rapprochement
+automatique). Vérifié après coup via un second script autonome
+(`Livewire::test()` sur `UserList`) : le sélecteur "Service / Unité" de la
+page Utilisateurs & Accès propose désormais de vraies options une fois
+Site puis Département choisis — le problème originel est résolu. 43/43
+tests Organisation (suite isolée, non affectée par cette écriture réelle)
+toujours verts.
+
+## [2026-10-09 11:00] Niveau "Direction" ajouté à la hiérarchie Organisation (6ème niveau)
+Fichier(s) : app/Models/OrganizationUnit.php
+Fichier(s) : app/Services/ServiceReelSynchroniseur.php
+Fichier(s) : app/Livewire/Backend/OrganisationIndex.php
+Fichier(s) : app/Livewire/Backend/RegistrationForm.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : app/Livewire/Backend/UserList.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Fichier(s) : resources/views/livewire/frontend/registrationForm.blade.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/livewire/frontend/userList.blade.php
+Fichier(s) : resources/views/components/organization-tree-node.blade.php
+Fichier(s) : tests/Feature/Admin/OrganisationIndexTest.php
+Fichier(s) : tests/Feature/Admin/ServiceReelSynchroniseurTest.php
+Pourquoi : retour utilisateur direct sur l'organigramme réel reconstruit
+("direction is not a department it is a direction and a direction has a
+department under it"), confirmé après un essai de compromis refusé
+("no grandes entreprise is a department inside the direction corporate")
+puis une question explicite (AskUserQuestion, "Ajouter le niveau Direction
+partout (travail complet)" choisi). Le modèle à 5 niveaux (company/site/
+department/service/sub_service) ne distinguait pas "Direction" de
+"Département" — une vraie Direction (type=department) ne pouvait pas avoir
+de Département (lui aussi type=department) comme enfant direct, la
+validation d'`enregistrerNoeud()` exigeant un rang strictement croissant.
+Nouveau `OrganizationUnit::TYPE_DIRECTION`, inséré dans `ORDRE_TYPES` entre
+Site et Département — jamais ponté à un service réel (comme Company/Site),
+contrairement à `department` qui le devient DÉSORMAIS (`ServiceReelSynchroniseur::TYPES_SYNCHRONISES`
+étendu) puisque c'est lui, maintenant, le niveau opérationnel le plus haut.
+Impact en cascade identifié et traité AVANT d'écrire le moindre code (la
+vraie raison pour laquelle l'utilisateur a dû explicitement arbitrer entre
+les deux options) : la cascade Site→Département→Service/Unité, dupliquée
+4 fois (RegistrationForm, ShowCourrier, UserList ajout ET édition, Règle
+n°2 — jamais de composant Livewire partagé), devient Site→Direction→
+Département→Service/Unité PARTOUT, Direction restant OPTIONNELLE comme
+Site l'était déjà (un Département peut reporter directement au Site, ex.
+"Département Informatique" — `departementsDisponibles()` : parent =
+Direction choisie, sinon Site). `OrganisationIndex::ouvrirCreation()`
+accepte désormais un `$typeForce` optionnel : un Site a deux enfants
+directs valides (Direction, le cas proposé par défaut via
+`typeEnfantPropose()`, OU un Département directement) — second bouton
+explicite "Ajouter un département directement", jamais de sélecteur de
+type libre réintroduit (décision du 2026-10-06 maintenue). Migration de
+données : les 26 nœuds déjà créés réconciliés en une passe avec l'arbre
+cible (script autonome, bootstrap/app.php direct, voir
+[[never_migrate_fresh_real_db]]) — les 4 "Direction X" retypées en
+`direction`, leurs enfants directs en `department` (bridgés pour la
+première fois : 5 unités autonomes — Informatique/RH & Moyens Généraux/
+Contrôle Interne/Juridique/Communication — n'avaient jamais été pontées
+avant ce correctif, `department` n'étant pas encore synchronisé), les
+enfants de "Courtage" en `service`. Au passage, 4 nœuds "Réseau" trouvés
+détachés de "Département Courtage" (probablement une manipulation réelle
+de l'utilisateur dans l'UI pendant la session — jamais confirmé, signalé
+mais sans réponse) réattachés à Courtage ; leur libellé "Réseau des MNS"
+(vs la transcription originale confirmée "MINS") laissé TEL QUEL,
+faute de confirmation explicite — à vérifier. 2 tests existants cassés par
+le changement (attentes sur l'ancien comportement) corrigés :
+`test_ouvrir_creation_determine_le_type_depuis_le_parent` (Site→Direction
+désormais, pas Site→Département directement) + nouveau test pour
+`$typeForce` ; `test_un_departement_ne_cree_pas_de_service` renommé/remplacé
+par `test_une_direction_ne_cree_pas_de_service` + nouveau
+`test_un_departement_cree_bien_un_service` (comportement inversé assumé).
+718/718 suite complète verts, Pint propre. Vérifié en direct contre la
+vraie base `gec` (script autonome `Livewire::test()`) sur les 4 cascades :
+badge "Direction" correct, "Département Grandes Entreprises" sélectionnable
+sous "Direction Corporate" dans UserList/RegistrationForm, les 5 unités
+autonomes restent accessibles sans choisir de Direction.
+
+## [2026-10-09 11:15] Arborescence Organisation — un seul nœud déplié à la fois par niveau (comme la sidebar)
+Fichier(s) : resources/views/components/organization-tree-node.blade.php
+Fichier(s) : resources/views/livewire/frontend/organisationIndex.blade.php
+Pourquoi : retour utilisateur direct avec capture d'écran (4 Directions
+dépliées simultanément, arbre illisible) — "it should work like the
+sidebar on those dropdown when one is open the rest is close". Même
+primitive Flux native déjà utilisée par `sidebar.blade.php`
+(`<ui-disclosure-group exclusive>`, voir son commentaire) — jamais
+utilisée dans l'arbre Organisation jusqu'ici malgré chaque nœud étant déjà
+un `<ui-disclosure>` individuel. Appliquée à CHAQUE niveau de la
+récursion (le conteneur des enfants DANS `<x-organization-tree-node>`,
+pas seulement la liste des racines) — un seul enfant déplié à la fois
+PARMI LES FRÈRES d'un même nœud, chaque branche de l'arbre ayant son
+propre groupe indépendant des autres. 44/44 tests Organisation verts,
+Pint propre.
+
+## [2026-10-09 12:30] Extension du circuit générique — Signature DG / Trésorerie (entretien terrain Sinistres)
+Fichier(s) : app/Services/WorkflowService.php
+Fichier(s) : app/Policies/CourrierPolicy.php
+Fichier(s) : database/seeders/PrivilegeSeeder.php
+Fichier(s) : app/Models/CourrierHistorique.php
+Fichier(s) : app/Models/Courrier.php
+Fichier(s) : app/Livewire/Backend/ShowCourrier.php
+Fichier(s) : resources/views/livewire/frontend/showCourrier.blade.php
+Fichier(s) : resources/views/components/statut-badge.blade.php
+Fichier(s) : database/migrations/2026_10_09_120000_add_signature_dg_tresorerie_statuts_to_courriers_table.php
+Fichier(s) : tests/Feature/Courriers/CircuitCourrierTest.php
+Pourquoi : retour utilisateur direct rapportant un entretien terrain avec
+le département Sinistres (circuit réel : collaborateur → chef de
+service → chef de direction/département → DG pour signature, ex. une
+facture → retour au chef de service → trésorerie pour un courrier de
+décaissement). Explicitement validé AVANT tout code (voir conversation) :
+"a core workflow i will just give the department that need it like a
+permision" — extension OPT-IN de la MÊME machine à états générique
+(PRD.md §3/§4 : un seul workflow, jamais de circuit différencié par type/
+département codé en dur), jamais un circuit Sinistres à part. SLA
+délibérément PAS repensé en plusieurs paliers chaînés malgré les durées
+données en entretien (0,5j/3j/1j/30j/60+30j) — confirmé explicitement par
+l'utilisateur ("you can either add... a default date that can also me
+modify like what we have now") : réutilise le chronomètre existant
+(`courriers.fixer_delai`), aucune nouvelle mécanique. "Coter" confirmé
+être le même geste que `validerService()` déjà existant — rien à ajouter.
+
+Deux nouveaux statuts (`en_attente_signature_dg`, `en_attente_tresorerie`)
+insérés dans `WorkflowService::TRANSITIONS` entre `en_validation` et
+`traite` — 4 nouvelles méthodes (`envoyerPourSignatureDg()`,
+`signerEtCloturer()`, `signerEtEnvoyerTresorerie()`,
+`traiterParTresorerie()`), même patron `transitionnerSimple()`/historique
+immuable que l'existant. Trois nouveaux privilèges opt-in
+(`courriers.envoyer_signature_dg` et `courriers.traiter_tresorerie`,
+AUCUN profil par défaut — à assigner explicitement au département qui en
+a besoin ; `courriers.dga_signer`, défaut DGA comme `dga_valider_service`)
++ 3 nouvelles abilities `CourrierPolicy` (`envoyerSignatureDg()` délègue à
+`valider()` + le privilège ; `signerDg()`/`traiterTresorerie()` gardent
+niveau/dossier/périmètre + statut exact + privilège, sans la machinerie
+destinataire/délégation propre à `validerService()`, pas nécessaire pour
+cette étape ultérieure). UI : bouton "Envoyer en signature DG" à côté de
+"Valider" (visible seulement avec le privilège) ; écran dédié DG
+(`en_attente_signature_dg`, 2 boutons : clôturer directement ou
+transmettre à la trésorerie) ; écran dédié trésorerie
+(`en_attente_tresorerie`, 1 bouton). `etapesParcours()` (barre "Parcours
+du courrier") : ces 2 statuts retombent sur la position "Réponse" plutôt
+que d'ajouter 2 segments permanents "Non applicable" pour la quasi-totalité
+des courriers qui n'empruntent jamais ce chemin.
+
+**Piège réel rencontré en testant** (pas un bug applicatif) : un premier
+jeu de tests créait directement un courrier avec
+`statut: 'en_attente_signature_dg'` sans jamais passer par le vrai
+transfert/validation DGA — `Livewire::test()->call('signerEtCloturer')`
+échouait avec "Public method [signerEtCloturer] not found on component",
+message trompeur. Cause réelle isolée après investigation (comparaison
+`$test->instance()` entre un courrier 'en_validation' qui fonctionnait et
+un courrier 'en_attente_signature_dg' qui ne fonctionnait pas) : la DGA de
+test n'avait PAS le droit `view()` sur ce courrier artificiel
+(`CourrierPolicy::view()` ne garde la consultation DGA que via
+`Courrier::estTransferePar()` — `destinataire_transfert_id` ou une entrée
+d'historique `service_valide_dga` attribuée à cette DGA, aucun des deux
+présent) — le montage du composant plantait en 403 AVANT l'appel de
+méthode, et Livewire finissait par pointer, de façon trompeuse, vers
+`NotificationBell` (composant imbriqué dans la sidebar persistante) au
+lieu de `ShowCourrier`. Tests corrigés avec `destinataire_transfert_id`
+réaliste (et `courriers.voir_tout` pour le test trésorerie/agent-sans-
+privilège, rôle sans portée dédiée). À RETENIR pour toute future enquête
+similaire : "Public method [...] not found on component" sur un appel qui
+cible clairement une méthode existante = souvent un 403/exception AU
+MONTAGE, pas une vraie méthode manquante — comparer `$test->instance()`
+contre un cas qui fonctionne avant de soupçonner Livewire lui-même.
+
+**Vrai oubli corrigé en cours de route** : `courriers.statut` est un
+VRAI ENUM MySQL (pas une simple chaîne) — les deux nouveaux statuts
+n'auraient jamais pu être écrits en base sans la migration
+`2026_10_09_120000` (même patron élargir/rétrécir que
+`2026_09_15_150000_split_en_attente_validation_dga_into_transfert_substatuts`,
+simplifié ici car aucune ligne existante ne porte déjà ces valeurs — pas
+besoin de migrer de données). `Courrier::LIBELLES_STATUT` et
+`statut-badge.blade.php` (tous deux avec repli gracieux, jamais de crash)
+mis à jour avec de vrais libellés/couleur plutôt que le texte brut/gris
+par défaut.
+
+723/723 tests (suite complète) verts, Pint propre. Migration + reseed
+appliqués sur la vraie base `gec` : les 3 nouveaux privilèges existent
+(`dga_signer` → Administrateur+DGA, les 2 autres → Administrateur
+seulement, comme prévu — à assigner manuellement au département Sinistres
+depuis Utilisateurs & Accès/Profils). Non vérifié visuellement dans un
+navigateur réel (aucun navigateur disponible dans cet environnement).
+
+## [2026-10-09 13:15] UserList — la cascade Site/Direction/Département/Service rattache désormais réellement l'utilisateur à l'organigramme
+Fichier(s) : app/Livewire/Backend/UserList.php
+Fichier(s) : tests/Feature/Admin/UserListTest.php
+Pourquoi : retour utilisateur direct ("WHY IF I CHOSE DEPARTMENT AND SITE
+AND ORGANISATION WHEN CREATING OR MODIFYING ET USER IT DOESN'T
+AUTOMATICALLY ADD THEM ON THE ORGANISATIONS HIERACHARY") — bug réel
+confirmé par lecture de code avant toute réponse : la cascade ne résolvait
+jusqu'ici QUE `users.service_id` (le pont historique vers le routage de
+courrier), jamais le vrai rattachement de travail `organization_unit_user`
+(celui que lit l'onglet "Utilisateurs" de la page Organisation et
+`OrganizationUnit::compterUtilisateursDescendants()`). Exactement le même
+constat que celui déjà fait une fois côté AFFICHAGE le 2026-09-23
+(`departementLabelDe()`, qui lit déjà organization_unit_user en priorité
+avec repli sur service_id) — jamais corrigé côté ÉCRITURE jusqu'à
+maintenant. Nouvelle méthode `synchroniserRattachementPrincipal()` :
+même nœud retenu que `resoudreServiceDepuisCascade()` (Unité/Service si
+choisi, sinon Département) devient le rattachement `is_primary` de
+l'utilisateur, l'ancien rattachement principal (s'il pointait ailleurs)
+est détaché plutôt que laissé périmé ; cascade vidée explicitement =
+rattachement détaché, pas laissé pendouiller. Câblée dans `ajouter()`
+(toujours) ET `enregistrerEdition()` — mais dans `enregistrerEdition()`
+UNIQUEMENT si la cascade a réellement été modifiée par l'administrateur
+(même garde que `service_id`, déjà en place depuis le 2026-09-24 : "cascade
+NON touchée... le service actuel est conservé... corriger un simple
+téléphone effaçait ce service" — même risque de régression évité ici pour
+le rattachement). 5 tests ajoutés/étendus (création rattache réellement,
+modification remplace l'ancien rattachement, cascade non touchée préserve
+l'existant, cascade vidée détache), 726/726 suite complète verts, Pint
+propre. Vérifié en direct contre la vraie base `gec` (script autonome) :
+Agent Test rattaché à "Département Informatique" via la cascade
+`enregistrerEdition()`, visible immédiatement via
+`OrganizationUnit::utilisateurs()` (l'onglet "Utilisateurs" de la page
+Organisation), 0 résidu après nettoyage.
+
+## [2026-10-09 14:10] Environnement dev — scheduler + mail réel enfin actifs ("les alerte ne marchent pas")
+Fichier(s) : .env (MAIL_MAILER log → smtp)
+Pourquoi : retour utilisateur ("les alerte ne marchent pas", puis
+"notifications too are not more working") — diagnostic (voir rapport
+sous-agent) : `php artisan schedule:list` confirmait `SendMailAlertJob`
+bien planifié (`->hourly()`), mais RIEN n'appelle jamais `schedule:run`
+dans cet environnement (ni tâche planifiée Windows, ni `schedule:work`) —
+`storage/logs/laravel.log` ne contient AUCUNE trace de ce job depuis la
+réinitialisation du 2026-10-08. Les notifications in-app (cloche) sont
+pilotées par la MÊME `CourrierEnRetardNotification` (canal `database`,
+voir son fichier) — même cause racine pour les deux symptômes, pas deux
+bugs distincts. Corrigé : `php artisan schedule:work` lancé en arrière-plan
+permanent (même convention que `queue:work`, déjà établie). Cause
+secondaire confirmée : `MAIL_MAILER=log` — même une fois le job exécuté,
+aucun email réel n'était jamais visible (Mailpit absent, port 2525 fermé,
+testé). Mailpit (binaire officiel Windows, `axllent/mailpit`, Herd Pro
+requis pour son installation via `herd services:*` — indisponible ici,
+donc téléchargé directement depuis GitHub) installé dans
+`%USERPROFILE%\mailpit\`, lancé en arrière-plan permanent
+(`--smtp 127.0.0.1:2525 --listen 127.0.0.1:8025`, ports déjà configurés
+dans `.env` sans jamais être utilisés tant que MAIL_MAILER=log).
+`MAIL_MAILER` basculé sur `smtp`. `php artisan queue:restart` a stoppé le
+worker déjà en cours SANS le relancer automatiquement (aucun superviseur
+actif) — relancé manuellement (`queue:work --queue=ocr,indexation,replication,default`,
+mêmes arguments qu'avant). Vérifié en réel : `Mail::raw(...)` envoyé via
+tinker, confirmé reçu via l'API Mailpit (`GET /api/v1/messages`). Aucun
+courrier actuellement en base ne qualifie pour une alerte réelle (2
+courriers seulement depuis la réinitialisation, 0 en retard/à risque) —
+rien à voir tant qu'un vrai courrier n'approche pas son échéance, comportement
+attendu, pas un bug restant.
 

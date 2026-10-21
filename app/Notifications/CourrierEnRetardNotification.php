@@ -38,17 +38,26 @@ class CourrierEnRetardNotification extends Notification
     // dans les données stockées (le lien reste protégé par CourrierPolicy::view()
     // derrière la fiche, mais la donnée stockée ici est, elle, affichée en
     // clair dans la cloche sans revérification de droits ligne par ligne).
+    // 2026-10-09 — même enveloppe générique que CourrierNotification (libelle/
+    // sous_libelle/lien/icone/couleur), pour que notification-bell.blade.php/
+    // notifications-index.blade.php rendent TOUS les types de notification
+    // sans branche spécifique par classe.
     public function toDatabase(object $notifiable): array
     {
         $courrier = $this->courrier;
 
         return [
+            'libelle' => $this->escalade
+                ? __('Escalade — toujours en retard : :ref', ['ref' => $courrier->numero_reference])
+                : ($this->enRetard
+                    ? __(':ref est en retard', ['ref' => $courrier->numero_reference])
+                    : __(':ref arrive à échéance', ['ref' => $courrier->numero_reference])),
+            'sous_libelle' => $courrier->confidentialite <= 1 ? $courrier->objet : null,
+            'lien' => route('courriers.show', $courrier->id),
+            'icone' => $this->enRetard || $this->escalade ? 'exclamation-triangle' : 'clock',
+            'couleur' => $this->enRetard || $this->escalade ? 'danger' : 'warning',
             'courrier_id' => $courrier->id,
             'numero_reference' => $courrier->numero_reference,
-            'objet' => $courrier->confidentialite <= 1 ? $courrier->objet : null,
-            'en_retard' => $this->enRetard,
-            'escalade' => $this->escalade,
-            'date_limite' => $courrier->date_limite?->toDateString(),
         ];
     }
 

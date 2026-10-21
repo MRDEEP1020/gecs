@@ -6,7 +6,9 @@ use App\Livewire\Backend\DelegationDgaIndex;
 use App\Models\DelegationDga;
 use App\Models\Profil;
 use App\Models\User;
+use App\Notifications\DelegationDgaNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -42,9 +44,11 @@ class DelegationDgaIndexTest extends TestCase
 
     public function test_un_administrateur_active_une_delegation_dun_dga_vers_un_autre_utilisateur(): void
     {
+        Notification::fake();
         $dga = $this->utilisateurAvecProfil('DGA');
         $rh = $this->utilisateurAvecProfil('Collaborateur');
-        $this->actingAs($this->utilisateurAvecProfil('Administrateur'));
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $this->actingAs($admin);
 
         Livewire::test(DelegationDgaIndex::class)
             ->set('delegantId', $dga->id)
@@ -61,6 +65,9 @@ class DelegationDgaIndexTest extends TestCase
             'motif' => 'Congés DGA et ADJ',
             'actif' => true,
         ]);
+        // 2026-10-09 (audit "list me all") — le délégataire ne savait
+        // jusqu'ici jamais qu'il avait gagné ce pouvoir temporaire.
+        Notification::assertSentTo($rh, DelegationDgaNotification::class, fn ($n) => $n->action === 'activee' && $n->envoyePar?->id === $admin->id);
     }
 
     // Filet de sécurité serveur : ne pas se fier au select de l'UI (Règle
@@ -83,6 +90,7 @@ class DelegationDgaIndexTest extends TestCase
 
     public function test_desactiver_une_delegation_la_retire_des_actives_et_larchive_dans_lhistorique(): void
     {
+        Notification::fake();
         $dga = $this->utilisateurAvecProfil('DGA');
         $rh = $this->utilisateurAvecProfil('Collaborateur');
         $admin = $this->utilisateurAvecProfil('Administrateur');
@@ -104,5 +112,6 @@ class DelegationDgaIndexTest extends TestCase
         $this->assertFalse($delegation->actif);
         $this->assertSame($admin->id, $delegation->desactive_par_id);
         $this->assertNotNull($delegation->desactive_le);
+        Notification::assertSentTo($rh, DelegationDgaNotification::class, fn ($n) => $n->action === 'desactivee' && $n->envoyePar?->id === $admin->id);
     }
 }

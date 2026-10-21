@@ -64,7 +64,7 @@
        ci-dessous) plutôt que noir pur, pour rester cohérente avec la
        palette de marque. shadow-sm est la valeur utilisée par la quasi-
        totalité des cartes du projet (`bg-white ... shadow-sm`). */
-    --shadow-sm: 0 6px 20px -8px rgb(11 31 58 / 0.12);
+    --shadow-sm: 0 6px 20px -8px rgb(21 41 107 / 0.12); /* 2026-10-09 — RGB du nouveau --color-brand-navy (#15296B) */
 
     /* Graisse : retour à l'échelle Tailwind par défaut (2026-09-18) —
        allégée une première fois ("no bold"), puis l'utilisateur a précisé
@@ -108,30 +108,75 @@
     --color-zinc-950: #0a0a0a;
 
     /* GEC MASTER COLOR SYSTEM (2026-09-17, valeurs hexadécimales EXACTES
-       fournies par l'utilisateur — règle 40/30/20/10, voir DECISIONS.md
-       "GEC Master Color System") : remplace intégralement la palette du
-       2026-09-16. --color-* ici génère automatiquement les utilitaires
-       Tailwind correspondants (bg-brand-navy, text-brand-danger, etc.),
-       mécanisme natif de Tailwind v4 — pas besoin de classes de valeur
-       arbitraire partout.
+       fournies par l'utilisateur — règle 40/30/20/10) : remplace
+       intégralement la palette du 2026-09-16. --color-* ici génère
+       automatiquement les utilitaires Tailwind correspondants (bg-brand-navy,
+       text-brand-danger, etc.), mécanisme natif de Tailwind v4 — pas besoin
+       de classes de valeur arbitraire partout.
+       MISE À JOUR 2026-10-09 (voir DECISIONS.md "Palette NSIA réelle") :
+       les sections 1 (Navy) et 2/3 (anciennement "Blue", désormais "Gold")
+       ont été réalignées sur le vrai site NSIA Assurances Cameroun — la
+       structure 40/30/20/10 et les NOMS de variable restent inchangés
+       (zéro fichier à retoucher ailleurs dans le projet), seules leurs
+       valeurs changent.
        --color-accent est LA variable dont Flux tire boutons primaires/
        anneaux de focus/états actifs partout dans l'app — alignée sur
-       --color-brand-blue (Primary Blue #2563EB), même valeur en clair ET
-       en sombre : la sidebar reste teintée navy même quand elle est
-       scopée .dark (voir sidebar.blade.php), l'accent ne doit donc pas
-       changer selon ce contexte. */
+       --color-brand-blue (désormais doré, pas bleu — voir section 2/3
+       ci-dessous), même valeur en clair ET en sombre : la sidebar reste
+       teintée navy même quand elle est scopée .dark (voir sidebar.blade.php),
+       l'accent ne doit donc pas changer selon ce contexte. */
 
-    /* 1. Navy — structure (40%) */
-    --color-brand-navy: #0B1F3A;
-    --color-brand-navy-secondary: #102A4C;
-    --color-brand-navy-dark: #06172D;
+    /* 1. Navy — structure (40%) — remplacée le 2026-10-09 (retour
+       utilisateur direct : "search for this site https://nsiaassurances.cm/
+       i want you to use those same color pallets") par une lecture visuelle
+       du vrai site NSIA Assurances Cameroun (capture d'écran fournie par
+       l'utilisateur — accès direct au site bloqué par une protection
+       anti-bot/WAF, cf. CHANGELOG-AGENT.md) : navy plus saturé/bleu que
+       l'ancien #0B1F3A (quasi noir), plus proche du bleu marine réel du
+       pied de page NSIA. Estimation visuelle, PAS une valeur pixel-exacte
+       (aucun outil de pipette disponible dans cet environnement) — à
+       affiner avec les DevTools du navigateur si une correspondance exacte
+       au pixel près est nécessaire. */
+    --color-brand-navy: #15296B;
+    --color-brand-navy-secondary: #1C3480;
+    --color-brand-navy-dark: #0D1B4A;
 
-    /* 2/3. Blue — action/navigation + séparation/emphase (20%) */
-    --color-brand-blue: #2563EB;
-    --color-brand-blue-medium: #1D4ED8;  /* "Bright Blue" — hover, états actifs */
-    --color-brand-blue-pale: #EFF6FF;    /* "Light Blue" — conteneurs d'icône, fonds doux */
-    --color-brand-blue-soft: #F7FAFF;    /* "Very Light Blue" — sections subtiles, zones vides */
-    --color-brand-blue-border: #BFDBFE;  /* bordure bouton secondaire */
+    /* 2/3. Or/Gold — action/navigation + séparation/emphase (20%) — même
+       rôle structurel que l'ancien "Blue" (section 2/3 du GEC Master Color
+       System du 2026-09-17, voir CHANGELOG-AGENT.md 2026-09-17), remplacé
+       par l'accent or/doré réel du site NSIA (logo, puces "Contact"/"Liens
+       rapides"/"Newsletter", icônes de contact en pied de page) — le site
+       réel n'utilise AUCUN bleu comme accent, contrairement à l'ancienne
+       palette de ce projet. --color-accent (ci-dessous) hérite
+       automatiquement de ce changement : tout bouton primaire/état actif/
+       anneau de focus de l'app passe du bleu à l'or sans toucher un seul
+       autre fichier. --color-brand-info* (plus bas, statut "information")
+       reste bleu DÉLIBÉRÉMENT — c'est une couleur de STATUT sémantique
+       distincte de l'identité de marque, pas un alias de --color-brand-blue
+       malgré la valeur identique historique. */
+    --color-brand-blue: #D4A72C;
+    --color-brand-blue-medium: #B8911F;  /* hover, états actifs */
+    --color-brand-blue-pale: #FBF3DC;    /* conteneurs d'icône, fonds doux */
+    --color-brand-blue-soft: #FDFAF2;    /* sections subtiles, zones vides */
+    --color-brand-blue-border: #EDD9A3;  /* bordure bouton secondaire */
+
+    /* --color-brand-accent (2026-10-12, retour utilisateur sur capture
+       d'écran du contenu principal — "change those yellow color on the
+       main contents to blue") : restaure EXACTEMENT les valeurs bleues
+       d'origine de --color-brand-blue avant le passage à l'or du
+       2026-10-09, sous un nom dédié distinct — l'or (--color-brand-blue
+       ci-dessus) reste la couleur de la SIDEBAR (habillage NSIA, demandé
+       et confirmé par l'utilisateur), --color-brand-accent devient la
+       couleur d'action du CONTENU PRINCIPAL (boutons primaires, focus,
+       liens, icônes KPI...). --color-accent (plus bas) pointe désormais
+       ici au lieu de --color-brand-blue ; le bloc .dark (plus bas, scope
+       sidebar uniquement) continue lui de pointer vers --color-brand-blue
+       pour garder la sidebar dorée. */
+    --color-brand-accent: #2563EB;
+    --color-brand-accent-medium: #1D4ED8;
+    --color-brand-accent-pale: #EFF6FF;
+    --color-brand-accent-soft: #F7FAFF;
+    --color-brand-accent-border: #BFDBFE;
 
     /* 4. Blanc / espace de travail (30%) — voir aussi sidebar.blade.php
        (body) pour le fond de page général #F5F8FC, distinct des cartes
@@ -207,20 +252,44 @@
     --color-brand-urgent: var(--color-brand-danger);
     --color-brand-secure: var(--color-brand-navy);
 
-    /* Sidebar (section 8 du système de couleurs) */
+    /* Sidebar (section 8 du système de couleurs) — divider recoloré en or
+       le 2026-10-09 ("create a design that blend inside the sidebar like
+       the one on the screenshot i send") : était navy (#1E3A5F, quasi
+       invisible sur le fond navy de la sidebar), désormais le même or que
+       --color-brand-blue-medium pour réutiliser, à l'intérieur même de la
+       sidebar, l'accent or que le site NSIA réel utilise pour ses propres
+       séparateurs/puces de section (voir plus bas, ligne connectrice des
+       groupes dépliés + puces "—" des titres de groupe). */
     --color-brand-sidebar-text-secondary: #CBD5E1;
-    --color-brand-sidebar-divider: #1E3A5F;
+    --color-brand-sidebar-divider: var(--color-brand-blue-medium);
+    /* Dégradé de fond DÉDIÉ à la sidebar (2026-10-09, spec utilisateur
+       détaillée avec hex exacts — "deep midnight navy blue (#061438 to
+       #0A1B50)") : plus sombre que --color-brand-navy (#15296B, calé sur
+       une estimation visuelle du pied de page du site réel) — un token
+       séparé plutôt qu'une modification de --color-brand-navy, pour ne
+       JAMAIS faire bouger les boutons/états actifs/accents qui dépendent
+       de --color-brand-navy partout ailleurs dans l'app (seule la sidebar
+       utilise ce dégradé, via bg-gradient-to-b dans sidebar.blade.php). */
+    --color-brand-sidebar-bg-from: #0A1B50;
+    --color-brand-sidebar-bg-to: #061438;
 
-    --color-accent: var(--color-brand-blue);
-    --color-accent-content: var(--color-brand-blue);
+    --color-accent: var(--color-brand-accent);
+    --color-accent-content: var(--color-brand-accent);
     --color-accent-foreground: var(--color-white);
 }
 
 @layer theme {
     .dark {
-        /* Même bleu qu'en clair (voir commentaire ci-dessus) — seule la
-           sidebar est scopée .dark dans ce projet, jamais toute la page
-           (le vrai mode sombre applicatif reste gris zinc, inchangé). */
+        /* 2026-10-12, retour utilisateur — "change those yellow color on
+           the main contents to blue" : --color-brand-blue (or, voir plus
+           haut) reste réservé à la sidebar ET à ses pages liées (même
+           motif que l'habillage NSIA) via CE bloc .dark — seule la sidebar
+           est scopée .dark dans ce projet, jamais toute la page (le vrai
+           mode sombre applicatif reste gris zinc, inchangé). Le contenu
+           principal (hors sidebar) utilise désormais --color-brand-accent
+           (bleu, voir section 2/3 plus haut) via le :root ci-dessus —
+           boutons primaires/anneaux de focus/liens redeviennent bleus
+           PARTOUT SAUF dans ce scope .dark, qui les garde dorés. */
         --color-accent: var(--color-brand-blue);
         --color-accent-content: var(--color-brand-blue);
         --color-accent-foreground: var(--color-white);
@@ -253,6 +322,25 @@ html {
 }
 
 html::-webkit-scrollbar {
+    display: none;
+}
+
+/* Barre de défilement de la sidebar masquée (2026-10-10, retour utilisateur
+   avec capture d'écran — "i dont need the scrollbar") — même technique que
+   la barre de la page ci-dessus : le défilement reste entièrement
+   fonctionnel, seul le rendu visuel de la barre est masqué. [data-flux-sidebar]
+   est l'élément qui scrolle réellement (voir vendor/livewire/flux/stubs/
+   .../sidebar/index.blade.php, prop `sticky` -> overflow-y-auto posé
+   directement sur cet élément). scrollbar-gutter-stable (retiré de la
+   classe de <flux:sidebar> dans sidebar.blade.php) n'a plus lieu d'être
+   une fois la barre masquée : cette propriété réservait de l'espace
+   spécifiquement pour une barre VISIBLE. */
+[data-flux-sidebar] {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+[data-flux-sidebar]::-webkit-scrollbar {
     display: none;
 }
 
@@ -296,6 +384,48 @@ select:focus[data-flux-control] {
 
 [data-flux-sidebar-group] > button:hover {
     background-color: var(--color-brand-navy-secondary) !important;
+}
+
+/* "Blend inside the sidebar like the screenshot" (2026-10-09, capture
+   d'écran du pied de page nsiaassurances.cm réel — puces "—" or après
+   "Contact"/"Liens rapides"/"Newsletter", icônes de contact rendues en or).
+   Reproduit le même MOTIF (puce or après le titre, icône de section teintée
+   or) à l'intérieur de la sidebar GEC, sans toucher au logo/à la marque
+   NSIA elle-même (hors périmètre — outil interne, pas le site public).
+   Ciblé sur des points de sélection déjà stables dans ce projet :
+   [data-flux-sidebar-group] directement (déjà utilisé ligne ~308 et
+   ~324 ci-dessus) + le stub vendor (flux/sidebar/group.blade.php, lu avant
+   d'écrire ceci) confirme qu'un groupe a TOUJOURS soit un <button> soit un
+   <div> comme premier enfant direct, et qu'un <span> unique porte le texte
+   du titre dans les deux variantes du bouton (avec/sans icône, l'ordre des
+   enfants diffère mais il n'y a jamais qu'un seul span) — donc
+   "> button span" et "> div:first-child > div" restent corrects quelle que
+   soit la variante rendue. */
+[data-flux-sidebar-group] > button span::after,
+[data-flux-sidebar-group] > div:first-child > div::after {
+    content: ' —';
+    color: var(--color-brand-sidebar-divider);
+    font-weight: 700;
+}
+
+/* Icônes des groupes dépliables (Courriers, Dossiers & Archives,
+   Administration) teintées or au lieu du gris/blanc par défaut de Flux —
+   écho direct des icônes de contact or du pied de page réel. Les icônes
+   des ITEMS (liens individuels à l'intérieur d'un groupe) ne sont PAS
+   concernées : seul le <button> d'en-tête de groupe est un enfant direct
+   de [data-flux-sidebar-group], les items sont imbriqués plus profond. */
+[data-flux-sidebar-group] > button svg {
+    color: var(--color-brand-blue-medium);
+}
+
+/* Ligne connectrice verticale d'un groupe déplié (le trait fin qui relie
+   visuellement les liens d'un sous-groupe, déjà présent dans le vendor
+   stub : "absolute inset-y-[3px] w-px bg-zinc-200 dark:bg-white/30") —
+   recolorée en or plutôt que gris, pour que l'intérieur d'un groupe ouvert
+   porte lui aussi l'accent or au lieu de rester neutre. */
+[data-flux-sidebar-group] > div.relative > div:first-child {
+    background-color: var(--color-brand-sidebar-divider) !important;
+    opacity: 0.5;
 }
 
 /* Titres en Dark text navy, pas le gris zinc-800 par défaut de Flux

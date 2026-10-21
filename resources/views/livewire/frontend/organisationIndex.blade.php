@@ -37,6 +37,7 @@
             <flux:select wire:model.live="filtreType" :label="__('Type')">
                 <flux:select.option value="">{{ __('Tous les types') }}</flux:select.option>
                 <flux:select.option value="{{ App\Models\OrganizationUnit::TYPE_SITE }}">{{ __('Sites') }}</flux:select.option>
+                <flux:select.option value="{{ App\Models\OrganizationUnit::TYPE_DIRECTION }}">{{ __('Directions') }}</flux:select.option>
                 <flux:select.option value="{{ App\Models\OrganizationUnit::TYPE_DEPARTMENT }}">{{ __('Départements') }}</flux:select.option>
                 <flux:select.option value="{{ App\Models\OrganizationUnit::TYPE_SERVICE }}">{{ __('Services') }}</flux:select.option>
                 <flux:select.option value="{{ App\Models\OrganizationUnit::TYPE_SUB_SERVICE }}">{{ __('Sous-services') }}</flux:select.option>
@@ -80,9 +81,15 @@
                     </div>
 
                     <nav class="space-y-[2px]">
-                        @foreach ($this->arbre as $racine)
-                            <x-organization-tree-node :noeud="$racine" :noeud-id-selectionne="$noeudId" :tous-les-noeuds="$this->tousLesNoeuds" wire:key="unite-racine-{{ $racine['noeud']->id }}" />
-                        @endforeach
+                        {{-- 2026-10-09 — même exclusivité qu'à chaque niveau
+                             plus bas (voir organization-tree-node.blade.php) :
+                             si plusieurs Sites existent un jour (multi-site,
+                             2026-10-05), un seul déplié à la fois ici aussi. --}}
+                        <ui-disclosure-group exclusive>
+                            @foreach ($this->arbre as $racine)
+                                <x-organization-tree-node :noeud="$racine" :noeud-id-selectionne="$noeudId" :tous-les-noeuds="$this->tousLesNoeuds" wire:key="unite-racine-{{ $racine['noeud']->id }}" />
+                            @endforeach
+                        </ui-disclosure-group>
 
                         @if (count($this->arbre) === 0)
                             <flux:text class="px-2 py-3 text-xs text-zinc-400">{{ __('Aucune entité pour l\'instant.') }}</flux:text>
@@ -100,10 +107,11 @@
                             <div>
                                 <div class="flex items-center gap-2">
                                     <flux:heading level="2">{{ $unite->name }}</flux:heading>
-                                    <span class="rounded-full bg-brand-blue-pale px-2 py-0.5 text-xs font-medium text-brand-blue">
+                                    <span class="rounded-full bg-brand-accent-pale px-2 py-0.5 text-xs font-medium text-brand-accent">
                                         {{ match ($unite->type) {
                                             App\Models\OrganizationUnit::TYPE_COMPANY => __('Entreprise'),
                                             App\Models\OrganizationUnit::TYPE_SITE => __('Site / Agence'),
+                                            App\Models\OrganizationUnit::TYPE_DIRECTION => __('Direction'),
                                             App\Models\OrganizationUnit::TYPE_DEPARTMENT => __('Département'),
                                             App\Models\OrganizationUnit::TYPE_SUB_SERVICE => __('Sous-service'),
                                             default => __('Service'),
@@ -120,7 +128,7 @@
                         {{-- Onglets du nœud sélectionné (spec §10) --}}
                         <div class="mt-4 flex gap-4 border-b border-brand-border text-sm dark:border-zinc-700">
                             @foreach (['utilisateurs' => __('Utilisateurs'), 'responsable' => __('Responsable'), 'informations' => __('Informations'), 'parametres' => __('Paramètres')] as $cle => $libelle)
-                                <button type="button" wire:click="$set('ongletDetail', '{{ $cle }}')" class="border-b-2 pb-2 {{ $ongletDetail === $cle ? 'border-brand-blue font-medium text-brand-blue' : 'border-transparent text-zinc-500 hover:text-zinc-700' }}">
+                                <button type="button" wire:click="$set('ongletDetail', '{{ $cle }}')" class="border-b-2 pb-2 {{ $ongletDetail === $cle ? 'border-brand-accent font-medium text-brand-accent' : 'border-transparent text-zinc-500 hover:text-zinc-700' }}">
                                     {{ $libelle }}
                                 </button>
                             @endforeach
@@ -129,7 +137,7 @@
                         <div class="mt-4">
                             @if ($ongletDetail === 'utilisateurs')
                                 @can('manageUsers', $unite)
-                                    <div class="mb-4 flex flex-wrap items-end gap-2 rounded-xl bg-brand-blue-soft p-3 dark:bg-zinc-800">
+                                    <div class="mb-4 flex flex-wrap items-end gap-2 rounded-xl bg-brand-accent-soft p-3 dark:bg-zinc-800">
                                         <flux:select wire:model="utilisateurAAjouterId" size="sm" :label="__('Rattacher un utilisateur')">
                                             <flux:select.option value="">{{ __('Choisir un utilisateur') }}</flux:select.option>
                                             @foreach ($this->utilisateursDisponiblesPourAjout as $u)
@@ -144,7 +152,7 @@
 
                                 <div class="overflow-x-auto rounded-xl border border-brand-border dark:border-zinc-700">
                                     <table class="w-full text-sm">
-                                        <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+                                        <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                                             <tr>
                                                 <th class="py-2 pl-3 pr-2">{{ __('Nom') }}</th>
                                                 <th class="py-2 pr-2">{{ __('Fonction') }}</th>
@@ -202,7 +210,7 @@
                                 @endif
                             @elseif ($ongletDetail === 'responsable')
                                 <div class="flex items-center gap-3">
-                                    <div class="flex size-10 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                                    <div class="flex size-10 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                                         <flux:icon.user class="size-5" />
                                     </div>
                                     <div>
@@ -277,7 +285,7 @@
                             </div>
                         </dl>
 
-                        <div class="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-brand-blue-soft p-3 text-center dark:bg-zinc-800">
+                        <div class="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-brand-accent-soft p-3 text-center dark:bg-zinc-800">
                             <div>
                                 <div class="text-lg font-bold">{{ $unite->utilisateurs_count }}</div>
                                 <flux:text class="text-xs text-zinc-500">{{ __('Utilisateurs') }}</flux:text>
@@ -310,9 +318,19 @@
                             @if ($unite->typeEnfantPropose())
                                 @can('create', [App\Models\OrganizationUnit::class, $unite])
                                     <button type="button" wire:click="ouvrirCreation({{ $unite->id }})" class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-                                        <span class="flex items-center gap-2"><flux:icon.plus class="size-4 text-zinc-400" />{{ __('Ajouter une sous-entité') }}</span>
+                                        <span class="flex items-center gap-2"><flux:icon.plus class="size-4 text-zinc-400" />{{ $unite->type === App\Models\OrganizationUnit::TYPE_SITE ? __('Ajouter une direction') : __('Ajouter une sous-entité') }}</span>
                                         <flux:icon.chevron-right class="size-4 text-zinc-400" />
                                     </button>
+                                    {{-- 2026-10-09 — une unité reportant DIRECTEMENT au site, sans
+                                         Direction intermédiaire (ex. "Département Informatique"),
+                                         reste possible : second bouton explicite plutôt qu'un
+                                         sélecteur de type libre (décision 2026-10-06 maintenue). --}}
+                                    @if ($unite->type === App\Models\OrganizationUnit::TYPE_SITE)
+                                        <button type="button" wire:click="ouvrirCreation({{ $unite->id }}, '{{ App\Models\OrganizationUnit::TYPE_DEPARTMENT }}')" class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+                                            <span class="flex items-center gap-2"><flux:icon.plus class="size-4 text-zinc-400" />{{ __('Ajouter un département directement') }}</span>
+                                            <flux:icon.chevron-right class="size-4 text-zinc-400" />
+                                        </button>
+                                    @endif
                                 @endcan
                             @endif
                             @can('update', $unite)
@@ -343,6 +361,20 @@
         <form wire:submit="enregistrerNoeud" class="space-y-6">
             <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier le site / l\'agence') : __('Ajouter un site / une agence') }}</flux:heading>
             <flux:text class="text-xs text-zinc-500">{{ __('Un site/agence physique — le niveau le plus haut, sans parent.') }}</flux:text>
+
+            <x-organisation.champs-formulaire :responsables="$this->responsablesPotentiels" :services-reels="$this->servicesReels" />
+
+            <div class="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
+                <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>
+                <flux:button type="submit" variant="primary" icon="check">{{ $noeudEnEditionId ? __('Enregistrer') : __('Créer') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    <flux:modal name="organisation-form-direction" class="w-full max-w-xl">
+        <form wire:submit="enregistrerNoeud" class="space-y-6">
+            <flux:heading level="2">{{ $noeudEnEditionId ? __('Modifier la direction') : __('Ajouter une direction') }}</flux:heading>
+            <flux:text class="text-xs text-zinc-500">{{ __('Une Direction — regroupe plusieurs Départements, ne reçoit jamais de courrier elle-même.') }}</flux:text>
 
             <x-organisation.champs-formulaire :responsables="$this->responsablesPotentiels" :services-reels="$this->servicesReels" />
 
@@ -399,7 +431,11 @@
     <flux:modal name="organisation-deplacement" class="w-full max-w-lg">
         <div class="space-y-6">
             <flux:heading level="2">{{ __('Déplacer l\'entité') }}</flux:heading>
-            <flux:select wire:model="nouveauParentId" :label="__('Nouveau parent')" :placeholder="__('— Racine —')">
+            {{-- Pas de :placeholder (2026-10-12) — doublon avec l'option vide
+                 déjà présente juste en dessous (qui, elle, est fiable après
+                 un morph Livewire ; voir showCourrier.blade.php "Classer
+                 dans un dossier" pour le mécanisme exact). --}}
+            <flux:select wire:model="nouveauParentId" :label="__('Nouveau parent')">
                 <flux:select.option value="">{{ __('— Racine —') }}</flux:select.option>
                 @foreach ($this->tousLesNoeuds as $candidat)
                     @if ($candidat->id !== $noeudADeplacerId)

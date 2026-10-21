@@ -5,6 +5,7 @@ namespace App\Livewire\Backend;
 use App\Models\OrganizationUnit;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\OrganisationRattachementNotification;
 use App\Services\ServiceReelSynchroniseur;
 use Flux\Flux;
 use Illuminate\Support\Collection;
@@ -203,6 +204,11 @@ class OrganisationIndex extends Component
             $this->utilisateurAAjouterId => ['role_in_unit' => $this->roleUtilisateurAAjouter ?: null],
         ]);
 
+        // 2026-10-09 (audit "list me all") — l'utilisateur rattaché ne
+        // l'apprenait jusqu'ici jamais.
+        User::find($this->utilisateurAAjouterId)
+            ?->notify(new OrganisationRattachementNotification($noeud, 'rattache', envoyePar: auth()->user()));
+
         $this->reset('utilisateurAAjouterId', 'roleUtilisateurAAjouter');
         unset($this->utilisateursDuNoeud, $this->utilisateursDisponiblesPourAjout, $this->tousLesNoeuds, $this->arbre, $this->noeudSelectionne);
         Flux::toast(variant: 'success', text: __('Utilisateur rattaché.'));
@@ -268,6 +274,12 @@ class OrganisationIndex extends Component
         // courriers du service et les alertes SLA).
         $synchroniseur->synchroniser($noeud, $avant);
 
+        // 2026-10-09 (audit "list me all") — idem : le nouveau responsable
+        // ne l'apprenait jusqu'ici jamais.
+        if ($avant['responsible_user_id'] !== $userId) {
+            User::find($userId)?->notify(new OrganisationRattachementNotification($noeud, 'responsable', envoyePar: auth()->user()));
+        }
+
         unset($this->tousLesNoeuds, $this->arbre, $this->noeudSelectionne);
         Flux::toast(text: __('Responsable défini.'));
     }
@@ -283,6 +295,7 @@ class OrganisationIndex extends Component
     private function modalPourType(string $type): string
     {
         return match ($type) {
+            OrganizationUnit::TYPE_DIRECTION => 'organisation-form-direction',
             OrganizationUnit::TYPE_DEPARTMENT => 'organisation-form-department',
             OrganizationUnit::TYPE_SERVICE => 'organisation-form-service',
             OrganizationUnit::TYPE_SUB_SERVICE => 'organisation-form-sub-service',
@@ -291,13 +304,19 @@ class OrganisationIndex extends Component
     }
 
     // Le type proposé par défaut découle du type du parent (spec §7/§8).
-    public function ouvrirCreation(?int $parentId = null): void
+    // $typeForce : 2026-10-09 — un Site a DEUX enfants directs valides
+    // (Direction, le cas courant proposé par typeEnfantPropose(), OU un
+    // Département directement, pour une unité qui ne dépend d'aucune
+    // Direction — ex. "Département Informatique") ; jamais un sélecteur de
+    // type libre (décision du 2026-10-06 maintenue), seulement ce second
+    // bouton explicite "Ajouter un département directement" sur un Site.
+    public function ouvrirCreation(?int $parentId = null, ?string $typeForce = null): void
     {
         $parent = $parentId ? OrganizationUnit::findOrFail($parentId) : null;
         $this->authorize('create', [OrganizationUnit::class, $parent]);
 
         $this->reset(['noeudEnEditionId', 'nomNoeud', 'codeNoeud', 'descriptionNoeud', 'responsableIdNoeud', 'servicePontNoeud']);
-        $this->typeNoeud = $parent?->typeEnfantPropose() ?? OrganizationUnit::TYPE_SITE;
+        $this->typeNoeud = $typeForce ?? $parent?->typeEnfantPropose() ?? OrganizationUnit::TYPE_SITE;
         $this->parentPourCreationId = $parentId;
         $this->resetValidation();
 

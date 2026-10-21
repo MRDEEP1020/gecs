@@ -299,6 +299,34 @@ class CourrierPolicy
         return false;
     }
 
+    // 2026-10-13, demande explicite de l'utilisateur ("isnt the another way
+    // to that without selecting his name") — raccourci "Traiter moi-même" :
+    // auto-affectation + démarrage du traitement en une seule action, pour
+    // un responsable qui a en plus le privilège de TRAITEMENT (pas
+    // seulement d'affectation). Mêmes gardes que affecter() (accès/
+    // périmètre/dossier/statut) : jamais affectationCourante ici, le
+    // courrier n'est pas encore affecté au moment de ce contrôle — c'est
+    // justement ce que cette action va faire.
+    // 2026-10-14 — bug réel (retour utilisateur, "should hide when we have
+    // already use it") : affecter() ci-dessus n'a volontairement AUCUNE
+    // restriction de statut au-delà de "pas archivé" (il sert aussi à la
+    // réaffectation). Mais WorkflowService::affecter() (celui réellement
+    // appelé par traiterMoiMeme(), voir ShowCourrier::traiterMoiMeme()) ne
+    // transitionne QUE depuis 'enregistre' (première affectation) — jamais
+    // utilisé pour réaffecter. Le formulaire "Affecter à" classique gère ça
+    // en ajoutant `$courrier->statut === 'enregistre'` directement dans la
+    // vue (voir showCourrier.blade.php) ; ce raccourci doit avoir la MÊME
+    // restriction, ici dans la policy plutôt que dupliquée dans la vue,
+    // pour que peutTraiterMoiMeme reflète fidèlement ce que l'action va
+    // réellement faire (sinon le bouton reste visible après un premier
+    // usage, et un second clic échoue avec une RuntimeException).
+    public function traiterMoiMeme(User $user, Courrier $courrier): bool
+    {
+        return $courrier->statut === 'enregistre'
+            && $this->affecter($user, $courrier)
+            && $user->hasPrivilege('courriers.traiter_affecte');
+    }
+
     // Module 5 — fixer / modifier le délai de traitement (chronomètre,
     // 2026-09-24) : même portée que l'affectation (responsable du service,
     // ou affecter_tout), EN PLUS du privilège d'action dédié ; seulement
@@ -403,6 +431,62 @@ class CourrierPolicy
         return $user->hasPrivilege('courriers.transferer_propre') && $courrier->estCreeParUtilisateur($user);
     }
 
+    // 2026-10-09 — extension du circuit générique (PAS un circuit différent,
+    // voir WorkflowService/DECISIONS.md "Signature DG / Trésorerie") :
+    // alternative à valider() pour un responsable ayant ce privilège
+    // dédié — opt-in par département (assigné via /admin/profils ou
+    // /admin/utilisateurs), jamais lié au type de courrier ni au
+    // département lui-même dans le code.
+    public function envoyerSignatureDg(User $user, Courrier $courrier): bool
+    {
+        return $user->hasPrivilege('courriers.envoyer_signature_dg') && $this->valider($user, $courrier);
+    }
+
+    // La DG signe (cloture directe OU transmission trésorerie, deux actions
+    // séparées côté WorkflowService — cette seule ability gate les deux,
+    // le choix entre les deux reste au DG au moment d'agir).
+    public function signerDg(User $user, Courrier $courrier): bool
+    {
+        if (! $this->niveauSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        if (! $this->accesDossierSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        if (! $this->accesPerimetreSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        if ($courrier->statut !== 'en_attente_signature_dg') {
+            return false;
+        }
+
+        return $user->hasPrivilege('courriers.dga_signer');
+    }
+
+    public function traiterTresorerie(User $user, Courrier $courrier): bool
+    {
+        if (! $this->niveauSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        if (! $this->accesDossierSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        if (! $this->accesPerimetreSuffisant($user, $courrier)) {
+            return false;
+        }
+
+        if ($courrier->statut !== 'en_attente_tresorerie') {
+            return false;
+        }
+
+        return $user->hasPrivilege('courriers.traiter_tresorerie');
+    }
+
     // Module 3/9 — filer un courrier dans un dossier de classement : délègue
     // entièrement à view() (si on peut voir un courrier, on peut le ranger),
     // le VRAI verrou est côté dossier (DossierClassementPolicy::view(), voir
@@ -430,6 +514,25 @@ class CourrierPolicy
     public function soumettreValidation(User $user, Courrier $courrier): bool
     {
         return $user->hasPrivilege('courriers.soumettre_validation') && $this->traiter($user, $courrier);
+    }
+
+    // 2026-10-14, demande explicite de l'utilisateur ("if is the
+    // responsable traite the courier does he have to summit it again...
+    // why can he validate directly") — quand le traiteur ET le validateur
+    // sont la MÊME personne (responsable qui s'est auto-affecté via
+    // traiterMoiMeme()), passer par "Soumettre" PUIS "Valider" séparément
+    // n'a de sens que pour deux personnes distinctes. Raccourci composé
+    // des DEUX abilities existantes (jamais une nouvelle règle de
+    // périmètre) + la restriction de statut 'en_traitement' (l'étape
+    // depuis laquelle "Soumettre" part normalement) : si les deux sont
+    // vraies pour ce $user précis, c'est qu'il est à la fois le
+    // collaborateur affecté ET le responsable validateur. Le circuit à 2
+    // étapes reste inchangé pour tout le monde d'autre.
+    public function validerDirectement(User $user, Courrier $courrier): bool
+    {
+        return $courrier->statut === 'en_traitement'
+            && $this->soumettreValidation($user, $courrier)
+            && $this->valider($user, $courrier);
     }
 
     public function renvoyerCorrection(User $user, Courrier $courrier): bool
@@ -479,6 +582,39 @@ class CourrierPolicy
     public function voirPiecesJointes(User $user, Courrier $courrier): bool
     {
         return $user->hasPrivilege('courriers.voir_pieces_jointes') && $this->view($user, $courrier);
+    }
+
+    // 2026-10-12, demande explicite de l'utilisateur ("not everybody has to
+    // see this ... the card stop at detail complementaire") — gouverne
+    // tout le bloc "Document principal (numérisation)"/OCR + "Classement"/
+    // mots-clés de la fiche (statut/confiance OCR, proposition de
+    // classement, liste des mots-clés) : sans ce privilège, la carte
+    // "Détails complémentaires" s'arrête après ses champs habituels, sans
+    // exposer ces informations de traitement interne. Distinct des
+    // privilèges d'ACTION déjà existants sur ce même bloc (validerClassement/
+    // gererMotsCles/voirTexteOcr/renumeriser) : ceux-ci gouvernent chacun un
+    // bouton précis, celui-ci gouverne la simple VISIBILITÉ de la section.
+    public function voirTraitementDocument(User $user, Courrier $courrier): bool
+    {
+        return $user->hasPrivilege('courriers.voir_traitement_document') && $this->view($user, $courrier);
+    }
+
+    // "Répondre"/"Créer une note" (Actions rapides, ShowCourrier) — boutons
+    // désactivés de longue date (aucune fonctionnalité de réponse/note
+    // distincte de l'historique n'existe encore), mais jusqu'ici sans
+    // privilège du tout, contrairement à TOUTE autre action de cette même
+    // page (retour utilisateur direct, capture d'écran : "should be
+    // previledges too"). Même patron que les autres : visibilité du
+    // bouton conditionnée au privilège, la fonctionnalité réelle restera
+    // à implémenter plus tard.
+    public function repondre(User $user, Courrier $courrier): bool
+    {
+        return $user->hasPrivilege('courriers.repondre') && $this->view($user, $courrier);
+    }
+
+    public function creerNote(User $user, Courrier $courrier): bool
+    {
+        return $user->hasPrivilege('courriers.creer_note') && $this->view($user, $courrier);
     }
 
     public function voirEnregistres(User $user): bool
@@ -629,5 +765,21 @@ class CourrierPolicy
     public function calendrier(User $user): bool
     {
         return $user->hasPrivilege('courriers.calendrier');
+    }
+
+    // "Importer"/"Exporter" (en-tête de "Tous les courriers") — boutons
+    // désactivés de longue date (aucune fonctionnalité réelle derrière),
+    // mais jusqu'ici sans privilège du tout, comme "Répondre"/"Créer une
+    // note" avant eux (retour utilisateur direct, même capture d'écran
+    // annotée "priveliges"). Même patron que create()/numeriser()/
+    // rechercher() ci-dessus : ability de classe, sans instance $courrier.
+    public function importer(User $user): bool
+    {
+        return $user->hasPrivilege('courriers.importer');
+    }
+
+    public function exporter(User $user): bool
+    {
+        return $user->hasPrivilege('courriers.exporter');
     }
 }

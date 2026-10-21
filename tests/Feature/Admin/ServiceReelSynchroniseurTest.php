@@ -140,7 +140,27 @@ class ServiceReelSynchroniseurTest extends TestCase
         $this->assertSame('RC-2', Service::where('nom', 'Recouvrement Contentieux')->value('code'));
     }
 
-    public function test_un_departement_ne_cree_pas_de_service(): void
+    // 2026-10-09 — niveau Direction ajouté (voir CHANGELOG-AGENT.md) :
+    // "department" est désormais synchronisé (comme Grandes Entreprises/
+    // Para Étatiques, enfants réels d'une Direction, qui reçoivent du
+    // courrier) — seuls Company/Site/Direction restent purement structurels,
+    // jamais pontés. Ce test couvrait auparavant "department", remplacé ici
+    // par "direction" pour tester la même règle sur le type qui en hérite.
+    public function test_une_direction_ne_cree_pas_de_service(): void
+    {
+        $avant = Service::count();
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('ouvrirCreation', $this->departement->parent_id)
+            ->set('typeNoeud', OrganizationUnit::TYPE_DIRECTION)
+            ->set('nomNoeud', 'Direction Commerciale')
+            ->call('enregistrerNoeud')
+            ->assertHasNoErrors();
+
+        $this->assertSame($avant, Service::count());
+    }
+
+    public function test_un_departement_cree_bien_un_service(): void
     {
         $avant = Service::count();
 
@@ -151,7 +171,8 @@ class ServiceReelSynchroniseurTest extends TestCase
             ->call('enregistrerNoeud')
             ->assertHasNoErrors();
 
-        $this->assertSame($avant, Service::count());
+        $this->assertSame($avant + 1, Service::count());
+        $this->assertNotNull(OrganizationUnit::where('name', 'Direction Commerciale')->value('service_id'));
     }
 
     public function test_renommer_un_service_cree_automatiquement_renomme_le_service_reel(): void

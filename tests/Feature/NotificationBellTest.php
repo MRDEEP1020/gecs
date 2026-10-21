@@ -59,10 +59,16 @@ class NotificationBellTest extends TestCase
         $utilisateur->notify(new CourrierEnRetardNotification($courrier, enRetard: true));
         $id = $utilisateur->notifications()->first()->id;
 
+        // 2026-10-12 — 'bg-brand-danger' n'est plus un proxy fiable pour "le
+        // badge de compteur a disparu" depuis que chaque notification porte
+        // SA PROPRE pastille de couleur (voir notification-bell.blade.php,
+        // retour utilisateur "i can't disting between them") : une
+        // notification "en retard" (danger) GARDE cette classe sur sa
+        // pastille même une fois lue, seul le compteur doit disparaître.
         Livewire::actingAs($utilisateur)
             ->test(NotificationBell::class)
             ->call('marquerCommeLue', $id)
-            ->assertDontSeeHtml('bg-brand-danger');
+            ->assertSee('data-notifications-non-lues="0"', false);
 
         $this->assertNotNull($utilisateur->notifications()->find($id)->read_at);
     }

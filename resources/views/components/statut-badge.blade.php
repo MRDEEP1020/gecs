@@ -38,7 +38,7 @@
         'archive' => 'bg-brand-disabled-bg text-brand-disabled-text',
         'rejete' => 'bg-brand-danger-light text-brand-danger-dark',
         'en_traitement', 'enregistre' => 'bg-brand-info-light text-brand-info-dark',
-        'en_attente_information', 'en_attente_de_transfert', 'en_validation', 'en_cours_de_transfert' => 'bg-brand-warning-light text-brand-warning-dark',
+        'en_attente_information', 'en_attente_de_transfert', 'en_validation', 'en_cours_de_transfert', 'en_attente_signature_dg', 'en_attente_tresorerie' => 'bg-brand-warning-light text-brand-warning-dark',
         default => 'bg-brand-disabled-bg text-brand-disabled-text',
     };
 @endphp

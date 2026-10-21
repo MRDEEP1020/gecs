@@ -7,6 +7,7 @@ use App\Models\Privilege;
 use App\Models\Profil;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\CompteUtilisateurNotification;
 use App\Services\AvatarService;
 use Flux\Flux;
 use Illuminate\Support\Collection;
@@ -83,6 +84,10 @@ class UserList extends Component
     // voir resoudreServiceDepuisCascade() ci-dessous.
     public ?int $ajoutSiteSelectionneId = null;
 
+    // 2026-10-09 — niveau Direction ajouté (OrganizationUnit::TYPE_DIRECTION),
+    // OPTIONNEL comme Site l'était déjà pour Département.
+    public ?int $ajoutDirectionSelectionneeId = null;
+
     public ?int $ajoutDepartementSelectionneId = null;
 
     public ?int $ajoutUniteSelectionneeId = null;
@@ -120,6 +125,10 @@ class UserList extends Component
     // modale "Modifier" (même convention que le reste de ce composant —
     // ajout/édition ont toujours leurs propres propriétés séparées).
     public ?int $editionSiteSelectionneId = null;
+
+    // 2026-10-09 — niveau Direction ajouté (OrganizationUnit::TYPE_DIRECTION),
+    // OPTIONNEL comme Site l'était déjà pour Département.
+    public ?int $editionDirectionSelectionneeId = null;
 
     public ?int $editionDepartementSelectionneId = null;
 
@@ -229,17 +238,22 @@ class UserList extends Component
         $this->resetPage();
     }
 
-    // Cascade Site → Département → Service/Unité (ajout ET édition) — un
-    // changement de niveau vide les niveaux dépendants ET recalcule le
-    // service_id réel résolu, même patron que ShowCourrier/RegistrationForm
-    // (Module "Organisation" v2).
+    // Cascade Site → Direction → Département → Service/Unité (ajout ET
+    // édition, niveau Direction ajouté le 2026-10-09) — un changement de
+    // niveau vide les niveaux dépendants ET recalcule le service_id réel
+    // résolu, même patron que ShowCourrier/RegistrationForm (Module
+    // "Organisation" v2).
     public function updated($nom): void
     {
         if ($nom === 'ajoutSiteSelectionneId') {
+            $this->reset('ajoutDirectionSelectionneeId', 'ajoutDepartementSelectionneId', 'ajoutUniteSelectionneeId');
+        } elseif ($nom === 'ajoutDirectionSelectionneeId') {
             $this->reset('ajoutDepartementSelectionneId', 'ajoutUniteSelectionneeId');
         } elseif ($nom === 'ajoutDepartementSelectionneId') {
             $this->reset('ajoutUniteSelectionneeId');
         } elseif ($nom === 'editionSiteSelectionneId') {
+            $this->reset('editionDirectionSelectionneeId', 'editionDepartementSelectionneId', 'editionUniteSelectionneeId');
+        } elseif ($nom === 'editionDirectionSelectionneeId') {
             $this->reset('editionDepartementSelectionneId', 'editionUniteSelectionneeId');
         } elseif ($nom === 'editionDepartementSelectionneId') {
             $this->reset('editionUniteSelectionneeId');
@@ -337,10 +351,19 @@ class UserList extends Component
             ->get();
     }
 
+    // 2026-10-09 — niveau Direction, OPTIONNEL comme le reste de la cascade.
+    #[Computed]
+    public function ajoutDirectionsDisponibles()
+    {
+        return OrganizationUnit::enfantsActifsDe($this->ajoutSiteSelectionneId, OrganizationUnit::TYPE_DIRECTION);
+    }
+
     #[Computed]
     public function ajoutDepartementsDisponibles()
     {
-        return OrganizationUnit::enfantsActifsDe($this->ajoutSiteSelectionneId, OrganizationUnit::TYPE_DEPARTMENT);
+        $parentId = $this->ajoutDirectionSelectionneeId ?? $this->ajoutSiteSelectionneId;
+
+        return OrganizationUnit::enfantsActifsDe($parentId, OrganizationUnit::TYPE_DEPARTMENT);
     }
 
     #[Computed]
@@ -358,10 +381,19 @@ class UserList extends Component
             ->get();
     }
 
+    // 2026-10-09 — niveau Direction, OPTIONNEL comme le reste de la cascade.
+    #[Computed]
+    public function editionDirectionsDisponibles()
+    {
+        return OrganizationUnit::enfantsActifsDe($this->editionSiteSelectionneId, OrganizationUnit::TYPE_DIRECTION);
+    }
+
     #[Computed]
     public function editionDepartementsDisponibles()
     {
-        return OrganizationUnit::enfantsActifsDe($this->editionSiteSelectionneId, OrganizationUnit::TYPE_DEPARTMENT);
+        $parentId = $this->editionDirectionSelectionneeId ?? $this->editionSiteSelectionneId;
+
+        return OrganizationUnit::enfantsActifsDe($parentId, OrganizationUnit::TYPE_DEPARTMENT);
     }
 
     #[Computed]
@@ -461,6 +493,39 @@ class UserList extends Component
         return $noeud?->service_id;
     }
 
+    // 2026-10-09 — retour utilisateur direct ("WHY IF I CHOSE DEPARTMENT AND
+    // SITE AND ORGANISATION WHEN CREATING OR MODIFYING ET USER IT DOESN'T
+    // AUTOMATICALLY ADD THEM ON THE ORGANISATIONS HIERACHARY") : la cascade
+    // Site/Direction/Département/Service ne résolvait jusqu'ici QUE
+    // users.service_id (le pont historique) — jamais le vrai rattachement de
+    // travail organization_unit_user (celui que lit l'onglet "Utilisateurs"
+    // de la page Organisation, voir departementLabelDe() ci-dessus pour le
+    // même constat déjà fait une fois côté AFFICHAGE le 2026-09-23). Même
+    // nœud retenu que resoudreServiceDepuisCascade() ci-dessus (Unité/Service
+    // si choisi, sinon Département) — devient désormais AUSSI le
+    // rattachement PRINCIPAL (is_primary) de l'utilisateur, remplaçant
+    // l'ancien s'il pointait vers un nœud différent. $noeudId === null
+    // (cascade explicitement vidée) détache le rattachement principal
+    // existant plutôt que d'en laisser un périmé.
+    private function synchroniserRattachementPrincipal(User $user, ?int $noeudId): void
+    {
+        $ancienPrincipal = $user->organizationUnits()->wherePivot('is_primary', true)->first();
+
+        if ($ancienPrincipal && $ancienPrincipal->id !== $noeudId) {
+            $user->organizationUnits()->detach($ancienPrincipal->id);
+        }
+
+        if ($noeudId === null) {
+            return;
+        }
+
+        if ($user->organizationUnits()->where('organization_units.id', $noeudId)->exists()) {
+            $user->organizationUnits()->updateExistingPivot($noeudId, ['is_primary' => true]);
+        } else {
+            $user->organizationUnits()->attach($noeudId, ['is_primary' => true]);
+        }
+    }
+
     // Préremplit la cascade d'édition avec la MÊME position que la colonne
     // "Département" de la table (2026-09-24, demande explicite de
     // l'utilisateur : "make the all modify modal to show the correct
@@ -472,7 +537,7 @@ class UserList extends Component
     // Aucune position trouvée = cascade vide — jamais de donnée fabriquée.
     private function preselectionnerCascadeEdition(User $user): void
     {
-        $this->reset('editionSiteSelectionneId', 'editionDepartementSelectionneId', 'editionUniteSelectionneeId');
+        $this->reset('editionSiteSelectionneId', 'editionDirectionSelectionneeId', 'editionDepartementSelectionneId', 'editionUniteSelectionneeId');
 
         $membre = $user->organizationUnits->firstWhere('pivot.is_primary', true) ?? $user->organizationUnits->first();
 
@@ -485,7 +550,7 @@ class UserList extends Component
 
     private function cascadeEdition(): array
     {
-        return [$this->editionSiteSelectionneId, $this->editionDepartementSelectionneId, $this->editionUniteSelectionneeId];
+        return [$this->editionSiteSelectionneId, $this->editionDirectionSelectionneeId, $this->editionDepartementSelectionneId, $this->editionUniteSelectionneeId];
     }
 
     // Remonte $courant PUIS ses ancêtres (même patron que
@@ -496,6 +561,7 @@ class UserList extends Component
             match ($courant->type) {
                 OrganizationUnit::TYPE_SUB_SERVICE, OrganizationUnit::TYPE_SERVICE => $this->editionUniteSelectionneeId = $courant->id,
                 OrganizationUnit::TYPE_DEPARTMENT => $this->editionDepartementSelectionneId = $courant->id,
+                OrganizationUnit::TYPE_DIRECTION => $this->editionDirectionSelectionneeId = $courant->id,
                 OrganizationUnit::TYPE_SITE => $this->editionSiteSelectionneId = $courant->id,
                 default => null,
             };
@@ -515,7 +581,7 @@ class UserList extends Component
     {
         $this->authorize('gerer', Privilege::class);
 
-        $this->reset(['ajoutNom', 'ajoutPrenom', 'ajoutEmail', 'ajoutTelephone', 'ajoutPoste', 'ajoutSiteSelectionneId', 'ajoutDepartementSelectionneId', 'ajoutUniteSelectionneeId', 'ajoutProfilId', 'ajoutPhoto']);
+        $this->reset(['ajoutNom', 'ajoutPrenom', 'ajoutEmail', 'ajoutTelephone', 'ajoutPoste', 'ajoutSiteSelectionneId', 'ajoutDirectionSelectionneeId', 'ajoutDepartementSelectionneId', 'ajoutUniteSelectionneeId', 'ajoutProfilId', 'ajoutPhoto']);
         $this->ajoutNiveauConfidentialite = 1;
         $this->ajoutActif = true;
         $this->resetValidation();
@@ -566,6 +632,8 @@ class UserList extends Component
             // ce type n'existe dans ce projet, voir Module 7).
             'password' => Hash::make(Str::random(40)),
         ]);
+
+        $this->synchroniserRattachementPrincipal($user, $this->ajoutUniteSelectionneeId ?: $this->ajoutDepartementSelectionneId);
 
         if ($this->ajoutPhoto) {
             $avatars->televerser($user, $this->ajoutPhoto);
@@ -644,10 +712,27 @@ class UserList extends Component
         // affichée non reliée à un service) : le service actuel est conservé.
         // Auparavant, corriger un simple téléphone effaçait ce service.
         $serviceResolu = $this->resoudreServiceDepuisCascade($this->editionUniteSelectionneeId, $this->editionDepartementSelectionneId);
+        $cascadeModifiee = $this->cascadeEdition() !== $this->editionCascadeInitiale;
 
-        if ($serviceResolu === null && $this->cascadeEdition() === $this->editionCascadeInitiale) {
+        if ($serviceResolu === null && ! $cascadeModifiee) {
             $serviceResolu = $user->service_id;
         }
+
+        // Même garde que service_id ci-dessus : une cascade jamais touchée
+        // (ex. correction d'un simple téléphone) ne doit RIEN changer au
+        // rattachement organisationnel existant, quelle que soit sa source
+        // (responsable désigné, rattachement réel déjà posé ailleurs...).
+        if ($cascadeModifiee) {
+            $this->synchroniserRattachementPrincipal($user, $this->editionUniteSelectionneeId ?: $this->editionDepartementSelectionneId);
+        }
+
+        // 2026-10-09 (audit "list me all") — capturé AVANT update() pour
+        // savoir si profil/niveau/service/statut ont réellement changé :
+        // une simple correction de téléphone ne doit jamais notifier "votre
+        // compte a été modifié" pour rien.
+        $actifAvant = $user->actif;
+        $profilAvant = $user->profil_id;
+        $niveauAvant = $user->niveau_confidentialite;
 
         $user->update([
             'name' => trim("{$data['editionNom']} {$data['editionPrenom']}"),
@@ -664,6 +749,12 @@ class UserList extends Component
             $avatars->televerser($user, $this->editionPhoto);
         }
 
+        if ($actifAvant !== $user->actif) {
+            $user->notify(new CompteUtilisateurNotification($user->actif ? 'active' : 'desactive', envoyePar: Auth::user()));
+        } elseif ($profilAvant !== $user->profil_id || $niveauAvant !== $user->niveau_confidentialite || $cascadeModifiee) {
+            $user->notify(new CompteUtilisateurNotification('modifie', envoyePar: Auth::user()));
+        }
+
         unset($this->utilisateurs, $this->utilisateurEnEdition);
         Flux::modal('user-edition')->close();
         Flux::toast(variant: 'success', text: __('Utilisateur modifié.'));
@@ -677,6 +768,11 @@ class UserList extends Component
         $this->autoriserCompte($user);
 
         $user->update(['actif' => ! $user->actif]);
+
+        // 2026-10-09 (audit "list me all") — un compte désactivé ne
+        // l'apprenait jusqu'ici jamais (ne comprendrait pas pourquoi il ne
+        // peut plus se connecter).
+        $user->notify(new CompteUtilisateurNotification($user->actif ? 'active' : 'desactive', envoyePar: Auth::user()));
 
         unset($this->utilisateurs);
         Flux::toast(text: $user->actif ? __('Compte activé.') : __('Compte désactivé.'));

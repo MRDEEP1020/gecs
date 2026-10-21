@@ -16,6 +16,7 @@ use App\Services\BrouillonScanService;
 use App\Services\ClassificationService;
 use App\Services\NumeroReferenceGenerator;
 use App\Services\PieceJointeService;
+use App\Services\WorkflowService;
 use Carbon\Carbon;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
@@ -138,6 +139,11 @@ class RegistrationForm extends Component
     // que la cascade est complète — CourrierForm/enregistrer() restent
     // INCHANGÉS (toujours un simple service_id validé/persisté).
     public ?int $siteSelectionneId = null;
+
+    // 2026-10-09 — niveau Direction ajouté (voir OrganizationUnit::TYPE_DIRECTION) :
+    // OPTIONNEL comme Site l'était déjà pour Département — un Département
+    // peut reporter directement au Site (ex. "Département Informatique").
+    public ?int $directionSelectionneeId = null;
 
     public ?int $departementSelectionneId = null;
 
@@ -391,6 +397,14 @@ class RegistrationForm extends Component
             ->get();
     }
 
+    // 2026-10-09 — niveau Direction (OrganizationUnit::TYPE_DIRECTION),
+    // enfant direct du Site, OPTIONNEL comme le reste de la cascade.
+    #[Computed]
+    public function directionsDisponibles()
+    {
+        return OrganizationUnit::enfantsActifsDe($this->siteSelectionneId, OrganizationUnit::TYPE_DIRECTION);
+    }
+
     #[Computed]
     public function departementsDisponibles()
     {
@@ -401,8 +415,13 @@ class RegistrationForm extends Component
         // retour anticipé ici : $this->siteSelectionneId === null est un
         // parent_id valide (racine), enfantsActifsDe() le gère nativement
         // (where('parent_id', null) → whereNull, comportement standard
-        // Eloquent) — pas un cas d'erreur à filtrer.
-        return OrganizationUnit::enfantsActifsDe($this->siteSelectionneId, OrganizationUnit::TYPE_DEPARTMENT);
+        // Eloquent) — pas un cas d'erreur à filtrer. 2026-10-09 — Direction
+        // AUSSI optionnelle : si choisie, le Département en dépend ; sinon
+        // on reste directement sous le Site (ex. "Département Informatique",
+        // qui ne dépend d'aucune Direction).
+        $parentId = $this->directionSelectionneeId ?? $this->siteSelectionneId;
+
+        return OrganizationUnit::enfantsActifsDe($parentId, OrganizationUnit::TYPE_DEPARTMENT);
     }
 
     #[Computed]
@@ -426,6 +445,12 @@ class RegistrationForm extends Component
     // laissé affiché, jamais un service_id périmé après un changement de
     // niveau supérieur.
     public function updatedSiteSelectionneId(): void
+    {
+        $this->reset('directionSelectionneeId', 'departementSelectionneId', 'uniteSelectionneeId');
+        $this->form->service_id = null;
+    }
+
+    public function updatedDirectionSelectionneeId(): void
     {
         $this->reset('departementSelectionneId', 'uniteSelectionneeId');
         $this->form->service_id = null;
@@ -464,6 +489,7 @@ class RegistrationForm extends Component
             match ($courant->type) {
                 OrganizationUnit::TYPE_SUB_SERVICE, OrganizationUnit::TYPE_SERVICE => $this->uniteSelectionneeId = $courant->id,
                 OrganizationUnit::TYPE_DEPARTMENT => $this->departementSelectionneId = $courant->id,
+                OrganizationUnit::TYPE_DIRECTION => $this->directionSelectionneeId = $courant->id,
                 OrganizationUnit::TYPE_SITE => $this->siteSelectionneId = $courant->id,
                 default => null,
             };
@@ -528,6 +554,15 @@ class RegistrationForm extends Component
     // (Règle n°3 — pas de N+1, jamais nécessaire pour un agent qui ne voit
     // que les siens) pour distinguer les agents dans le tableau.
     //
+    // 2026-10-08 — un brouillon "dossier_surveille" est TOUJOURS visible,
+    // quel que soit son créateur, même SANS brouillons.utiliser_tout (voir
+    // CourrierBrouillonPolicy::utiliser(), même raisonnement détaillé là-bas :
+    // ressource du poste partagé, pas personnelle à qui était connecté au
+    // moment précis de l'import). Explicitement PAS le même périmètre que
+    // brouillons.utiliser_tout — demande utilisateur, "not the whole thing
+    // the admin can see" : ce privilège couvrirait aussi les scans manuels
+    // d'autres agents, hors sujet ici.
+    //
     // Vraie pagination (demande explicite de l'utilisateur, 2026-09-14 :
     // "10 per table") — remplace le plafond fixe + compteur "non affiché"
     // du 2026-09-10 (même limite qu'un cap silencieux, juste rendue
@@ -543,7 +578,8 @@ class RegistrationForm extends Component
             ->when(
                 $peutTout,
                 fn ($q) => $q->with('creePar:id,name'),
-                fn ($q) => $q->where('cree_par_id', Auth::id()),
+                fn ($q) => $q->where(fn ($q) => $q->where('cree_par_id', Auth::id())
+                    ->orWhere('source', CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE)),
             )
             // Un brouillon déjà finalisé (finalise_le non nul) a son fichier
             // déplacé/supprimé de brouillons/... par finaliserBrouillon() —
@@ -760,17 +796,29 @@ class RegistrationForm extends Component
         // plus saisi par l'agent pour un courrier ENTRANT — il est ignoré ici
         // (jamais persisté depuis le formulaire), et reste inconnu jusqu'à ce
         // que le DGA/ADJ DGA le choisisse (WorkflowService::validerService()).
-        // Exception : un sinistre confirmé par la réceptionniste (type_document
+        // Exception n°1 : un sinistre confirmé par la réceptionniste (type_document
         // = "Sinistre", voir CourrierForm::estUnSinistre()) est routé
         // directement au bon service via la même règle de classement que le
         // Module 3 (Module 3, "sinistre" → DSIN, donnée de configuration, pas
-        // de code) — il saute la validation DGA, comme aujourd'hui. Si cette
-        // règle ne résout aucun service (ex. non configurée), on retombe sur
-        // la validation DGA plutôt que de laisser un courrier "enregistré"
-        // sans service, orphelin (Module 6 : "un courrier a toujours un
-        // responsable identifié"). Uniquement pour l'entrant : le sortant
-        // garde le circuit actuel inchangé, service toujours requis à la
-        // saisie (portée confirmée avec l'utilisateur, voir DECISIONS.md).
+        // de code) — il saute la validation DGA, comme aujourd'hui.
+        // Exception n°2 (2026-10-08, retour utilisateur, privilège
+        // courriers.envoyer_direct_service) : un agent qui a ce privilège ET
+        // a lui-même choisi un service via la cascade (voir
+        // registrationForm.blade.php, $peutEnvoyerDirectService — déjà
+        // résolu dans $data['service_id'] par resoudreServiceDepuisCascade(),
+        // CourrierForm::rules() l'acceptait déjà pour un entrant, nullable)
+        // saute AUSSI la validation DGA, même mécanisme que le sinistre.
+        // Règle n°6 — jamais fait confiance à ce que $data contient déjà :
+        // le privilège ET l'appartenance au formulaire sont revérifiés ici,
+        // pas seulement dans la vue qui montre/cache la cascade.
+        // Si NI l'un NI l'autre ne résout de service (ex. sinistre sans
+        // règle configurée, ou agent sans ce privilège, ou privilège présent
+        // mais rien choisi), on retombe sur la validation DGA plutôt que de
+        // laisser un courrier "enregistré" sans service, orphelin (Module 6 :
+        // "un courrier a toujours un responsable identifié"). Uniquement
+        // pour l'entrant : le sortant garde le circuit actuel inchangé,
+        // service toujours requis à la saisie (portée confirmée avec
+        // l'utilisateur, voir DECISIONS.md).
         //
         // 'en_attente_de_transfert', pas 'en_attente_validation_dga' : un
         // courrier entrant non-sinistre attend maintenant que la
@@ -779,9 +827,14 @@ class RegistrationForm extends Component
         // — le transfert n'est plus automatique à l'enregistrement (voir
         // DECISIONS.md, synchronisation SRS-GEC.pdf).
         if ($this->form->sens === 'entrant') {
-            $data['service_id'] = null;
+            $envoiDirectChoisiParAgent = Auth::user()->hasPrivilege('courriers.envoyer_direct_service')
+                && $data['service_id'] !== null;
 
-            if ($this->form->estUnSinistre()) {
+            if (! $envoiDirectChoisiParAgent) {
+                $data['service_id'] = null;
+            }
+
+            if ($data['service_id'] === null && $this->form->estUnSinistre()) {
                 $proposition = app(ClassificationService::class)->classer(new Courrier(['objet' => $data['objet']]));
                 $data['service_id'] = $proposition['service_id'];
             }
@@ -791,7 +844,19 @@ class RegistrationForm extends Component
             }
         }
 
-        $courrier = DB::transaction(function () use ($data, $generateur) {
+        // 2026-10-12, bug réel (retour utilisateur, "no notification of the
+        // new courrier been transfere to him why") — capturé AVANT la
+        // transaction, sur les MÊMES données qui y seront passées : si le
+        // service a été résolu directement ici (sinistre auto-routé, ou
+        // envoi direct par l'agent — voir les deux branches juste au-dessus),
+        // le courrier saute la validation DGA et donc
+        // WorkflowService::validerService(), seul endroit qui créait jusqu'ici
+        // la trace d'historique ET la notification au responsable du
+        // service. Même événement métier, déclencheur différent : les deux
+        // sont rattrapés juste après la création ci-dessous.
+        $serviceResoluSansDga = $this->form->sens === 'entrant' && $data['service_id'] !== null;
+
+        $courrier = DB::transaction(function () use ($data, $generateur, $serviceResoluSansDga) {
             $courrier = Courrier::create([
                 ...$data,
                 'numero_reference' => $generateur->generer(),
@@ -805,8 +870,23 @@ class RegistrationForm extends Component
                 'commentaire' => $this->commentaire ?: null,
             ]);
 
+            if ($serviceResoluSansDga) {
+                CourrierHistorique::create([
+                    'courrier_id' => $courrier->id,
+                    'auteur_id' => Auth::id(),
+                    'action' => 'service_valide_dga',
+                    'commentaire' => $this->form->estUnSinistre()
+                        ? 'Service déterminé automatiquement (sinistre, sans validation DGA).'
+                        : 'Service choisi directement par l\'agent (sans validation DGA).',
+                ]);
+            }
+
             return $courrier;
         });
+
+        if ($serviceResoluSansDga) {
+            app(WorkflowService::class)->notifierArriveeDansService($courrier, Auth::user());
+        }
 
         // Module 3 — "à l'enregistrement, le système propose un classement" : en
         // Job (Règle n°1), sur objet/expéditeur ; relancé après l'OCR sur le texte.

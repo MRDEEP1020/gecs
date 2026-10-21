@@ -64,7 +64,16 @@ document.addEventListener('alpine:init', () => {
                 const enRetard = arret > fin;
                 this.etat = enRetard ? 'fige_retard' : 'fige';
                 this.libelle = enRetard ? this.textes.labelTraiteRetard : this.textes.labelTraite;
-                this.affichage = this.formater(debut ? arret - debut : 0);
+                // 2026-10-12, retour utilisateur direct (capture d'écran
+                // annotée, le badge affichait "2j 21:40:00" alors que
+                // l'échéance n'était dépassée que d'environ 21h40) :
+                // affichait jusqu'ici la durée TOTALE de traitement
+                // (arrêt - début) même une fois en retard, ce qui se lisait
+                // comme un dépassement alors que ce n'en était pas un. En
+                // retard, affiche désormais le VRAI dépassement
+                // (arrêt - échéance) ; la durée totale de traitement reste
+                // inchangée pour une clôture dans les temps (fige).
+                this.affichage = this.formater(enRetard ? arret - fin : (debut ? arret - debut : 0));
                 this.progression = 100;
 
                 return;

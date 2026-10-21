@@ -731,9 +731,15 @@ class ProcessDocumentOcrTest extends TestCase
         // (lettres, hors du jeton numérique) ; l'adresse retire le label
         // "- Mail:" vide qui suit sur la même ligne (aucune adresse email
         // n'est réellement présente ici).
+        //
+        // 2026-10-08 — retour utilisateur sur ce même document réel ("let it
+        // take one phone number not all") : "/" retiré du jeton capturé, le
+        // motif s'arrête désormais au premier numéro ("(00237)658239075")
+        // au lieu de traverser le "/" et recoller le second numéro
+        // ("675179454") à la suite — UN seul numéro, pas les deux collés.
         $texte = "N° RC/YAO/2019/B/433 - Contribuable : M051912784615T - NIU : M051912784615T\nContacts : (00237)658239075/ 675179454 BP 2138 Yaoundé Cameroun - Mail:";
 
-        $this->assertSame('(00237)658239075/ 675179454', ProcessDocumentOcr::extraireExpediteurTelephone($texte));
+        $this->assertSame('(00237)658239075', ProcessDocumentOcr::extraireExpediteurTelephone($texte));
         $this->assertSame('BP 2138 Yaoundé Cameroun', ProcessDocumentOcr::extraireExpediteurAdresse($texte));
         $this->assertNull(ProcessDocumentOcr::extraireExpediteurEmail($texte));
     }

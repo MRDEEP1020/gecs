@@ -47,11 +47,16 @@ class MenuPrivilegesTest extends TestCase
     {
         $attendus = [
             'Agent' => [
-                'voit' => ['Tableau de bord', 'Tous les courriers', 'Enregistrer un courrier', 'Numérisation & OCR', 'Tous les dossiers', 'Archives', 'Recherche avancée', 'Notifications', 'Aide / Documentation'],
-                'pas' => ['Transferts', 'Affectations', 'Créer un dossier', 'Administration', 'Statistiques & Rapports'],
+                'voit' => ['Tableau de bord', 'Tous les courriers', 'Enregistrer un courrier', 'Numérisation & OCR', 'Tous les dossiers', 'Archives', 'Notifications', 'Aide / Documentation'],
+                'pas' => ['Transferts', 'Affectations', 'Créer un dossier', 'Administration', 'Statistiques & Rapports', 'Recherche avancée'],
             ],
             // "Transferts" retiré pour tous le 2026-09-24 (page supprimée,
             // doublon de "Tous les courriers" que ces profils voient déjà).
+            // "Recherche avancée" (item de sidebar séparé) retiré pour tous
+            // de la même façon — même route (courriers.rechercher) que
+            // "Tous les courriers", doublon pur. Retrait fait plus tôt dans
+            // la session sans entrée de changelog ; journalisé
+            // rétroactivement en corrigeant ce test.
             'Collaborateur' => [
                 'voit' => ['Tableau de bord', 'Tous les courriers', 'Traitement & Réponse', 'Créer un dossier', 'Archives'],
                 'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Affectations', 'Administration', 'Statistiques & Rapports'],
@@ -60,12 +65,24 @@ class MenuPrivilegesTest extends TestCase
                 'voit' => ['Tous les courriers', 'Affectations', 'Statistiques & Rapports', 'Rapports'],
                 'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Administration'],
             ],
+            // "Administration" déplacé de 'pas' vers 'voit' le 2026-10-08 :
+            // depuis le 2026-10-06 (voir DECISIONS.md "Délégation DGA/ADJ
+            // absents"), la DGA a par défaut administration.delegation_dga
+            // (gérer sa propre délégation en cas d'absence) — elle voit donc
+            // légitimement le groupe Administration, pour ce seul élément
+            // "Délégation DGA". Oublié lors de l'ajout de ce privilège,
+            // repéré en creusant une fausse alerte sur ce test.
             'DGA' => [
-                'voit' => ['Tous les courriers', 'Statistiques & Rapports'],
-                'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Affectations', 'Administration'],
+                'voit' => ['Tous les courriers', 'Statistiques & Rapports', 'Administration'],
+                'pas' => ['Transferts', 'Enregistrer un courrier', 'Numérisation & OCR', 'Affectations'],
             ],
             'Administrateur' => [
-                'voit' => ['Administration', 'Utilisateurs & Accès', 'Profils', 'Organisation', 'Référentiels (règles de classement)', 'Automatisation', 'Workflows', 'Paramètres système', 'Dossier surveillé', 'Sécurité & Audit', 'Numérisation & OCR'],
+                // "Référentiels (règles de classement)" raccourci en
+                // "Référentiels" dans la sidebar (voir sidebar.blade.php,
+                // fix largeur/scrollbar) — attente du test jamais mise à
+                // jour à ce moment-là, repéré en creusant une fausse alerte
+                // sur ce test le 2026-10-08.
+                'voit' => ['Administration', 'Utilisateurs & Accès', 'Profils', 'Organisation', 'Référentiels', 'Automatisation', 'Workflows', 'Paramètres système', 'Dossier surveillé', 'Sécurité & Audit', 'Numérisation & OCR'],
                 'pas' => ['Transferts'],
             ],
         ];

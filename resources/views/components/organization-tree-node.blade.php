@@ -22,13 +22,14 @@
     $selectionne = $noeudIdSelectionne === $unite->id;
     $aDesEnfants = count($noeud['enfants']) > 0;
     $classesLigne = 'flex flex-1 min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
-        .($selectionne ? ' bg-brand-blue-pale font-medium text-brand-blue dark:bg-zinc-800' : '')
+        .($selectionne ? ' bg-brand-accent-pale font-medium text-brand-accent dark:bg-zinc-800' : '')
         .(! $unite->estActif() ? ' opacity-50' : '');
     $classesCompteur = 'shrink-0 rounded-full px-1.5 py-0.5 text-xs '
-        .($selectionne ? 'bg-white text-brand-blue' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800');
+        .($selectionne ? 'bg-white text-brand-accent' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800');
     $icone = match ($unite->type) {
         \App\Models\OrganizationUnit::TYPE_COMPANY => 'building-office-2',
         \App\Models\OrganizationUnit::TYPE_SITE => 'map-pin',
+        \App\Models\OrganizationUnit::TYPE_DIRECTION => 'building-office',
         \App\Models\OrganizationUnit::TYPE_DEPARTMENT => 'folder',
         \App\Models\OrganizationUnit::TYPE_SUB_SERVICE => 'user-group',
         default => 'users',
@@ -52,9 +53,18 @@
         </div>
         <div class="relative hidden space-y-[2px] ps-7 data-open:block">
             <div class="absolute inset-y-[3px] start-0 ms-3 w-px bg-zinc-200 dark:bg-zinc-700"></div>
-            @foreach ($noeud['enfants'] as $enfant)
-                <x-organization-tree-node :noeud="$enfant" :noeud-id-selectionne="$noeudIdSelectionne" :tous-les-noeuds="$tousLesNoeuds" wire:key="unite-noeud-{{ $enfant['noeud']->id }}" />
-            @endforeach
+            {{-- 2026-10-09 — retour utilisateur direct ("it should work
+                 like the sidebar on those dropdown when one is open the
+                 rest is close") : ui-disclosure-group exclusive (même
+                 primitive Flux native que sidebar.blade.php), SCOPÉ À CE
+                 NIVEAU — un seul enfant déplié à la fois PARMI LES
+                 FRÈRES de ce nœud ; chaque niveau de l'arbre a son propre
+                 groupe (récursif), indépendant des autres branches. --}}
+            <ui-disclosure-group exclusive>
+                @foreach ($noeud['enfants'] as $enfant)
+                    <x-organization-tree-node :noeud="$enfant" :noeud-id-selectionne="$noeudIdSelectionne" :tous-les-noeuds="$tousLesNoeuds" wire:key="unite-noeud-{{ $enfant['noeud']->id }}" />
+                @endforeach
+            </ui-disclosure-group>
         </div>
     </ui-disclosure>
 @else

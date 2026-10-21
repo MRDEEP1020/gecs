@@ -7,12 +7,14 @@ use App\Models\DossierClassement;
 use App\Models\DossierClassementHistorique;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\DossierPartageNotification;
 use App\Services\DossierClassementService;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
@@ -466,6 +468,10 @@ class DossierClassementList extends Component
             'commentaire' => User::find($userId)?->name,
         ]);
 
+        // 2026-10-09 (audit "list me all") — l'utilisateur avec qui le
+        // dossier est partagé ne l'apprenait jusqu'ici jamais.
+        User::find($userId)?->notify(new DossierPartageNotification($dossier, 'partage', envoyePar: Auth::user()));
+
         unset($this->dossierAPartager);
     }
 
@@ -486,6 +492,8 @@ class DossierClassementList extends Component
             'commentaire' => User::find($userId)?->name,
         ]);
 
+        User::find($userId)?->notify(new DossierPartageNotification($dossier, 'revoque', envoyePar: Auth::user()));
+
         unset($this->dossierAPartager);
     }
 
@@ -498,6 +506,7 @@ class DossierClassementList extends Component
         }
 
         $dossier->utilisateursAutorises()->syncWithoutDetaching($this->selectionPartageDisponibles);
+        Notification::send(User::query()->whereIn('id', $this->selectionPartageDisponibles)->get(), new DossierPartageNotification($dossier, 'partage', envoyePar: Auth::user()));
         $this->selectionPartageDisponibles = [];
         unset($this->dossierAPartager);
     }
@@ -511,6 +520,7 @@ class DossierClassementList extends Component
         }
 
         $dossier->utilisateursAutorises()->detach($this->selectionPartageAssignes);
+        Notification::send(User::query()->whereIn('id', $this->selectionPartageAssignes)->get(), new DossierPartageNotification($dossier, 'revoque', envoyePar: Auth::user()));
         $this->selectionPartageAssignes = [];
         unset($this->dossierAPartager);
     }

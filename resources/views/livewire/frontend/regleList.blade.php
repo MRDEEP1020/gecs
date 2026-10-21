@@ -1,6 +1,6 @@
 <section class="w-full max-w-5xl">
     <div class="flex items-center gap-3">
-        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
             <flux:icon.folder class="size-5" />
         </div>
         <div>
@@ -83,7 +83,7 @@
             @else
                 <div class="mt-3 overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <table class="w-full text-sm">
-                        <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+                        <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                             <tr>
                                 <th class="py-3 pl-4 pr-3">{{ __('Priorité') }}</th>
                                 <th class="py-3 pr-3">{{ __('Règle') }}</th>

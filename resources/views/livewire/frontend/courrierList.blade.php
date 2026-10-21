@@ -35,7 +35,7 @@
 
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                 <flux:icon.envelope class="size-5" />
             </div>
             <div>
@@ -52,13 +52,22 @@
             @endcan
             {{-- "Importer"/"Exporter" (maquette) : aucune fonctionnalité
                  réelle derrière ces boutons à ce jour — désactivés avec une
-                 infobulle plutôt qu'omis (même principe que la sidebar). --}}
-            <flux:tooltip content="{{ __('Bientôt disponible') }}">
-                <flux:button variant="outline" icon="arrow-down-tray" disabled>{{ __('Importer') }}</flux:button>
-            </flux:tooltip>
-            <flux:tooltip content="{{ __('Bientôt disponible') }}">
-                <flux:button variant="outline" icon="arrow-up-tray" disabled>{{ __('Exporter') }}</flux:button>
-            </flux:tooltip>
+                 infobulle plutôt qu'omis (même principe que la sidebar).
+                 2026-10-08 — retour utilisateur direct : désormais masqués
+                 sans leur privilège (courriers.importer/courriers.exporter),
+                 même convention que "Répondre"/"Créer une note" sur
+                 ShowCourrier — un privilège contrôle la visibilité, pas
+                 seulement l'état activé. --}}
+            @can('importer', App\Models\Courrier::class)
+                <flux:tooltip content="{{ __('Bientôt disponible') }}">
+                    <flux:button variant="outline" icon="arrow-down-tray" disabled>{{ __('Importer') }}</flux:button>
+                </flux:tooltip>
+            @endcan
+            @can('exporter', App\Models\Courrier::class)
+                <flux:tooltip content="{{ __('Bientôt disponible') }}">
+                    <flux:button variant="outline" icon="arrow-up-tray" disabled>{{ __('Exporter') }}</flux:button>
+                </flux:tooltip>
+            @endcan
             <flux:button variant="outline" icon="adjustments-horizontal" x-on:click="avance = !avance">
                 {{ __('Filtres') }}
             </flux:button>
@@ -121,13 +130,20 @@
                 @php $stat = $this->statistiques[$carte['cle']]; @endphp
                 <div class="rounded-xl border border-brand-border bg-white p-3 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="flex items-center gap-2.5">
-                        <div class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-{{ $carte['couleur'] }} text-white">
+                        {{-- rounded-full (2026-10-12, calage sur la même
+                             maquette de référence que le tableau de bord —
+                             "do the same thing on each page not the
+                             dashboard alone") : même traitement que les
+                             cartes KPI de Dashboard (icône en cercle,
+                             chevron à droite). --}}
+                        <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-{{ $carte['couleur'] }} text-white">
                             <flux:icon :icon="$carte['icon']" class="size-4" />
                         </div>
                         <div class="min-w-0 flex-1">
                             <flux:text class="truncate text-xs text-zinc-500">{{ $carte['label'] }}</flux:text>
                             <div class="text-xl font-semibold leading-tight">{{ $stat['total'] }}</div>
                         </div>
+                        <flux:icon.chevron-right class="size-4 shrink-0 text-zinc-300" />
                     </div>
                     <flux:text class="mt-2 flex items-center gap-1 text-xs">
                         @if ($stat['variation'] === null)
@@ -272,8 +288,8 @@
          courrier coché (cases en wire:model.live, donc à jour à chaque
          clic) ; chaque bouton reste en plus soumis à son propre droit. --}}
     @if (! empty($selectionnes) && ($this->peutTransfererAuMoinsUnCourrier || $this->peutClasserAuMoinsUnCourrier))
-        <div class="flex flex-wrap items-center gap-2 rounded-xl border border-brand-border bg-brand-blue-pale px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
-            <flux:text class="mr-auto text-sm font-medium text-brand-blue">{{ __(':n courrier(s) sélectionné(s)', ['n' => count($selectionnes)]) }}</flux:text>
+        <div class="flex flex-wrap items-center gap-2 rounded-xl border border-brand-border bg-brand-accent-pale px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:text class="mr-auto text-sm font-medium text-brand-accent">{{ __(':n courrier(s) sélectionné(s)', ['n' => count($selectionnes)]) }}</flux:text>
             @if ($this->peutTransfererAuMoinsUnCourrier)
                 <flux:modal.trigger name="transferer-selection-liste-modal">
                     <flux:button size="sm" variant="primary" icon="arrow-up-tray">{{ __('Transférer la sélection') }}</flux:button>
@@ -327,12 +343,17 @@
                 <flux:heading size="lg">{{ __('Classer dans un dossier') }}</flux:heading>
                 <flux:text class="text-zinc-500">{{ __(':n courrier(s) sélectionné(s).', ['n' => count($selectionnes)]) }}</flux:text>
 
-                <flux:select wire:model="dossierChoisi" :label="__('Dossier')" :placeholder="__('— Choisir un dossier —')">
+                {{-- 2026-10-12 — mêmes correctifs que showCourrier.blade.php
+                     "Classer dans un dossier" (@error redondant avec
+                     <flux:with-field> ; placeholder désactivé peu fiable
+                     après un morph Livewire — voir son commentaire détaillé
+                     pour le mécanisme exact). --}}
+                <flux:select wire:model="dossierChoisi" :label="__('Dossier')">
+                    <flux:select.option value="">{{ __('— Choisir un dossier —') }}</flux:select.option>
                     @foreach ($this->dossiersAccessibles as $dossier)
                         <flux:select.option value="{{ $dossier->id }}">{{ $dossier->nom }}</flux:select.option>
                     @endforeach
                 </flux:select>
-                @error('dossierChoisi') <flux:text class="mt-1 text-sm text-brand-danger">{{ $message }}</flux:text> @enderror
 
                 <div class="flex justify-end gap-2">
                     <flux:modal.close>
@@ -354,7 +375,7 @@
                 <div x-data="squeletteMinimum()" class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                     <table class="w-full text-sm">
-                        <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+                        <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                             <tr>
                                 <th class="w-4 py-3 pl-4 pr-2" wire:click.stop>
                                     <input
@@ -404,12 +425,12 @@
                                     wire:key="ligne-{{ $courrier->id }}"
                                     wire:click="ouvrirApercu({{ $courrier->id }})"
                                     class="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                                    @class(['bg-brand-blue/5' => $this->courrierApercu?->id === $courrier->id])
+                                    @class(['bg-brand-accent/5' => $this->courrierApercu?->id === $courrier->id])
                                 >
                                     <td class="py-3 pl-4 pr-2" wire:click.stop>
                                         <input type="checkbox" class="rounded border-zinc-300" wire:model.live="selectionnes" value="{{ $courrier->id }}" />
                                     </td>
-                                    <td class="py-3 pr-3 font-medium text-brand-blue">
+                                    <td class="py-3 pr-3 font-medium text-brand-accent">
                                         {{ $courrier->numero_reference }}
                                     </td>
                                     <td class="py-3 pr-3 text-zinc-600">{{ $courrier->expediteur_organisation ?: $courrier->expediteur_nom ?: __('—') }}</td>
@@ -492,7 +513,7 @@
                      vers lequel revenir. --}}
                 <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                 <div class="flex items-center gap-2 border-b border-brand-border p-4 dark:border-zinc-700">
-                    <flux:icon.information-circle class="size-4 text-brand-blue" />
+                    <flux:icon.information-circle class="size-4 text-brand-accent" />
                     <flux:heading level="3">{{ __('Aperçu du courrier') }}</flux:heading>
                 </div>
 

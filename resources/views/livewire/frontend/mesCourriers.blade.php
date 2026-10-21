@@ -1,6 +1,6 @@
 <section class="w-full max-w-5xl">
     <div class="flex items-center gap-3">
-        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
             <flux:icon.paper-airplane class="size-5" />
         </div>
         <div>
@@ -86,7 +86,7 @@
         <flux:checkbox.group wire:model.live="selection">
             <div class="mt-3 overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <table class="w-full text-sm">
-                    <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+                    <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                         <tr>
                             @if ($onglet === 'en_attente_de_transfert')
                                 <th class="py-3 pl-4 pr-3"><span class="sr-only">{{ __('Sélection') }}</span></th>
@@ -109,7 +109,7 @@
                                     </td>
                                 @endif
                                 <td class="py-3 pr-3 font-medium">
-                                    <flux:link :href="route('courriers.show', $courrier->id)" wire:navigate class="text-brand-blue">{{ $courrier->numero_reference }}</flux:link>
+                                    <flux:link :href="route('courriers.show', $courrier->id)" wire:navigate class="text-brand-accent">{{ $courrier->numero_reference }}</flux:link>
                                 </td>
                                 <td class="py-3 pr-3">{{ $courrier->objet }}</td>
                                 <td class="py-3 pr-3 text-zinc-500">{{ $courrier->type_document }}</td>

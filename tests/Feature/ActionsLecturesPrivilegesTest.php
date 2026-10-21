@@ -124,6 +124,71 @@ class ActionsLecturesPrivilegesTest extends TestCase
             ->assertDontSee('CONTENU-OCR-SECRET');
     }
 
+    // 2026-10-12, demande explicite de l'utilisateur ("not everybody has to
+    // see this ... if you don't have the permission the card stop at
+    // detail complementaire") — tout le bloc OCR/Classement/mots-clés
+    // disparaît sans ce privilège, "Détails complémentaires" reste visible.
+    public function test_bloc_ocr_classement_masque_sans_voir_traitement_document(): void
+    {
+        $agent = $this->utilisateur('Agent');
+        $courrier = $this->courrier([], $agent);
+        $this->actingAs($agent);
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])
+            ->assertSee('Document principal (numérisation)')
+            ->assertSee('Détails complémentaires');
+
+        $this->retirer('courriers.voir_traitement_document', 'Agent');
+        $this->actingAs(User::find($agent->id));
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])
+            ->assertDontSee('Document principal (numérisation)')
+            ->assertSee('Détails complémentaires');
+    }
+
+    // 2026-10-08 — "Répondre"/"Créer une note" (Actions rapides) étaient
+    // les seuls boutons de ShowCourrier sans aucun privilège (retour
+    // utilisateur direct, "should be previledges too").
+    public function test_repondre_et_creer_note_masques_sans_leur_privilege(): void
+    {
+        $agent = $this->utilisateur('Agent');
+        $courrier = $this->courrier([], $agent);
+        $this->actingAs($agent);
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])
+            ->assertSee('Répondre')
+            ->assertSee('Créer une note');
+
+        $this->retirer('courriers.repondre', 'Agent');
+        $this->retirer('courriers.creer_note', 'Agent');
+        $this->actingAs(User::find($agent->id));
+
+        Livewire::test(ShowCourrier::class, ['courrierId' => $courrier->id])
+            ->assertDontSee('Répondre')
+            ->assertDontSee('Créer une note');
+    }
+
+    // 2026-10-08 — "Importer"/"Exporter" (en-tête de "Tous les courriers")
+    // étaient aussi sans aucun privilège (même retour utilisateur direct,
+    // capture d'écran annotée "priveliges").
+    public function test_importer_et_exporter_masques_sans_leur_privilege(): void
+    {
+        $agent = $this->utilisateur('Agent');
+        $this->actingAs($agent);
+
+        Livewire::test(CourrierList::class)
+            ->assertSee('Importer')
+            ->assertSee('Exporter');
+
+        $this->retirer('courriers.importer', 'Agent');
+        $this->retirer('courriers.exporter', 'Agent');
+        $this->actingAs(User::find($agent->id));
+
+        Livewire::test(CourrierList::class)
+            ->assertDontSee('Importer')
+            ->assertDontSee('Exporter');
+    }
+
     public function test_la_recherche_dans_le_contenu_est_ignoree_sans_voir_texte_ocr(): void
     {
         $agent = $this->utilisateur('Agent');

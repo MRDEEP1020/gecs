@@ -15,6 +15,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use thiagoalessio\TesseractOCR\Command as TesseractCommand;
+use thiagoalessio\TesseractOCR\FriendlyErrors as TesseractFriendlyErrors;
+use thiagoalessio\TesseractOCR\Process as TesseractProcess;
 use thiagoalessio\TesseractOCR\TesseractOCR;
 use thiagoalessio\TesseractOCR\UnsuccessfulCommandException;
 use Throwable;
@@ -154,45 +157,36 @@ class ProcessDocumentOcr implements ShouldQueue
     // quel (comportement historique : échoue proprement, voir messageLisible()).
     //
     // @return array{0: string, 1: ?int} [texte, confiance moyenne]
+    //
+    // 2026-10-08 — toutes les pages d'un PDF multi-pages sont désormais
+    // OCRisées EN PARALLÈLE entre elles (retour utilisateur : toujours trop
+    // lent malgré la parallélisation des deux passes PAR page, voir
+    // ocrToutesPagesEnParallele() ci-dessous) — avant, cette boucle
+    // traitait les pages l'une après l'autre ; sur un document de 5 pages,
+    // mesuré en conditions réelles, ce changement fait passer le total
+    // d'environ 33,6s à environ 23,7s (Ghostscript + inversion restent
+    // intrinsèquement liés aux 600 dpi, incompressibles sans rouvrir ce
+    // compromis — voir CHANGELOG-AGENT.md). Toujours AUCUN changement de
+    // précision : mêmes pages, même double passage, juste plus de
+    // processus système lancés en même temps.
     public static function ocrFichier(string $chemin, string $extension): array
     {
         self::augmenterLimiteMemoireSiNecessaire();
 
         $pagesGenerees = $extension === 'pdf' ? self::convertirPdfEnImages($chemin) : [];
         $fichiers = $pagesGenerees ?: [$chemin];
+        $fichiersInverses = [];
 
         try {
+            foreach ($fichiers as $i => $fichierPage) {
+                $fichiersInverses[$i] = self::inverserImage($fichierPage);
+            }
+
             $textes = [];
             $confiances = [];
 
-            foreach ($fichiers as $fichierPage) {
-                // psm 1 : segmentation automatique avec détection d'orientation/script
-                // (pages scannées à l'envers ou de biais) ; tsv : texte + confiance par mot.
-                $ocr = (new TesseractOCR($fichierPage))
-                    ->executable(config('services.tesseract.binary'))
-                    ->lang('fra', 'eng')
-                    ->psm(1)
-                    ->configFile('tsv');
-
-                if ($tessdata = config('services.tesseract.tessdata')) {
-                    $ocr->tessdataDir($tessdata);
-                }
-
-                try {
-                    $tsv = $ocr->run();
-                } catch (UnsuccessfulCommandException $e) {
-                    // Tesseract n'a rien lu (manuscrit, page blanche) : résultat
-                    // de qualité, pas une panne — pas de retry, page suivante.
-                    if (! self::estUneAbsenceDeTexte($e)) {
-                        throw $e;
-                    }
-
-                    $tsv = '';
-                }
-
-                [$textePage, $confiancePage] = self::extraireTexteEtConfiance($tsv);
-
-                if ($texteBanniere = self::texteBanniereInversee($fichierPage)) {
+            foreach (self::ocrToutesPagesEnParallele($fichiers, $fichiersInverses) as [$textePage, $confiancePage, $texteBanniere]) {
+                if ($texteBanniere !== null) {
                     $textePage = trim($textePage."\n\n".$texteBanniere);
                 }
 
@@ -213,6 +207,12 @@ class ProcessDocumentOcr implements ShouldQueue
             foreach ($pagesGenerees as $page) {
                 if (file_exists($page)) {
                     unlink($page);
+                }
+            }
+
+            foreach ($fichiersInverses as $fichierInverse) {
+                if ($fichierInverse !== null && file_exists($fichierInverse)) {
+                    unlink($fichierInverse);
                 }
             }
         }
@@ -300,54 +300,161 @@ class ProcessDocumentOcr implements ShouldQueue
     // deux reprises sur de vrais documents ("Raison sociale"/NIU
     // illisibles sur TBG/CMR/NSIA, RC/NIU illisibles sur MEGATIM/AFG BANK,
     // 2026-09-17/18). Inverser TOUTE la page transforme ce bandeau en texte
-    // sombre-sur-clair NORMAL, que Tesseract lit alors correctement — au
-    // prix (accepté par l'utilisateur) d'un second passage OCR complet par
-    // page, donc d'un temps de traitement DOUBLÉ pour chaque document,
-    // pas seulement ceux qui ont ce problème : impossible de savoir à
-    // l'avance qu'une page en a besoin sans l'avoir déjà tentée. Seuil de
-    // confiance élevé (70, voir extraireTexteEtConfiance()) sur cette
-    // seconde passe : une fois la page ENTIÈRE inversée, le texte normal
-    // (sombre sur clair à l'origine) devient à son tour clair-sur-sombre et
-    // redevient ILLISIBLE pour Tesseract — seul le texte du bandeau
-    // (désormais normal) obtient un score de confiance élevé, tout le
-    // bruit généré par l'inversion du reste de la page est filtré. Ce
-    // texte supplémentaire est ANNEXÉ au texte de la passe normale
-    // (ocrFichier() ci-dessus), jamais utilisé pour recalculer la
+    // sombre-sur-clair NORMAL, que Tesseract lit alors correctement.
+    // Seuil de confiance élevé (70, voir extraireTexteEtConfiance()) sur
+    // cette seconde passe : une fois la page ENTIÈRE inversée, le texte
+    // normal (sombre sur clair à l'origine) devient à son tour
+    // clair-sur-sombre et redevient ILLISIBLE pour Tesseract — seul le
+    // texte du bandeau (désormais normal) obtient un score de confiance
+    // élevé, tout le bruit généré par l'inversion du reste de la page est
+    // filtré. Ce texte supplémentaire est ANNEXÉ au texte de la passe
+    // normale (ocrFichier() ci-dessus), jamais utilisé pour recalculer la
     // confiance globale du document (qui reste basée sur la passe normale
     // uniquement — le but est de récupérer des fragments isolés, pas de
     // juger la qualité globale du scan). Best-effort à tous les niveaux :
     // ne lève jamais d'exception, renvoie simplement null si l'inversion
     // ou cette seconde passe échoue pour une raison quelconque (extension
     // GD absente, format d'image non géré, échec Tesseract...).
-    private static function texteBanniereInversee(string $fichierPage): ?string
+    //
+    // 2026-10-08 — toutes les pages, toutes les passes, lancées EN MÊME
+    // TEMPS (retour utilisateur : toujours "trop lent" après une première
+    // parallélisation limitée à la paire normale/inversée D'UNE SEULE
+    // page). Jusqu'à 2×N processus Tesseract système simultanés pour un
+    // document de N pages — mesuré sur un vrai document de 5 pages : ~8s
+    // d'attente pour les 10 processus (contre ~5×5s en série avant). AUCUN
+    // changement de précision : mêmes pages, même double passage par page,
+    // seul le nombre de processus lancés EN MÊME TEMPS augmente. Attention
+    // production (Règle n°1) : chaque OCR peut donc brièvement solliciter
+    // jusqu'à 2×N cœurs — avec plusieurs brouillons traités en parallèle
+    // par Horizon, le pic de charge CPU se cumule ; acceptable sur un poste
+    // de dev à 6 cœurs/12 threads (mesuré), à surveiller si le volume réel
+    // en pilote s'avère plus élevé.
+    // thiagoalessio\TesseractOCR\Process démarre déjà le process système au
+    // constructeur (proc_open) et ne bloque qu'à wait() — construire TOUS
+    // les processus avant d'attendre le premier suffit à les faire tourner
+    // en parallèle au niveau du système d'exploitation ; chaque wait()
+    // suivant ne fait qu'attendre un processus déjà en cours, jamais en
+    // relancer un nouveau en série. Reconstruit volontairement nous-mêmes
+    // le "démarrage puis attente" que fait TesseractOCR::run() (lui,
+    // bloquant, les deux étapes combinées en un seul appel — impossible à
+    // chevaucher tel quel) en RÉUTILISANT les briques PUBLIQUES de la
+    // bibliothèque (Command déjà construit par
+    // ->lang()/->psm()/->configFile()/->tessdataDir(), Process,
+    // FriendlyErrors::checkCommandExecution()) : zéro logique de
+    // construction de commande ou de classification d'erreur dupliquée,
+    // seul l'ORDRE démarrage/attente change.
+    //
+    // @param  array<int, string>  $fichiers  pages PNG (une par page du PDF, ou le fichier original pour une image seule)
+    // @param  array<int, ?string>  $fichiersInverses  même index que $fichiers, null si l'inversion a échoué pour cette page
+    // @return array<int, array{0: string, 1: ?int, 2: ?string}> une entrée par page, même ordre/index que $fichiers — [texte normal, confiance normale, texte bannière ou null]
+    private static function ocrToutesPagesEnParallele(array $fichiers, array $fichiersInverses): array
     {
-        $fichierInverse = self::inverserImage($fichierPage);
+        $ocrNormaux = [];
+        $ocrInverses = [];
+        $processusNormaux = [];
+        $processusInverses = [];
 
-        if ($fichierInverse === null) {
-            return null;
+        foreach ($fichiers as $i => $fichierPage) {
+            $ocrNormaux[$i] = self::construireTesseract($fichierPage);
         }
 
-        try {
-            $ocr = (new TesseractOCR($fichierInverse))
-                ->executable(config('services.tesseract.binary'))
-                ->lang('fra', 'eng')
-                ->psm(1)
-                ->configFile('tsv');
+        // Même exécutable pour toutes les pages — une seule vérification suffit.
+        TesseractFriendlyErrors::checkTesseractPresence($ocrNormaux[array_key_first($ocrNormaux)]->command->executable);
 
-            if ($tessdata = config('services.tesseract.tessdata')) {
-                $ocr->tessdataDir($tessdata);
+        try {
+            // Construit TOUS les processus (normaux ET inversés, toutes
+            // pages confondues) avant d'attendre le premier — voir le
+            // commentaire ci-dessus, c'est ce qui les fait tourner en
+            // parallèle au niveau du système d'exploitation.
+            foreach ($fichiers as $i => $fichierPage) {
+                TesseractFriendlyErrors::checkImagePath($ocrNormaux[$i]->command->image);
+                $processusNormaux[$i] = new TesseractProcess((string) $ocrNormaux[$i]->command);
+
+                if ($fichiersInverses[$i] !== null) {
+                    $ocrInverses[$i] = self::construireTesseract($fichiersInverses[$i]);
+                    $processusInverses[$i] = new TesseractProcess((string) $ocrInverses[$i]->command);
+                }
             }
 
-            $tsv = $ocr->run();
+            $resultats = [];
 
-            [$texte] = self::extraireTexteEtConfiance($tsv, seuilConfianceMot: 70);
+            foreach ($fichiers as $i => $fichierPage) {
+                $sortieNormale = $processusNormaux[$i]->wait();
+                $sortieInverse = ($processusInverses[$i] ?? null)?->wait();
 
-            return $texte === '' ? null : $texte;
-        } catch (Throwable $e) {
-            return null;
+                try {
+                    TesseractFriendlyErrors::checkCommandExecution($ocrNormaux[$i]->command, $sortieNormale['out'], $sortieNormale['err']);
+                    $tsvNormal = file_get_contents($ocrNormaux[$i]->command->getOutputFile());
+                } catch (UnsuccessfulCommandException $e) {
+                    // Tesseract n'a rien lu (manuscrit, page blanche) : résultat
+                    // de qualité, pas une panne — pas de retry, page suivante.
+                    if (! self::estUneAbsenceDeTexte($e)) {
+                        throw $e;
+                    }
+
+                    $tsvNormal = '';
+                }
+
+                [$textePage, $confiancePage] = self::extraireTexteEtConfiance($tsvNormal);
+
+                $texteBanniere = null;
+
+                if (isset($ocrInverses[$i])) {
+                    try {
+                        TesseractFriendlyErrors::checkCommandExecution($ocrInverses[$i]->command, $sortieInverse['out'], $sortieInverse['err']);
+                        $tsvInverse = file_get_contents($ocrInverses[$i]->command->getOutputFile());
+
+                        [$texte] = self::extraireTexteEtConfiance($tsvInverse, seuilConfianceMot: 70);
+
+                        $texteBanniere = $texte === '' ? null : $texte;
+                    } catch (Throwable) {
+                        // Best-effort — même comportement que l'ancienne
+                        // texteBanniereInversee() : ne remonte jamais, simple
+                        // fragment de bannière en moins.
+                    }
+                }
+
+                $resultats[$i] = [$textePage, $confiancePage, $texteBanniere];
+            }
+
+            return $resultats;
         } finally {
-            if (file_exists($fichierInverse)) {
-                unlink($fichierInverse);
+            foreach ($ocrNormaux as $ocr) {
+                self::nettoyerSortieTesseract($ocr->command);
+            }
+
+            foreach ($ocrInverses as $ocr) {
+                self::nettoyerSortieTesseract($ocr->command);
+            }
+        }
+    }
+
+    // Factorisé (2026-10-08) : la passe normale et la passe bannière
+    // inversée utilisaient avant des réglages dupliqués à l'identique.
+    private static function construireTesseract(string $fichier): TesseractOCR
+    {
+        $ocr = (new TesseractOCR($fichier))
+            ->executable(config('services.tesseract.binary'))
+            ->lang('fra', 'eng')
+            ->psm(1)
+            ->configFile('tsv');
+
+        if ($tessdata = config('services.tesseract.tessdata')) {
+            $ocr->tessdataDir($tessdata);
+        }
+
+        return $ocr;
+    }
+
+    // Équivalent du cleanTempFiles() privé de TesseractOCR (inaccessible
+    // depuis ici) — supprime le fichier de sortie tsv généré par Tesseract,
+    // avec et sans extension (mêmes deux chemins que la bibliothèque nettoie
+    // elle-même normalement dans run()).
+    private static function nettoyerSortieTesseract(TesseractCommand $command): void
+    {
+        foreach ([$command->getOutputFile(false), $command->getOutputFile(true)] as $chemin) {
+            if (file_exists($chemin)) {
+                unlink($chemin);
             }
         }
     }
@@ -380,7 +487,16 @@ class ProcessDocumentOcr implements ShouldQueue
         unlink($prefixe);
         $cheminInverse = $prefixe.'.png';
 
-        imagepng($image, $cheminInverse);
+        // Niveau 3 (2026-10-08, mesuré en conditions réelles sur une page
+        // 600 dpi) — PAS le défaut de imagepng() (6) : fichier temporaire
+        // ~3x plus lourd mais écrit ~15% plus vite, sans AUCUNE perte
+        // (PNG reste sans perte quel que soit le niveau) — Tesseract lit le
+        // fichier décompressé, peu importe comment il a été compressé.
+        // Testé aussi 0 (pas de compression du tout) : PAS plus rapide
+        // (le coût dominant est le décodage/filtrage des pixels par GD,
+        // pas l'écriture), juste un fichier temporaire ~400x plus lourd —
+        // 3 reste le meilleur compromis mesuré.
+        imagepng($image, $cheminInverse, 3);
         imagedestroy($image);
 
         return $cheminInverse;
@@ -1058,17 +1174,25 @@ class ProcessDocumentOcr implements ShouldQueue
             return null;
         }
 
-        if (preg_match('/\bContacts?\s*:\s*(\(?\+?\d[\d\s\-.\/()]*\d)/iu', $texte, $correspondance)) {
+        // "/" retiré du jeton capturé (2026-10-08, retour utilisateur : "let
+        // it take one phone number not all") — gardé jusqu'ici précisément
+        // pour capturer les DEUX numéros du document réel cité ci-dessus
+        // ("Contacts : (00237)658239075/ 675179454"), ce qui collait les
+        // deux ensemble en une seule valeur ; l'utilisateur veut maintenant
+        // UN seul numéro (le premier) — "/" n'étant plus dans la classe de
+        // caractères, le motif s'arrête naturellement avant lui au lieu de
+        // le traverser.
+        if (preg_match('/\bContacts?\s*:\s*(\(?\+?\d[\d\s\-.()]*\d)/iu', $texte, $correspondance)) {
             return mb_substr(trim($correspondance[1]), 0, 255);
         }
 
-        if (preg_match('/\bT[ée]l[ée]?(?:phone)?\s*[:.]?\s*(\(?\+?\d[\d\s\-.\/()]*\d)/iu', $texte, $correspondance)) {
+        if (preg_match('/\bT[ée]l[ée]?(?:phone)?\s*[:.]?\s*(\(?\+?\d[\d\s\-.()]*\d)/iu', $texte, $correspondance)) {
             return mb_substr(trim($correspondance[1]), 0, 255);
         }
 
         $indicatifs = implode('|', self::INDICATIFS_TELEPHONIQUES_AFRICAINS);
 
-        if (preg_match('/\+(?:'.$indicatifs.')[\d\s\-.\/()]{4,20}\d/u', $texte, $correspondance)) {
+        if (preg_match('/\+(?:'.$indicatifs.')[\d\s\-.()]{4,20}\d/u', $texte, $correspondance)) {
             return mb_substr(trim($correspondance[0]), 0, 255);
         }
 

@@ -9,7 +9,9 @@ use App\Models\Privilege;
 use App\Models\Profil;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\DossierPartageNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -223,6 +225,7 @@ class DossierClassementListTest extends TestCase
 
     public function test_ajouter_et_retirer_un_partage_individuellement(): void
     {
+        Notification::fake();
         $createur = $this->utilisateurAvecProfil('Responsable de service');
         $this->accorderCreer($createur);
         $dossier = DossierClassement::create(['nom' => 'Dossier', 'cree_par_id' => $createur->id]);
@@ -235,10 +238,13 @@ class DossierClassementListTest extends TestCase
             ->call('ajouterPartage', $beneficiaire->id);
 
         $this->assertTrue($dossier->utilisateursAutorises()->where('users.id', $beneficiaire->id)->exists());
+        // 2026-10-09 (audit "list me all").
+        Notification::assertSentTo($beneficiaire, DossierPartageNotification::class, fn ($n) => $n->action === 'partage' && $n->envoyePar?->id === $createur->id);
 
         $test->call('retirerPartage', $beneficiaire->id);
 
         $this->assertFalse($dossier->utilisateursAutorises()->where('users.id', $beneficiaire->id)->exists());
+        Notification::assertSentTo($beneficiaire, DossierPartageNotification::class, fn ($n) => $n->action === 'revoque' && $n->envoyePar?->id === $createur->id);
     }
 
     // PENTEST (2026-09-24, "next page then") — dossierAPartager() (#[Computed],

@@ -8,8 +8,10 @@ use App\Models\Courrier;
 use App\Models\CourrierHistorique;
 use App\Models\Decharge;
 use App\Models\User;
+use App\Notifications\CourrierNotification;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 use Throwable;
@@ -53,8 +55,19 @@ class WorkflowService
         'en_cours_de_transfert' => ['enregistre', 'rejete'],
         'affecte' => ['en_traitement', 'en_attente_information', 'rejete'],
         'en_traitement' => ['en_validation', 'en_attente_information', 'rejete'],
-        'en_validation' => ['traite', 'en_traitement', 'en_attente_information', 'rejete'],
+        'en_validation' => ['traite', 'en_traitement', 'en_attente_information', 'rejete', 'en_attente_signature_dg'],
         'en_attente_information' => ['en_traitement'],
+        // 2026-10-09 — extension du circuit générique unique (PAS un circuit
+        // différent par type/département, voir DECISIONS.md "Signature DG /
+        // Trésorerie" — entretien terrain Sinistres) : certains courriers
+        // (ex. une facture) ont besoin de la signature DG avant clôture,
+        // parfois suivie d'un passage en trésorerie (décaissement). Chemin
+        // OPT-IN — un responsable qui n'a pas le privilège dédié continue de
+        // clôturer directement via valider() comme avant, sans jamais passer
+        // par ces deux statuts. Voir CourrierPolicy::envoyerSignatureDg()/
+        // signerDg()/traiterTresorerie() pour le détail des privilèges.
+        'en_attente_signature_dg' => ['traite', 'en_attente_tresorerie'],
+        'en_attente_tresorerie' => ['traite'],
         // Module 9 — ajoutée le 2026-09-21 : "Traité" → "Archivé" devient
         // enfin une vraie transition, déclenchée par ArchiverCourriersTraitesJob
         // (voir archiverAutomatiquement() plus bas), pas par un bouton.
@@ -117,6 +130,7 @@ class WorkflowService
         });
 
         $this->diffuserChangementStatut($courrier->id, 'affecte');
+        $this->notifier($collaborateur, $courrier, 'affectation', $auteur, $commentaire);
     }
 
     // Module 1/4 — la réceptionniste clique "Transférer" pour envoyer
@@ -151,6 +165,7 @@ class WorkflowService
         });
 
         $this->diffuserChangementStatut($courrier->id, 'en_cours_de_transfert');
+        $this->notifier($destinataire, $courrier, 'transfert', $auteur);
     }
 
     // Module 1/4 — demande explicite de l'utilisateur (2026-09-08, précisée le
@@ -221,7 +236,28 @@ class WorkflowService
         // (opération de stockage S3, non transactionnelle), non bloquante :
         // un échec laisse le fichier accessible à son ancien chemin plutôt
         // que de faire échouer la validation du service elle-même.
-        $this->deplacerFichiersVersService($courrier->fresh(['service', 'piecesJointes']));
+        $courrierFrais = $courrier->fresh(['service', 'piecesJointes']);
+        $this->deplacerFichiersVersService($courrierFrais);
+        $this->notifier($courrierFrais->service?->responsable, $courrierFrais, 'service_valide_dga', $auteur);
+    }
+
+    // 2026-10-12, bug réel (retour utilisateur, "no notification of the new
+    // courrier been transfere to him why") — RegistrationForm résout parfois
+    // service_id DIRECTEMENT à l'enregistrement, en sautant délibérément la
+    // validation DGA (sinistre auto-routé, ou agent avec le privilège
+    // courriers.envoyer_direct_service — voir ses commentaires détaillés) :
+    // ces deux chemins ne passent jamais par validerService() ci-dessus, donc
+    // le responsable du service n'était jamais notifié qu'un courrier venait
+    // de rejoindre sa file — même MÉTIER que service_valide_dga (un courrier
+    // rejoint la file d'un service), juste un déclencheur différent (l'agent,
+    // pas le DGA) ; réutilise donc la même action/le même libellé de
+    // notification plutôt que d'en inventer un nouveau. notifier() est privé
+    // (Règle n°6, jamais exposé tel quel) — ce point d'entrée public reste
+    // délibérément étroit (un seul usage : "ce courrier vient de rejoindre la
+    // file de CE service, préviens son responsable").
+    public function notifierArriveeDansService(Courrier $courrier, User $auteur): void
+    {
+        $this->notifier($courrier->service?->responsable, $courrier, 'service_valide_dga', $auteur);
     }
 
     private function deplacerFichiersVersService(Courrier $courrier): void
@@ -304,6 +340,8 @@ class WorkflowService
             throw new RuntimeException("Réaffectation impossible depuis le statut « {$courrier->statut} ».");
         }
 
+        $ancienCollaborateur = $courrier->affectationCourante?->collaborateur;
+
         DB::transaction(function () use ($courrier, $nouveauCollaborateur, $auteur, $motif) {
             Affectation::create([
                 'courrier_id' => $courrier->id,
@@ -319,6 +357,13 @@ class WorkflowService
                 'commentaire' => "{$nouveauCollaborateur->name} — motif : {$motif}",
             ]);
         });
+
+        $this->notifier($nouveauCollaborateur, $courrier, 'reaffectation_nouveau', $auteur, $motif);
+        // Jamais le même utilisateur des deux côtés (réaffecté à soi-même
+        // après une correction de motif, ex.) — une seule notification suffit.
+        if ($ancienCollaborateur && $ancienCollaborateur->id !== $nouveauCollaborateur->id) {
+            $this->notifier($ancienCollaborateur, $courrier, 'reaffectation_ancien', $auteur, $motif);
+        }
     }
 
     // Module 4 — le collaborateur affecté commence effectivement le traitement.
@@ -330,38 +375,95 @@ class WorkflowService
     // Module 4 — le collaborateur soumet sa réponse/action pour validation hiérarchique.
     public function soumettrePourValidation(Courrier $courrier, User $auteur, ?string $commentaire = null): void
     {
-        $this->transitionnerSimple($courrier, 'en_validation', $auteur, 'soumis_validation', $commentaire);
+        $this->transitionnerSimple($courrier, 'en_validation', $auteur, 'soumis_validation', $commentaire, $courrier->service?->responsable);
     }
 
     // Module 4 — "un supérieur hiérarchique valide" → clôture (Traité).
     public function valider(Courrier $courrier, User $auteur, ?string $commentaire = null): void
     {
-        $this->transitionnerSimple($courrier, 'traite', $auteur, 'validation_acceptee', $commentaire);
+        $this->transitionnerSimple($courrier, 'traite', $auteur, 'validation_acceptee', $commentaire, $courrier->affectationCourante?->collaborateur);
     }
 
     // Module 4 — "ou renvoie pour correction" → retour en traitement, motif obligatoire.
     public function renvoyerPourCorrection(Courrier $courrier, User $auteur, string $motif): void
     {
-        $this->transitionnerSimple($courrier, 'en_traitement', $auteur, 'validation_refusee', $motif);
+        $this->transitionnerSimple($courrier, 'en_traitement', $auteur, 'validation_refusee', $motif, $courrier->affectationCourante?->collaborateur);
+    }
+
+    // 2026-10-09 — alternative à valider() : au lieu de clôturer directement,
+    // le responsable envoie le courrier en signature DG (ex. une facture).
+    // Réservée aux responsables ayant courriers.envoyer_signature_dg (opt-in
+    // par département, voir CourrierPolicy::envoyerSignatureDg()) — jamais
+    // un circuit différent, seulement une transition supplémentaire de la
+    // MÊME machine à états générique (voir commentaire TRANSITIONS).
+    public function envoyerPourSignatureDg(Courrier $courrier, User $auteur, ?string $commentaire = null): void
+    {
+        $this->transitionnerSimple($courrier, 'en_attente_signature_dg', $auteur, 'envoye_signature_dg', $commentaire, $this->utilisateursAvecPrivilege('courriers.dga_signer'));
+    }
+
+    // La DG signe ET clôture directement — courrier qui n'avait besoin que
+    // d'une signature, pas d'un passage en trésorerie (ex. un accord).
+    public function signerEtCloturer(Courrier $courrier, User $auteur, ?string $commentaire = null): void
+    {
+        $this->transitionnerSimple($courrier, 'traite', $auteur, 'signe_dg_cloture', $commentaire, $this->auteurDeLaDerniereAction($courrier, 'envoye_signature_dg'));
+    }
+
+    // La DG signe ET transmet à la trésorerie — courrier de décaissement
+    // (ex. une facture à payer).
+    public function signerEtEnvoyerTresorerie(Courrier $courrier, User $auteur, ?string $commentaire = null): void
+    {
+        $this->transitionnerSimple($courrier, 'en_attente_tresorerie', $auteur, 'signe_dg_tresorerie', $commentaire, $this->utilisateursAvecPrivilege('courriers.traiter_tresorerie'));
+    }
+
+    // La trésorerie clôture une fois le décaissement traité — prévient la
+    // DG qui avait signé (confirmation de clôture du dossier).
+    public function traiterParTresorerie(Courrier $courrier, User $auteur, ?string $commentaire = null): void
+    {
+        $this->transitionnerSimple($courrier, 'traite', $auteur, 'traite_tresorerie', $commentaire, $this->auteurDeLaDerniereAction($courrier, 'signe_dg_tresorerie'));
     }
 
     // Statut "En attente d'information" du spec Module 4 — ex. en attente
     // d'une pièce complémentaire de l'expéditeur. Motif obligatoire (traçabilité).
     public function mettreEnAttente(Courrier $courrier, User $auteur, string $motif): void
     {
-        $this->transitionnerSimple($courrier, 'en_attente_information', $auteur, 'mise_en_attente', $motif);
+        $this->transitionnerSimple($courrier, 'en_attente_information', $auteur, 'mise_en_attente', $motif, $this->autrePartie($courrier, $auteur));
     }
 
     public function reprendre(Courrier $courrier, User $auteur): void
     {
-        $this->transitionnerSimple($courrier, 'en_traitement', $auteur, 'reprise');
+        $this->transitionnerSimple($courrier, 'en_traitement', $auteur, 'reprise', null, $this->autrePartie($courrier, $auteur));
     }
 
     // Statut "Rejeté" du spec Module 4 — dérogation explicite tracée (motif
     // obligatoire) plutôt qu'un simple abandon silencieux.
     public function rejeter(Courrier $courrier, User $auteur, string $motif): void
     {
-        $this->transitionnerSimple($courrier, 'rejete', $auteur, 'rejet', $motif);
+        $this->transitionnerSimple($courrier, 'rejete', $auteur, 'rejet', $motif, $courrier->affectationCourante?->collaborateur);
+    }
+
+    // Le signataire (DG) d'une étape antérieure (envoye_signature_dg/
+    // signe_dg_tresorerie) — reconstitué depuis l'historique (append-only,
+    // Règle n°5), jamais un champ dédié supplémentaire sur `courriers`.
+    private function auteurDeLaDerniereAction(Courrier $courrier, string $action): ?User
+    {
+        return CourrierHistorique::where('courrier_id', $courrier->id)
+            ->where('action', $action)
+            ->latest()
+            ->first()
+            ?->auteur;
+    }
+
+    // "L'autre partie" du binôme responsable/collaborateur pour une action
+    // que l'un OU l'autre peut déclencher (mettreEnAttente()/reprendre(),
+    // CourrierPolicy::mettreEnAttente()/reprendre() acceptent traiter() OU
+    // valider()) — jamais l'auteur notifié de sa propre action.
+    private function autrePartie(Courrier $courrier, User $auteur): Collection
+    {
+        return collect([$courrier->service?->responsable, $courrier->affectationCourante?->collaborateur])
+            ->filter()
+            ->reject(fn (User $u) => $u->id === $auteur->id)
+            ->unique('id')
+            ->values();
     }
 
     // Module 5 (2026-09-24, voir DECISIONS.md "Chronomètre de traitement") —
@@ -430,7 +532,12 @@ class WorkflowService
         $this->diffuserChangementStatut($courrier->id, 'traite');
     }
 
-    private function transitionnerSimple(Courrier $courrier, string $statutSuivant, User $auteur, string $action, ?string $commentaire = null): void
+    // $destinataires : Règle n°1 étendue (2026-10-09, audit "list me all")
+    // — la notification de qui est concerné par CETTE transition précise,
+    // résolue par chaque méthode publique ci-dessus (qui connaît le bon
+    // destinataire), jamais devinée ici. null = personne à notifier
+    // (ex. demarrerTraitement(), action purement auto-concernante).
+    private function transitionnerSimple(Courrier $courrier, string $statutSuivant, User $auteur, string $action, ?string $commentaire = null, User|Collection|null $destinataires = null): void
     {
         $this->verifierTransition($courrier, $statutSuivant);
 
@@ -451,6 +558,45 @@ class WorkflowService
         });
 
         $this->diffuserChangementStatut($courrier->id, $statutSuivant);
+        $this->notifier($destinataires, $courrier, $action, $auteur, $commentaire);
+    }
+
+    // Jamais un utilisateur notifié de sa PROPRE action (ex. le responsable
+    // qui vient de mettre lui-même le courrier en attente) — filtré ici une
+    // seule fois plutôt que dans chaque appelant. $auteur (2026-10-12,
+    // demande explicite — "make each notification show who send it") :
+    // qui a réellement déclenché l'action, stocké dans l'enveloppe de la
+    // notification pour affichage sur la page Notifications — jamais
+    // utilisé pour une logique métier ici, uniquement transmis.
+    private function notifier(User|Collection|null $destinataires, Courrier $courrier, string $action, ?User $auteur = null, ?string $commentaire = null): void
+    {
+        $destinataires = match (true) {
+            $destinataires === null => collect(),
+            $destinataires instanceof User => collect([$destinataires]),
+            default => $destinataires,
+        };
+
+        $destinataires = $destinataires->filter()->unique('id')->values();
+
+        if ($destinataires->isEmpty()) {
+            return;
+        }
+
+        try {
+            Notification::send($destinataires, new CourrierNotification($courrier, $action, $commentaire, $auteur));
+        } catch (Throwable $e) {
+            report($e);
+        }
+    }
+
+    // Utilisé pour les 2 étapes du circuit Signature DG/Trésorerie sans
+    // destinataire nominatif unique en base (contrairement à transferer(),
+    // qui a destinataire_transfert_id) — tout utilisateur ayant le
+    // privilège concerné est prévenu, même principe que
+    // DelegationDgaIndex/OrganisationIndex pour "qui peut agir ici".
+    private function utilisateursAvecPrivilege(string $cle): Collection
+    {
+        return User::query()->get()->filter(fn (User $u) => $u->hasPrivilege($cle))->values();
     }
 
     // Diffusion "au mieux" (best-effort) du changement de statut — jamais
@@ -513,7 +659,7 @@ class WorkflowService
             throw new RuntimeException('Décharge impossible : l\'original est déjà emprunté et non rendu.');
         }
 
-        return DB::transaction(function () use ($courrier, $emprunteur, $emisPar, $motif) {
+        $decharge = DB::transaction(function () use ($courrier, $emprunteur, $emisPar, $motif) {
             $decharge = Decharge::create([
                 'courrier_id' => $courrier->id,
                 'emprunteur_id' => $emprunteur->id,
@@ -536,6 +682,10 @@ class WorkflowService
 
             return $decharge;
         });
+
+        $this->notifier($emprunteur, $courrier, 'decharge_emise', $emisPar);
+
+        return $decharge;
     }
 
     public function marquerDechargeRendue(Decharge $decharge, User $auteur): void
@@ -554,6 +704,8 @@ class WorkflowService
                 'commentaire' => "Décharge {$decharge->numero_reference} — original rendu.",
             ]);
         });
+
+        $this->notifier($decharge->emisPar, $decharge->courrier, 'decharge_rendue', $auteur);
     }
 
     private function diffuserChangementStatut(int $courrierId, string $statut): void

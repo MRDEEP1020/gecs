@@ -9,6 +9,7 @@ use App\Models\Privilege;
 use App\Models\Profil;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\CompteUtilisateurNotification;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -248,6 +249,36 @@ class UserListTest extends TestCase
         Notification::assertSentTo($cree, ResetPassword::class);
     }
 
+    // 2026-10-09 — retour utilisateur direct ("WHY IF I CHOSE DEPARTMENT
+    // AND SITE AND ORGANISATION WHEN CREATING OR MODIFYING ET USER IT
+    // DOESN'T AUTOMATICALLY ADD THEM ON THE ORGANISATIONS HIERACHARY") :
+    // la cascade ne résolvait jusqu'ici QUE users.service_id (le pont),
+    // jamais le vrai rattachement organization_unit_user lu par l'onglet
+    // "Utilisateurs" de la page Organisation.
+    public function test_ajouter_un_utilisateur_le_rattache_reellement_au_noeud_organisation(): void
+    {
+        Notification::fake();
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $service = Service::factory()->create();
+        $departement = $this->departementPonte($service);
+        $profil = Profil::firstOrCreate(['nom' => 'Agent']);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirAjout')
+            ->set('ajoutNom', 'Nouvel')
+            ->set('ajoutPrenom', 'Rattache')
+            ->set('ajoutEmail', 'nouvel.rattache@example.com')
+            ->set('ajoutDepartementSelectionneId', $departement->id)
+            ->set('ajoutProfilId', $profil->id)
+            ->set('ajoutNiveauConfidentialite', 1)
+            ->call('ajouter')
+            ->assertHasNoErrors();
+
+        $cree = User::where('email', 'nouvel.rattache@example.com')->firstOrFail();
+        $this->assertTrue($cree->organizationUnits()->where('organization_units.id', $departement->id)->wherePivot('is_primary', true)->exists());
+    }
+
     public function test_ajouter_un_utilisateur_valide_les_champs_requis(): void
     {
         $this->actingAs($this->utilisateurAvecProfil('Administrateur'));
@@ -314,6 +345,7 @@ class UserListTest extends TestCase
 
     public function test_modifier_un_utilisateur_enregistre_reellement_les_changements(): void
     {
+        Notification::fake();
         $admin = $this->utilisateurAvecProfil('Administrateur');
         $agent = $this->utilisateurAvecProfil('Agent');
         $autreService = Service::factory()->create();
@@ -337,6 +369,93 @@ class UserListTest extends TestCase
         $this->assertSame($autreService->id, $apres->service_id);
         $this->assertSame(3, $apres->niveau_confidentialite);
         $this->assertFalse($apres->actif);
+        $this->assertTrue($apres->organizationUnits()->where('organization_units.id', $autreDepartement->id)->wherePivot('is_primary', true)->exists());
+        // 2026-10-09 (audit "list me all") — actif a changé ICI, priorité
+        // sur "modifie" (voir UserList::enregistrerEdition()).
+        Notification::assertSentTo($agent, CompteUtilisateurNotification::class, fn ($n) => $n->action === 'desactive' && $n->envoyePar?->id === $admin->id);
+    }
+
+    // 2026-10-09 (audit "list me all") — niveau de confidentialité changé,
+    // actif INCHANGÉ : branche "modifie", pas "desactive".
+    public function test_modifier_le_niveau_de_confidentialite_notifie_modifie(): void
+    {
+        Notification::fake();
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $agent = $this->utilisateurAvecProfil('Agent', ['niveau_confidentialite' => 1]);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $agent->id)
+            ->set('editionNiveauConfidentialite', 2)
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        Notification::assertSentTo($agent, CompteUtilisateurNotification::class, fn ($n) => $n->action === 'modifie' && $n->envoyePar?->id === $admin->id);
+    }
+
+    // Une correction qui ne touche ni actif/profil/niveau/cascade ne doit
+    // jamais notifier "votre compte a été modifié" pour rien.
+    public function test_modifier_seulement_le_telephone_ne_notifie_personne(): void
+    {
+        Notification::fake();
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $agent->id)
+            ->set('editionTelephone', '+237699999999')
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        Notification::assertNothingSentTo($agent);
+    }
+
+    public function test_modifier_le_departement_remplace_lancien_rattachement_principal(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $serviceInitial = Service::factory()->create();
+        $departementInitial = $this->departementPonte($serviceInitial);
+        $agent = $this->utilisateurAvecProfil('Agent', ['service_id' => $serviceInitial->id]);
+        $agent->organizationUnits()->attach($departementInitial->id, ['is_primary' => true]);
+
+        $serviceSuivant = Service::factory()->create();
+        $departementSuivant = $this->departementPonte($serviceSuivant);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $agent->id)
+            ->set('editionDepartementSelectionneId', $departementSuivant->id)
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        $apres = $agent->fresh();
+        $this->assertFalse($apres->organizationUnits()->where('organization_units.id', $departementInitial->id)->exists(), 'ancien rattachement retiré');
+        $this->assertTrue($apres->organizationUnits()->where('organization_units.id', $departementSuivant->id)->wherePivot('is_primary', true)->exists());
+    }
+
+    // Même garde que service_id (voir test_modifier_un_utilisateur_pour_retirer_son_service_fonctionne
+    // et le commentaire de enregistrerEdition()) : une cascade jamais
+    // touchée ne doit RIEN changer au rattachement organisationnel
+    // existant, même si un autre champ (ici le téléphone) est modifié.
+    public function test_modifier_un_champ_sans_toucher_la_cascade_preserve_le_rattachement(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $serviceInitial = Service::factory()->create();
+        $departementInitial = $this->departementPonte($serviceInitial);
+        $agent = $this->utilisateurAvecProfil('Agent', ['service_id' => $serviceInitial->id]);
+        $agent->organizationUnits()->attach($departementInitial->id, ['is_primary' => true]);
+        $this->actingAs($admin);
+
+        Livewire::test(UserList::class)
+            ->call('ouvrirEdition', $agent->id)
+            ->set('editionTelephone', '+237611111111')
+            ->call('enregistrerEdition')
+            ->assertHasNoErrors();
+
+        $apres = $agent->fresh();
+        $this->assertSame('+237611111111', $apres->telephone);
+        $this->assertTrue($apres->organizationUnits()->where('organization_units.id', $departementInitial->id)->wherePivot('is_primary', true)->exists());
     }
 
     public function test_modifier_un_utilisateur_pour_retirer_son_service_fonctionne(): void
@@ -348,6 +467,7 @@ class UserListTest extends TestCase
         $serviceInitial = Service::factory()->create();
         $departementInitial = $this->departementPonte($serviceInitial);
         $agent = $this->utilisateurAvecProfil('Agent', ['service_id' => $serviceInitial->id]);
+        $agent->organizationUnits()->attach($departementInitial->id, ['is_primary' => true]);
         $this->actingAs($admin);
 
         $composant = Livewire::test(UserList::class)->call('ouvrirEdition', $agent->id);
@@ -361,7 +481,11 @@ class UserListTest extends TestCase
             ->call('enregistrerEdition')
             ->assertHasNoErrors();
 
-        $this->assertNull($agent->fresh()->service_id);
+        $apres = $agent->fresh();
+        $this->assertNull($apres->service_id);
+        // 2026-10-09 — cascade explicitement vidée : le rattachement
+        // organization_unit_user périmé est retiré, pas laissé derrière.
+        $this->assertFalse($apres->organizationUnits()->where('organization_units.id', $departementInitial->id)->exists());
     }
 
     // "Nom"/"Prénom" de la maquette restent deux CHAMPS distincts à
@@ -385,6 +509,7 @@ class UserListTest extends TestCase
 
     public function test_basculer_actif_active_et_desactive_un_compte(): void
     {
+        Notification::fake();
         $admin = $this->utilisateurAvecProfil('Administrateur');
         $agent = $this->utilisateurAvecProfil('Agent');
         $this->actingAs($admin);
@@ -393,9 +518,13 @@ class UserListTest extends TestCase
 
         $component->call('basculerActif', $agent->id);
         $this->assertFalse($agent->fresh()->actif);
+        // 2026-10-09 (audit "list me all") — un compte désactivé ne
+        // comprendrait sinon jamais pourquoi il ne peut plus se connecter.
+        Notification::assertSentTo($agent, CompteUtilisateurNotification::class, fn ($n) => $n->action === 'desactive' && $n->envoyePar?->id === $admin->id);
 
         $component->call('basculerActif', $agent->id);
         $this->assertTrue($agent->fresh()->actif);
+        Notification::assertSentTo($agent, CompteUtilisateurNotification::class, fn ($n) => $n->action === 'active' && $n->envoyePar?->id === $admin->id);
     }
 
     // Un compte désactivé ne peut réellement plus se connecter (Règle n°6 —

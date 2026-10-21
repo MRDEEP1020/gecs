@@ -26,7 +26,7 @@
 
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                 <flux:icon.envelope class="size-5" />
             </div>
             <div>
@@ -71,6 +71,19 @@
             @if ($this->peutModifier)
                 <flux:button variant="primary" icon="pencil-square" :href="route('courriers.modifier', $courrier->id)" wire:navigate>
                     {{ __('Modifier') }}
+                </flux:button>
+            @endif
+            {{-- 2026-10-13, demande explicite de l'utilisateur ("add the
+                 button here") — même raccourci "Traiter moi-même" que dans
+                 le bloc "Affecter" plus bas (CourrierPolicy::traiterMoiMeme()),
+                 repris ici dans l'en-tête pour un accès direct depuis le
+                 haut de la fiche. Ouvre une modale (pas d'action directe,
+                 voir "je ne peut pa mettre un delais") : le bouton de
+                 l'en-tête n'a aucun champ délai à proximité, contrairement
+                 au bloc "Affecter" plus bas. --}}
+            @if ($this->peutTraiterMoiMeme)
+                <flux:button variant="primary" icon="user-circle" wire:click="ouvrirTraiterMoiMeme">
+                    {{ __('Traiter moi-même') }}
                 </flux:button>
             @endif
             {{-- courriers.telecharger / courriers.imprimer_bordereau (2026-09-23). --}}
@@ -126,24 +139,24 @@
                  disparaît. --}}
             <div class="overflow-x-auto border-b border-brand-border [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <nav class="flex min-w-max items-center gap-1">
-                    <button type="button" x-on:click="onglet = 'general'" :class="onglet === 'general' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
+                    <button type="button" x-on:click="onglet = 'general'" :class="onglet === 'general' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
                         <flux:icon.document-text class="size-4" />
                         {{ __('Général') }}
                     </button>
                     {{-- Onglets "Pièces jointes" / "Historique" : privilèges de
                          lecture dédiés (2026-09-23), contenu masqué aussi. --}}
                     @if ($this->droits['voirPiecesJointes'])
-                        <button type="button" x-on:click="onglet = 'pieces-jointes'" :class="onglet === 'pieces-jointes' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
+                        <button type="button" x-on:click="onglet = 'pieces-jointes'" :class="onglet === 'pieces-jointes' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
                             <flux:icon.paper-clip class="size-4" />
                             {{ __('Pièces jointes') }} ({{ $courrier->piecesJointes->count() }})
                         </button>
                     @endif
-                    <button type="button" x-on:click="onglet = 'circuit'" :class="onglet === 'circuit' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
+                    <button type="button" x-on:click="onglet = 'circuit'" :class="onglet === 'circuit' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
                         <flux:icon.arrow-path-rounded-square class="size-4" />
                         {{ __('Circuit de traitement') }}
                     </button>
                     @if ($this->droits['voirHistorique'])
-                        <button type="button" x-on:click="onglet = 'historique'" :class="onglet === 'historique' ? 'border-brand-blue text-brand-blue' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
+                        <button type="button" x-on:click="onglet = 'historique'" :class="onglet === 'historique' ? 'border-brand-accent text-brand-accent' : 'border-transparent text-brand-text-secondary hover:border-zinc-300 hover:text-brand-text-primary'" class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors">
                             <flux:icon.clock class="size-4" />
                             {{ __('Historique') }}
                         </button>
@@ -172,7 +185,7 @@
             <div x-show="onglet === 'general'" x-cloak class="mt-4 space-y-6">
                 <div class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-4 flex items-center gap-2">
-                        <flux:icon.information-circle class="size-4 text-brand-blue" />
+                        <flux:icon.information-circle class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Informations générales') }}</flux:heading>
                     </div>
 
@@ -199,7 +212,7 @@
                             <div>
                                 <flux:text class="text-xs uppercase text-zinc-500">{{ __('Type') }}</flux:text>
                                 <div class="mt-0.5">
-                                    <span class="inline-flex items-center rounded-full bg-brand-blue-pale px-2 py-0.5 text-xs font-medium text-brand-blue">
+                                    <span class="inline-flex items-center rounded-full bg-brand-accent-pale px-2 py-0.5 text-xs font-medium text-brand-accent">
                                         {{ $courrier->sens === 'entrant' ? __('Courrier entrant') : __('Courrier sortant') }}
                                     </span>
                                 </div>
@@ -338,7 +351,7 @@
 
                 <div class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-4 flex items-center gap-2">
-                        <flux:icon.map class="size-4 text-brand-blue" />
+                        <flux:icon.map class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Parcours du courrier') }}</flux:heading>
                     </div>
                     {{-- Étapes purement AFFICHÉES d'après le statut réel — aucune
@@ -359,7 +372,7 @@
                             <div class="flex flex-col items-center text-center">
                                 <span class="flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold {{ match (true) {
                                     $loop->first && $etape['atteinte'] => 'bg-brand-success text-white',
-                                    $etape['atteinte'] || $etape['courante'] => 'bg-brand-blue text-white',
+                                    $etape['atteinte'] || $etape['courante'] => 'bg-brand-accent text-white',
                                     default => 'bg-brand-disabled-bg text-brand-disabled-text',
                                 } }}">
                                     @if ($etape['atteinte'] || $etape['courante'])
@@ -372,7 +385,7 @@
                                 <span class="w-24 text-xs {{ $etape['courante'] ? 'text-brand-warning' : 'text-brand-text-muted' }}">{{ $etape['sousLibelle'] }}</span>
                             </div>
                             @if (! $loop->last)
-                                <div class="mx-2 h-px w-10 shrink-0 {{ $etape['atteinte'] ? 'bg-brand-blue' : 'bg-brand-border' }}"></div>
+                                <div class="mx-2 h-px w-10 shrink-0 {{ $etape['atteinte'] ? 'bg-brand-accent' : 'bg-brand-border' }}"></div>
                             @endif
                         @endforeach
                     </div>
@@ -385,7 +398,7 @@
 
                 <div class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-4 flex items-center gap-2">
-                        <flux:icon.squares-2x2 class="size-4 text-brand-blue" />
+                        <flux:icon.squares-2x2 class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Détails complémentaires') }}</flux:heading>
                     </div>
 
@@ -472,6 +485,15 @@
                         </div>
                     </div>
 
+                    {{-- 2026-10-12, demande explicite de l'utilisateur
+                         ("not everybody has to see this ... if you don't
+                         have the permission the card stop at detail
+                         complementaire") — tout le bloc OCR/Classement/
+                         mots-clés ci-dessous est gouverné par un seul
+                         privilège (voir CourrierPolicy::voirTraitementDocument()) ;
+                         sans lui, la carte s'arrête ici, juste après
+                         "Détails complémentaires". --}}
+                    @if ($this->droits['voirTraitementDocument'])
                     <flux:separator text="{{ __('Document principal (numérisation)') }}" class="mt-6" />
                     <div class="mt-3 flex flex-wrap items-center gap-3">
                         {{-- Span habillé directement (pas flux:badge color=, palette Tailwind
@@ -592,6 +614,7 @@
                             <flux:button size="sm" type="submit">{{ __('Ajouter') }}</flux:button>
                         </form>
                     @endif
+                    @endif
                 </div>
             </div>
 
@@ -702,6 +725,20 @@
                             @endforeach
                         </flux:select>
 
+                        {{-- 2026-10-09 — niveau Direction (OrganizationUnit::TYPE_DIRECTION),
+                             OPTIONNEL comme Site : même wire:key que les niveaux
+                             suivants, mêmes raisons (voir commentaire ci-dessous). --}}
+                        @if ($this->directionsDisponibles->isNotEmpty())
+                            <div wire:key="cascade-direction-{{ $siteSelectionneId ?? 'racine' }}">
+                                <flux:select wire:model.live="directionSelectionneeId" size="sm" :label="__('Direction')" placeholder="{{ __('— Aucune (direct) —') }}" class="max-w-xs">
+                                    <flux:select.option value="">{{ __('— Aucune (direct) —') }}</flux:select.option>
+                                    @foreach ($this->directionsDisponibles as $direction)
+                                        <flux:select.option value="{{ $direction->id }}">{{ $direction->name }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                            </div>
+                        @endif
+
                         {{-- 2026-09-23 : wire:key + option vide RÉELLE sur chaque
                              niveau conditionnel, et Service/Unité en .live — sans
                              ça, un sélecteur masqué puis ré-affiché pouvait
@@ -709,7 +746,7 @@
                              envoyée (bug constaté : validé vers "Sinistre Santé"
                              alors que l'écran montrait "Departement Informatique"). --}}
                         @if ($this->departementsDisponibles->isNotEmpty())
-                            <div wire:key="cascade-departement-{{ $siteSelectionneId ?? 'racine' }}">
+                            <div wire:key="cascade-departement-{{ $directionSelectionneeId ?? $siteSelectionneId ?? 'racine' }}">
                                 <flux:select wire:model.live="departementSelectionneId" size="sm" :label="__('Département')" class="max-w-xs">
                                     <flux:select.option value="">{{ __('Choisir un département') }}</flux:select.option>
                                     @foreach ($this->departementsDisponibles as $departement)
@@ -815,10 +852,23 @@
                     @if ($courrier->statut === 'affecte')
                         <flux:button size="sm" class="mt-3" wire:click="demarrerTraitement">{{ __('Démarrer le traitement') }}</flux:button>
                     @elseif ($courrier->statut === 'en_traitement' && $this->droits['soumettreValidation'])
-                        <form wire:submit="soumettrePourValidation" class="mt-3 space-y-2">
+                        <div class="mt-3 space-y-2">
                             <flux:textarea wire:model="commentaireCirculation" size="sm" rows="2" :label="__('Commentaire (optionnel)')" placeholder="{{ __('Réponse ou action effectuée…') }}" />
-                            <flux:button size="sm" type="submit">{{ __('Soumettre pour validation') }}</flux:button>
-                        </form>
+                            <div class="flex items-center gap-2">
+                                {{-- 2026-10-14, retour utilisateur ("why can
+                                     he validate directly") — raccourci
+                                     visible seulement quand le traiteur ET
+                                     le validateur sont la même personne
+                                     (CourrierPolicy::validerDirectement()),
+                                     en plus du "Soumettre" classique
+                                     ci-dessous (toujours disponible, pour
+                                     qui préfère garder les 2 étapes). --}}
+                                @if ($this->droits['validerDirectement'])
+                                    <flux:button size="sm" variant="primary" wire:click="validerDirectement">{{ __('Valider directement') }}</flux:button>
+                                @endif
+                                <flux:button size="sm" variant="{{ $this->droits['validerDirectement'] ? 'outline' : 'primary' }}" wire:click="soumettrePourValidation">{{ __('Soumettre pour validation') }}</flux:button>
+                            </div>
+                        </div>
                     @endif
                 @endif
 
@@ -828,12 +878,46 @@
                         <flux:textarea wire:model="commentaireCirculation" size="sm" rows="2" :label="__('Commentaire (optionnel)')" />
                         <div class="flex items-center gap-2">
                             <flux:button size="sm" variant="primary" wire:click="valider">{{ __('Valider') }}</flux:button>
+                            {{-- 2026-10-09 — extension du circuit générique
+                                 (Signature DG / Trésorerie, entretien terrain
+                                 Sinistres) : alternative opt-in à "Valider",
+                                 visible seulement pour qui a le privilège
+                                 courriers.envoyer_signature_dg (assigné par
+                                 département, jamais lié au type de courrier
+                                 dans le code). --}}
+                            @if ($this->peutEnvoyerSignatureDg)
+                                <flux:button size="sm" variant="outline" icon="paper-airplane" wire:click="envoyerSignatureDg">{{ __('Envoyer en signature DG') }}</flux:button>
+                            @endif
                         </div>
                         @if ($this->droits['renvoyerCorrection'])
                             <flux:textarea wire:model="motifRenvoi" size="sm" rows="2" :label="__('Motif du renvoi (si correction nécessaire)')" />
                             <flux:button size="sm" variant="ghost" wire:click="renvoyerPourCorrection">{{ __('Renvoyer pour correction') }}</flux:button>
                         @endif
                     </div>
+                @endif
+
+                {{-- 2026-10-09 — DG : signe et clôture directement, ou signe
+                     et transmet à la trésorerie (courrier de décaissement). --}}
+                @if ($courrier->statut === 'en_attente_signature_dg' && $this->peutSignerDg)
+                    <div class="mt-3 space-y-2">
+                        <flux:textarea wire:model="commentaireCirculation" size="sm" rows="2" :label="__('Commentaire (optionnel)')" />
+                        <div class="flex items-center gap-2">
+                            <flux:button size="sm" variant="primary" icon="identification" wire:click="signerEtCloturer">{{ __('Signer et clôturer') }}</flux:button>
+                            <flux:button size="sm" variant="outline" icon="banknotes" wire:click="signerEtEnvoyerTresorerie">{{ __('Signer et transmettre à la trésorerie') }}</flux:button>
+                        </div>
+                    </div>
+                @elseif ($courrier->statut === 'en_attente_signature_dg')
+                    <flux:text class="mt-3 text-sm text-zinc-500">{{ __('En attente de la signature de la DG.') }}</flux:text>
+                @endif
+
+                {{-- 2026-10-09 — Trésorerie : clôture après traitement du décaissement. --}}
+                @if ($courrier->statut === 'en_attente_tresorerie' && $this->peutTraiterTresorerie)
+                    <div class="mt-3 space-y-2">
+                        <flux:textarea wire:model="commentaireCirculation" size="sm" rows="2" :label="__('Commentaire (optionnel)')" />
+                        <flux:button size="sm" variant="primary" icon="banknotes" wire:click="traiterParTresorerie">{{ __('Marquer comme traité') }}</flux:button>
+                    </div>
+                @elseif ($courrier->statut === 'en_attente_tresorerie')
+                    <flux:text class="mt-3 text-sm text-zinc-500">{{ __('En attente de traitement par la trésorerie.') }}</flux:text>
                 @endif
 
                 {{-- Réaffectation — privilège courriers.reaffecter (2026-09-23), tant qu'un circuit est en cours --}}
@@ -878,21 +962,39 @@
                 @endif
             </div>
 
-            {{-- ONGLET HISTORIQUE — courriers.voir_historique (2026-09-23) --}}
+            {{-- ONGLET HISTORIQUE — courriers.voir_historique (2026-09-23).
+                 Redessiné en frise verticale (2026-10-08, retour utilisateur
+                 — "improve the design of this historique") : badge circulaire
+                 coloré par CATÉGORIE d'action (voir
+                 CourrierHistorique::classesIcone(), palette de marque
+                 existante uniquement, jamais une teinte Tailwind arbitraire),
+                 ligne de connexion entre les entrées, libellé FR lisible
+                 (CourrierHistorique::libelle()) à la place de l'ancien
+                 str_replace('_', ' ', $action) brut, commentaire éventuel
+                 mis en évidence dans son propre encart plutôt qu'en simple
+                 texte gris clair (hiérarchie noire du texte, voir
+                 app.css — plus de gris clair pour du texte). --}}
             @if ($this->droits['voirHistorique'])
             <div x-show="onglet === 'historique'" x-cloak class="mt-4 rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-                <ul class="space-y-4">
+                <ul class="space-y-6">
                     @foreach ($courrier->historiques as $entree)
-                        <li class="flex items-start gap-3">
-                            <flux:icon name="clock" class="mt-0.5 size-4 shrink-0 text-zinc-400" />
-                            <div>
-                                <flux:text>
-                                    <strong>{{ str_replace('_', ' ', $entree->action) }}</strong>
-                                    {{ __('par') }} {{ $entree->auteur?->name ?? __('système') }}
-                                    — {{ $entree->created_at->format('d/m/Y H:i') }}
-                                </flux:text>
+                        <li class="relative flex gap-4">
+                            @unless ($loop->last)
+                                <span class="absolute left-4 top-9 h-[calc(100%-0.25rem)] w-px -translate-x-1/2 bg-brand-border dark:bg-zinc-700"></span>
+                            @endunless
+
+                            <span class="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full {{ $entree->classesIcone() }}">
+                                <flux:icon :icon="$entree->icone()" class="size-4" />
+                            </span>
+
+                            <div class="min-w-0 flex-1 pb-0.5">
+                                <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+                                    <flux:text class="font-medium text-brand-text-primary">{{ $entree->libelle() }}</flux:text>
+                                    <flux:text class="shrink-0 text-xs text-brand-text-secondary">{{ $entree->created_at->format('d/m/Y à H:i') }}</flux:text>
+                                </div>
+                                <flux:text class="text-sm text-brand-text-secondary">{{ __('par') }} {{ $entree->auteur?->name ?? __('Système') }}</flux:text>
                                 @if ($entree->commentaire)
-                                    <flux:text class="text-zinc-500">{{ $entree->commentaire }}</flux:text>
+                                    <flux:text class="mt-1.5 block rounded-lg bg-brand-surface-soft px-3 py-2 text-sm text-brand-text-primary dark:bg-zinc-800">{{ $entree->commentaire }}</flux:text>
                                 @endif
                             </div>
                         </li>
@@ -910,7 +1012,7 @@
             <div x-data="squeletteMinimum()" class="rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div wire:loading.class.remove="hidden" x-ref="sentinelle" class="hidden" aria-hidden="true"></div>
                 <div class="flex items-center gap-2 border-b border-brand-border p-4 dark:border-zinc-700">
-                    <flux:icon.eye class="size-4 text-brand-blue" />
+                    <flux:icon.eye class="size-4 text-brand-accent" />
                     <flux:heading level="3">{{ __('Aperçu du courrier') }}</flux:heading>
                 </div>
 
@@ -1185,10 +1287,10 @@
                 <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-3 flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
-                            <flux:icon.paper-clip class="size-4 text-brand-blue" />
+                            <flux:icon.paper-clip class="size-4 text-brand-accent" />
                             <flux:heading level="3">{{ __('Fichiers joints') }} ({{ $courrier->piecesJointes->count() }})</flux:heading>
                         </div>
-                        <button type="button" x-on:click="onglet = 'pieces-jointes'" class="text-sm text-brand-blue hover:underline">
+                        <button type="button" x-on:click="onglet = 'pieces-jointes'" class="text-sm text-brand-accent hover:underline">
                             {{ __('Voir tous') }} →
                         </button>
                     </div>
@@ -1212,16 +1314,25 @@
                  l'en-tête) ; "Répondre"/"Créer une note" désactivés — aucun
                  modèle de réponse/note distinct de l'historique n'existe à
                  ce jour (même principe que les onglets "Réponses"/
-                 "Commentaires" plus haut). --}}
+                 "Commentaires" plus haut). 2026-10-08 — retour utilisateur
+                 direct ("should be previledges too") : ces deux boutons
+                 étaient les SEULS de la page sans aucun privilège ; masqués
+                 désormais derrière courriers.repondre/courriers.creer_note
+                 (droits()), même si la fonctionnalité réelle reste à
+                 construire — cohérent avec le reste de la page où un
+                 privilège contrôle la VISIBILITÉ du bouton, pas seulement
+                 son état activé/désactivé. --}}
             <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="mb-3 flex items-center gap-2">
-                    <flux:icon.bolt class="size-4 text-brand-blue" />
+                    <flux:icon.bolt class="size-4 text-brand-accent" />
                     <flux:heading level="3">{{ __('Actions rapides') }}</flux:heading>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
-                    <flux:tooltip content="{{ __('Bientôt disponible') }}">
-                        <flux:button size="sm" variant="outline" icon="arrow-uturn-left" disabled class="w-full">{{ __('Répondre') }}</flux:button>
-                    </flux:tooltip>
+                    @if ($this->droits['repondre'])
+                        <flux:tooltip content="{{ __('Bientôt disponible') }}">
+                            <flux:button size="sm" variant="outline" icon="arrow-uturn-left" disabled class="w-full">{{ __('Répondre') }}</flux:button>
+                        </flux:tooltip>
+                    @endif
                     @if ($courrier->statut === 'en_attente_de_transfert' && $this->peutTransferer)
                         <flux:button size="sm" variant="outline" icon="arrow-right-circle" class="w-full" x-on:click="onglet = 'circuit'; $dispatch('modal-show', { name: 'transferer-modal' })">
                             {{ __('Transférer') }}
@@ -1231,9 +1342,11 @@
                             <flux:button size="sm" variant="outline" icon="arrow-right-circle" disabled class="w-full">{{ __('Transférer') }}</flux:button>
                         </flux:tooltip>
                     @endif
-                    <flux:tooltip content="{{ __('Bientôt disponible') }}">
-                        <flux:button size="sm" variant="outline" icon="document-plus" disabled class="w-full">{{ __('Créer une note') }}</flux:button>
-                    </flux:tooltip>
+                    @if ($this->droits['creerNote'])
+                        <flux:tooltip content="{{ __('Bientôt disponible') }}">
+                            <flux:button size="sm" variant="outline" icon="document-plus" disabled class="w-full">{{ __('Créer une note') }}</flux:button>
+                        </flux:tooltip>
+                    @endif
                     @can('imprimerBordereau', $courrier)
                         <flux:button size="sm" variant="outline" icon="printer" :href="route('courriers.bordereau', $courrier->id)" target="_blank" class="w-full">
                             {{ __('Imprimer') }}
@@ -1315,12 +1428,36 @@
                         @if ($this->dossiersAccessibles->isEmpty())
                             <flux:text class="text-zinc-500">{{ __('Aucun dossier de classement accessible. Créez-en un depuis "Dossiers & Archives".') }}</flux:text>
                         @else
-                            <flux:select wire:model="dossierAClasserId" :label="__('Dossier')" :placeholder="__('— Choisir un dossier —')">
+                            {{-- 2026-10-12, bug réel (capture d'écran utilisateur,
+                                 "Choisissez un dossier" affiché deux fois ET malgré
+                                 un dossier visiblement affiché) — deux correctifs :
+                                 1. <flux:select> (via <flux:with-field>, voir
+                                    vendor/livewire/flux/stubs/.../with-field.blade.php
+                                    ligne 49) rend DÉJÀ <flux:error :name="..."/>
+                                    automatiquement — le @error(...) manuel qui
+                                    suivait dupliquait le même message.
+                                 2. :placeholder="..." rend un <option value=""
+                                    disabled selected> (vendor, select/variants/
+                                    default.blade.php) — un <select> natif ne peut
+                                    PAS fiablement garder une option DÉSACTIVÉE
+                                    "sélectionnée" après le morph Livewire qui
+                                    synchronise wire:model=null : le navigateur
+                                    retombe silencieusement sur la première option
+                                    RÉELLE (ACTIVÉE) du menu, qui s'affiche donc
+                                    comme choisie alors que dossierAClasserId reste
+                                    bien null côté serveur (d'où le rejet correct à
+                                    la soumission, mais trompeur visuellement — un
+                                    seul dossier existant au moment du bug rendait
+                                    le symptôme particulièrement visible). Remplacé
+                                    par notre PROPRE première option, vide mais
+                                    ACTIVÉE — un <select> natif peut toujours
+                                    afficher fiablement une option activée. --}}
+                            <flux:select wire:model="dossierAClasserId" :label="__('Dossier')">
+                                <flux:select.option value="">{{ __('— Choisir un dossier —') }}</flux:select.option>
                                 @foreach ($this->dossiersAccessibles as $dossier)
                                     <flux:select.option value="{{ $dossier->id }}">{{ $dossier->nom }}</flux:select.option>
                                 @endforeach
                             </flux:select>
-                            @error('dossierAClasserId') <flux:text class="mt-1 text-sm text-brand-danger">{{ $message }}</flux:text> @enderror
                         @endif
 
                         <div class="flex items-center justify-between gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
@@ -1351,15 +1488,19 @@
                             {{ __('Une décharge sera générée avec un numéro de reçu unique, tracée dans l\'historique du courrier.') }}
                         </flux:text>
 
-                        <flux:select wire:model="dechargeEmprunteurId" :label="__('Emprunteur')" :placeholder="__('— Choisir un utilisateur —')">
+                        {{-- 2026-10-12 — mêmes deux correctifs que la modale
+                             "Classer dans un dossier" ci-dessus (@error
+                             redondant avec <flux:with-field>, placeholder
+                             désactivé peu fiable après un morph Livewire) : voir
+                             son commentaire détaillé pour le mécanisme exact. --}}
+                        <flux:select wire:model="dechargeEmprunteurId" :label="__('Emprunteur')">
+                            <flux:select.option value="">{{ __('— Choisir un utilisateur —') }}</flux:select.option>
                             @foreach ($this->utilisateursPourDecharge as $utilisateur)
                                 <flux:select.option value="{{ $utilisateur->id }}">{{ $utilisateur->name }}</flux:select.option>
                             @endforeach
                         </flux:select>
-                        @error('dechargeEmprunteurId') <flux:text class="mt-1 text-sm text-brand-danger">{{ $message }}</flux:text> @enderror
 
                         <flux:textarea wire:model="dechargeMotif" :label="__('Motif (optionnel)')" rows="2" />
-                        @error('dechargeMotif') <flux:text class="mt-1 text-sm text-brand-danger">{{ $message }}</flux:text> @enderror
 
                         @if ($courrier->dossierClassement?->reference_localisation_physique)
                             <flux:text class="text-xs text-zinc-400">
@@ -1375,10 +1516,42 @@
                 </flux:modal>
             @endif
 
+            {{-- 2026-10-13, retour utilisateur ("je ne peut pa mettre un
+                 delais") — le bouton "Traiter moi-même" de l'en-tête (plus
+                 haut dans ce fichier) ouvre désormais cette modale plutôt
+                 que d'agir directement : même patron que "Émettre une
+                 décharge" juste au-dessus (déclencheur → ouvrirXxx() →
+                 modale → action réelle), pour que le délai reste réglable
+                 avant de confirmer, préempli avec le SLA par défaut
+                 (ouvrirTraiterMoiMeme()). --}}
+            @if ($this->peutTraiterMoiMeme)
+                <flux:modal name="traiter-moi-meme-modal" class="w-full max-w-sm">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('Traiter moi-même') }}</flux:heading>
+                        <flux:text class="text-zinc-500">
+                            {{ __('Ce courrier vous sera affecté et son traitement démarrera immédiatement.') }}
+                        </flux:text>
+
+                        <div class="flex flex-wrap items-end gap-2">
+                            <flux:input type="number" min="1" wire:model="delaiValeur" size="sm" :label="__('Délai de traitement')" class="w-28" />
+                            <flux:select wire:model="delaiUnite" size="sm" :label="__('Unité')" class="w-28">
+                                <flux:select.option value="jours">{{ __('jours') }}</flux:select.option>
+                                <flux:select.option value="heures">{{ __('heures') }}</flux:select.option>
+                            </flux:select>
+                        </div>
+
+                        <div class="flex justify-end gap-2 border-t border-brand-border pt-4 dark:border-zinc-700">
+                            <flux:modal.close><flux:button variant="ghost">{{ __('Annuler') }}</flux:button></flux:modal.close>
+                            <flux:button variant="primary" icon="check" wire:click="traiterMoiMeme">{{ __('Confirmer') }}</flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
+            @endif
+
             @if ($courrier->expediteur_nom || $courrier->expediteur_organisation || $courrier->expediteur_telephone || $courrier->expediteur_email)
                 <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-3 flex items-center gap-2">
-                        <flux:icon.user class="size-4 text-brand-blue" />
+                        <flux:icon.user class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Informations sur l\'expéditeur') }}</flux:heading>
                     </div>
                     <dl class="space-y-2 text-sm">
@@ -1394,7 +1567,7 @@
             @if ($courrier->destinataire)
                 <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-3 flex items-center gap-2">
-                        <flux:icon.users class="size-4 text-brand-blue" />
+                        <flux:icon.users class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Informations sur le destinataire') }}</flux:heading>
                     </div>
                     <flux:text>{{ $courrier->destinataire }}</flux:text>

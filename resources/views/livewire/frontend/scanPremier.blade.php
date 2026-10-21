@@ -12,7 +12,7 @@
          ci-dessous dans une colonne étroite). --}}
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                 {{-- Même icône que sidebar.blade.php pour cette page (cohérence). --}}
                 <flux:icon.camera class="size-5" />
             </div>
@@ -173,7 +173,7 @@
          navigateur), gardé tel quel en plus de ce tableau. Même gabarit que
          userList.blade.php : carte de recherche séparée + carte tableau. --}}
     <div class="mt-6 flex items-center gap-3">
-        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
             <flux:icon.archive-box class="size-5" />
         </div>
         <div>
@@ -194,7 +194,7 @@
         @else
             <div class="overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <table class="w-full text-sm">
-                    <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+                    <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                         <tr>
                             <th class="py-3 pl-4 pr-3">{{ __('Nom du fichier') }}</th>
                             @if ($peutToutVoir)

@@ -69,6 +69,10 @@ class ShowCourrier extends Component
     // ni des chemins de stockage.
     public ?int $siteSelectionneId = null;
 
+    // 2026-10-09 — niveau Direction ajouté (OrganizationUnit::TYPE_DIRECTION),
+    // OPTIONNEL comme Site l'était déjà pour Département.
+    public ?int $directionSelectionneeId = null;
+
     public ?int $departementSelectionneId = null;
 
     public ?int $uniteSelectionneeId = null;
@@ -185,6 +189,7 @@ class ShowCourrier extends Component
             match ($courant->type) {
                 OrganizationUnit::TYPE_SUB_SERVICE, OrganizationUnit::TYPE_SERVICE => $this->uniteSelectionneeId = $courant->id,
                 OrganizationUnit::TYPE_DEPARTMENT => $this->departementSelectionneId = $courant->id,
+                OrganizationUnit::TYPE_DIRECTION => $this->directionSelectionneeId = $courant->id,
                 OrganizationUnit::TYPE_SITE => $this->siteSelectionneId = $courant->id,
                 default => null,
             };
@@ -193,12 +198,15 @@ class ShowCourrier extends Component
         }
     }
 
-    // Cascade Site → Département → Service/Unité (spec §16) — changer un
-    // niveau vide les niveaux dépendants, jamais un choix incohérent laissé
-    // affiché après un changement de niveau supérieur.
+    // Cascade Site → Direction → Département → Service/Unité (spec §16,
+    // niveau Direction ajouté le 2026-10-09) — changer un niveau vide les
+    // niveaux dépendants, jamais un choix incohérent laissé affiché après
+    // un changement de niveau supérieur.
     public function updated($nom): void
     {
         if ($nom === 'siteSelectionneId') {
+            $this->reset('directionSelectionneeId', 'departementSelectionneId', 'uniteSelectionneeId');
+        } elseif ($nom === 'directionSelectionneeId') {
             $this->reset('departementSelectionneId', 'uniteSelectionneeId');
         } elseif ($nom === 'departementSelectionneId') {
             $this->reset('uniteSelectionneeId');
@@ -257,10 +265,37 @@ class ShowCourrier extends Component
         return Auth::user()?->can('traiter', $this->courrier) ?? false;
     }
 
+    // 2026-10-13 — raccourci "Traiter moi-même" (voir CourrierPolicy::traiterMoiMeme()).
+    #[Computed]
+    public function peutTraiterMoiMeme(): bool
+    {
+        return Auth::user()?->can('traiterMoiMeme', $this->courrier) ?? false;
+    }
+
     #[Computed]
     public function peutValider(): bool
     {
         return Auth::user()?->can('valider', $this->courrier) ?? false;
+    }
+
+    // 2026-10-09 — extension du circuit générique (Signature DG / Trésorerie,
+    // voir WorkflowService). Mêmes principes que peutValider ci-dessus.
+    #[Computed]
+    public function peutEnvoyerSignatureDg(): bool
+    {
+        return Auth::user()?->can('envoyerSignatureDg', $this->courrier) ?? false;
+    }
+
+    #[Computed]
+    public function peutSignerDg(): bool
+    {
+        return Auth::user()?->can('signerDg', $this->courrier) ?? false;
+    }
+
+    #[Computed]
+    public function peutTraiterTresorerie(): bool
+    {
+        return Auth::user()?->can('traiterTresorerie', $this->courrier) ?? false;
     }
 
     // Module 1/4 — la réceptionniste clique "Transférer" (2026-09-15, voir
@@ -309,9 +344,10 @@ class ShowCourrier extends Component
         $courrier = $this->courrier;
 
         return collect([
-            'reaffecter', 'soumettreValidation', 'renvoyerCorrection', 'rejeter',
+            'reaffecter', 'soumettreValidation', 'validerDirectement', 'renvoyerCorrection', 'rejeter',
             'mettreEnAttente', 'reprendre', 'validerClassement', 'gererMotsCles',
-            'voirHistorique', 'voirTexteOcr', 'voirPiecesJointes',
+            'voirHistorique', 'voirTexteOcr', 'voirPiecesJointes', 'voirTraitementDocument',
+            'repondre', 'creerNote',
         ])->mapWithKeys(fn (string $abilite) => [$abilite => (bool) $user?->can($abilite, $courrier)])->all();
     }
 
@@ -377,9 +413,19 @@ class ShowCourrier extends Component
 
         $charge = app(WorkflowService::class)->chargeParCollaborateur($this->courrier->service_id);
 
+        // 2026-10-13, bug réel (retour utilisateur, "it is not working" après
+        // avoir accordé courriers.traiter_affecte à "Responsable de service")
+        // — le privilège seul ne suffit pas : CourrierPolicy::traiter() exige
+        // AUSSI d'être affectationCourante->user_id, mais cette liste
+        // n'incluait QUE le profil "Collaborateur", jamais le responsable
+        // lui-même — il ne pouvait donc jamais être choisi ici, quel que soit
+        // son privilège. "Responsable de service" ajouté à la liste des
+        // profils sélectionnables ; reste sans effet pour qui n'a pas le
+        // privilège (revérifié par CourrierPolicy::traiter() au moment
+        // d'agir, Règle n°6 — ce composant ne fait que le rendre choisissable).
         return User::query()
             ->where('service_id', $this->courrier->service_id)
-            ->whereHas('profil', fn ($q) => $q->where('nom', 'Collaborateur'))
+            ->whereHas('profil', fn ($q) => $q->whereIn('nom', ['Collaborateur', 'Responsable de service']))
             ->orderBy('name')
             ->get(['id', 'name'])
             ->map(fn (User $u) => ['id' => $u->id, 'name' => $u->name, 'charge' => $charge[$u->id] ?? 0])
@@ -402,6 +448,14 @@ class ShowCourrier extends Component
             ->get();
     }
 
+    // 2026-10-09 — niveau Direction (OrganizationUnit::TYPE_DIRECTION),
+    // enfant direct du Site, OPTIONNEL comme le reste de la cascade.
+    #[Computed]
+    public function directionsDisponibles()
+    {
+        return OrganizationUnit::enfantsActifsDe($this->siteSelectionneId, OrganizationUnit::TYPE_DIRECTION);
+    }
+
     #[Computed]
     public function departementsDisponibles()
     {
@@ -412,8 +466,12 @@ class ShowCourrier extends Component
         // retour anticipé ici : $this->siteSelectionneId === null est un
         // parent_id valide (racine), enfantsActifsDe() le gère nativement
         // (where('parent_id', null) → whereNull, comportement standard
-        // Eloquent) — pas un cas d'erreur à filtrer.
-        return OrganizationUnit::enfantsActifsDe($this->siteSelectionneId, OrganizationUnit::TYPE_DEPARTMENT);
+        // Eloquent) — pas un cas d'erreur à filtrer. 2026-10-09 — Direction
+        // AUSSI optionnelle : si choisie, le Département en dépend ; sinon
+        // on reste directement sous le Site.
+        $parentId = $this->directionSelectionneeId ?? $this->siteSelectionneId;
+
+        return OrganizationUnit::enfantsActifsDe($parentId, OrganizationUnit::TYPE_DEPARTMENT);
     }
 
     // Niveau "Service/Unité" — optionnel (spec §1 : un Département peut
@@ -504,6 +562,13 @@ class ShowCourrier extends Component
             'archive' => 'traite',
             'enregistre', 'en_attente_de_transfert', 'en_cours_de_transfert' => 'transfert',
             'en_attente_information', 'rejete' => $this->dernierePositionAvantPause(),
+            // 2026-10-09 — extension du circuit (Signature DG / Trésorerie) :
+            // pas d'étape dédiée dans cette barre fixe à 6 positions (évite
+            // d'ajouter 2 segments "Non applicable" en permanence pour les
+            // courriers qui n'empruntent jamais ce chemin) — reste affiché
+            // sur "Réponse" (toujours dépassé l'étape 'en_validation' pour
+            // arriver ici) tant que la clôture n'est pas encore atteinte.
+            'en_attente_signature_dg', 'en_attente_tresorerie' => 'en_validation',
             default => $this->courrier->statut,
         };
 
@@ -627,6 +692,9 @@ class ShowCourrier extends Component
             $this->peutAffecter,
             $this->peutTraiter,
             $this->peutValider,
+            $this->peutEnvoyerSignatureDg,
+            $this->peutSignerDg,
+            $this->peutTraiterTresorerie,
             $this->peutTransferer,
             $this->peutValiderService,
             $this->peutCloturerConfidentiel,
@@ -778,6 +846,56 @@ class ShowCourrier extends Component
         ]);
 
         unset($this->courrier);
+    }
+
+    // 2026-10-13, retour utilisateur ("je ne peut pa mettre un delais") —
+    // le bouton de l'en-tête n'a aucun champ délai à proximité (contrairement
+    // au bloc "Affecter" plus bas) : ouvre une modale dédiée avec son PROPRE
+    // délai, préremplie avec le même SLA par défaut que mount() utilise pour
+    // l'affectation normale, plutôt que de dépendre silencieusement d'une
+    // valeur déjà saisie ailleurs sur la page (ou pas saisie du tout).
+    public function ouvrirTraiterMoiMeme(): void
+    {
+        $this->authorize('traiterMoiMeme', $this->courrier);
+
+        $this->delaiValeur = SlaCalculatorService::delaiJours($this->courrier->sla_jours, $this->courrier->type_document);
+        $this->delaiUnite = 'jours';
+        $this->resetErrorBag(['delaiValeur', 'delaiUnite']);
+
+        Flux::modal('traiter-moi-meme-modal')->show();
+    }
+
+    // 2026-10-13, demande explicite de l'utilisateur ("isnt the another way
+    // to that without selecting his name") — raccourci "Traiter moi-même" :
+    // s'auto-affecte ET démarre le traitement en une seule action, sans
+    // passer par le menu déroulant "Affecter à" (où se choisir soi-même
+    // parmi ses propres collaborateurs était jugé peu naturel). Même
+    // garde-fou Règle n°6 que affecter() : courrierPour() revérifie
+    // l'autorisation serveur (CourrierPolicy::traiterMoiMeme()) avant
+    // d'agir, jamais déduite de la simple visibilité du bouton.
+    public function traiterMoiMeme(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('traiterMoiMeme');
+
+        $avecDelai = $this->delaiValeur !== null && Auth::user()->can('fixerDelai', $courrier);
+
+        if ($avecDelai) {
+            $this->validerDelai();
+        }
+
+        $reussi = $this->executer(function () use ($workflow, $courrier, $avecDelai) {
+            $workflow->affecter($courrier, Auth::user(), Auth::user());
+
+            if ($avecDelai) {
+                $workflow->fixerDelai($courrier->fresh(), $this->minutesDelai(), Auth::user());
+            }
+
+            $workflow->demarrerTraitement($courrier->fresh(), Auth::user());
+        }, __('Courrier affecté et traitement démarré.'));
+
+        if ($reussi) {
+            Flux::modal('traiter-moi-meme-modal')->close();
+        }
     }
 
     // Module 6 — première affectation. Le collaborateur choisi doit
@@ -1049,6 +1167,25 @@ class ShowCourrier extends Component
         $this->executer(fn () => $workflow->soumettrePourValidation($courrier, Auth::user(), $this->commentaireCirculation ?: null), __('Soumis pour validation.'));
     }
 
+    // 2026-10-14, demande explicite de l'utilisateur ("why can he validate
+    // directly" après "Traiter moi-même") — raccourci "soumettre + valider"
+    // en une seule action, visible uniquement quand le traiteur ET le
+    // validateur sont la même personne (CourrierPolicy::validerDirectement()).
+    // Les DEUX transitions réelles restent appelées l'une après l'autre
+    // (jamais une 3e transition raccourcie dans WorkflowService — le
+    // circuit générique garde ses étapes et son historique complet, Règle
+    // n°5, seul le NOMBRE DE CLICS change pour l'utilisateur).
+    public function validerDirectement(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('validerDirectement');
+        $commentaire = $this->commentaireCirculation ?: null;
+
+        $this->executer(function () use ($workflow, $courrier, $commentaire) {
+            $workflow->soumettrePourValidation($courrier, Auth::user(), $commentaire);
+            $workflow->valider($courrier->fresh(), Auth::user(), $commentaire);
+        }, __('Courrier validé — traité.'));
+    }
+
     public function valider(WorkflowService $workflow): void
     {
         $courrier = $this->courrierPour('valider');
@@ -1063,6 +1200,35 @@ class ShowCourrier extends Component
         $this->validate(['motifRenvoi' => ['required', 'string', 'min:5', 'max:500']], [], ['motifRenvoi' => __('motif du renvoi')]);
 
         $this->executer(fn () => $workflow->renvoyerPourCorrection($courrier, Auth::user(), $this->motifRenvoi), __('Renvoyé pour correction.'), 'warning');
+    }
+
+    // 2026-10-09 — extension du circuit générique (Signature DG / Trésorerie).
+    public function envoyerSignatureDg(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('envoyerSignatureDg');
+
+        $this->executer(fn () => $workflow->envoyerPourSignatureDg($courrier, Auth::user(), $this->commentaireCirculation ?: null), __('Courrier envoyé en signature DG.'));
+    }
+
+    public function signerEtCloturer(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('signerDg');
+
+        $this->executer(fn () => $workflow->signerEtCloturer($courrier, Auth::user(), $this->commentaireCirculation ?: null), __('Courrier signé et clôturé.'));
+    }
+
+    public function signerEtEnvoyerTresorerie(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('signerDg');
+
+        $this->executer(fn () => $workflow->signerEtEnvoyerTresorerie($courrier, Auth::user(), $this->commentaireCirculation ?: null), __('Courrier signé et transmis à la trésorerie.'));
+    }
+
+    public function traiterParTresorerie(WorkflowService $workflow): void
+    {
+        $courrier = $this->courrierPour('traiterTresorerie');
+
+        $this->executer(fn () => $workflow->traiterParTresorerie($courrier, Auth::user(), $this->commentaireCirculation ?: null), __('Courrier traité par la trésorerie.'));
     }
 
     public function mettreEnAttente(WorkflowService $workflow): void
@@ -1128,10 +1294,14 @@ class ShowCourrier extends Component
 
     private function collaborateurDuServiceOuEchec(Courrier $courrier): ?User
     {
+        // 2026-10-13 — même correctif que collaborateursDuService() ci-dessus
+        // (liste affichée), gardé synchronisé : "Responsable de service"
+        // ajouté ici aussi, sinon ce garde-fou Règle n°6 rejette un choix
+        // pourtant valide dans la liste affichée.
         $collaborateur = User::query()
             ->where('id', $this->collaborateurSelectionne)
             ->where('service_id', $courrier->service_id)
-            ->whereHas('profil', fn ($q) => $q->where('nom', 'Collaborateur'))
+            ->whereHas('profil', fn ($q) => $q->whereIn('nom', ['Collaborateur', 'Responsable de service']))
             ->first();
 
         if (! $collaborateur) {
@@ -1157,7 +1327,7 @@ class ShowCourrier extends Component
 
     private function reinitialiserCirculation(): void
     {
-        $this->reset('collaborateurSelectionne', 'siteSelectionneId', 'departementSelectionneId', 'uniteSelectionneeId', 'confidentialiteSelectionnee', 'destinataireTransfertChoisi', 'motifReaffectation', 'motifRenvoi', 'motifAttente', 'motifRejet', 'commentaireCirculation', 'delaiValeur', 'delaiUnite', 'motifDelai');
+        $this->reset('collaborateurSelectionne', 'siteSelectionneId', 'directionSelectionneeId', 'departementSelectionneId', 'uniteSelectionneeId', 'confidentialiteSelectionnee', 'destinataireTransfertChoisi', 'motifReaffectation', 'motifRenvoi', 'motifAttente', 'motifRejet', 'commentaireCirculation', 'delaiValeur', 'delaiUnite', 'motifDelai');
         unset(
             $this->courrier,
             $this->etapesParcours,
@@ -1165,6 +1335,9 @@ class ShowCourrier extends Component
             $this->peutAffecter,
             $this->peutTraiter,
             $this->peutValider,
+            $this->peutEnvoyerSignatureDg,
+            $this->peutSignerDg,
+            $this->peutTraiterTresorerie,
             $this->peutTransferer,
             $this->peutValiderService,
             $this->peutCloturerConfidentiel,
@@ -1172,6 +1345,7 @@ class ShowCourrier extends Component
             $this->collaborateursDuService,
             $this->destinatairesTransfert,
             $this->sitesDisponibles,
+            $this->directionsDisponibles,
             $this->departementsDisponibles,
             $this->unitesDisponibles,
         );

@@ -4,6 +4,7 @@ namespace App\Livewire\Backend;
 
 use App\Models\DelegationDga;
 use App\Models\User;
+use App\Notifications\DelegationDgaNotification;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -97,7 +98,7 @@ class DelegationDgaIndex extends Component
             return;
         }
 
-        DelegationDga::create([
+        $delegation = DelegationDga::create([
             'delegant_id' => $data['delegantId'],
             'delegataire_id' => $data['delegataireId'],
             'motif' => $data['motif'] ?: null,
@@ -106,6 +107,10 @@ class DelegationDgaIndex extends Component
             'actif' => true,
             'active_par_id' => Auth::id(),
         ]);
+
+        // 2026-10-09 (audit "list me all") — le délégataire ne savait
+        // jusqu'ici jamais qu'il avait gagné ce pouvoir temporaire.
+        $delegation->delegataire?->notify(new DelegationDgaNotification($delegation, 'activee', envoyePar: Auth::user()));
 
         $this->reset(['delegantId', 'delegataireId', 'motif', 'finLe']);
         unset($this->delegationsActives);
@@ -121,6 +126,8 @@ class DelegationDgaIndex extends Component
             'desactive_par_id' => Auth::id(),
             'desactive_le' => now(),
         ]);
+
+        $delegation->delegataire?->notify(new DelegationDgaNotification($delegation, 'desactivee', envoyePar: Auth::user()));
 
         unset($this->delegationsActives, $this->historique);
         $this->toast(__('Délégation désactivée.'));

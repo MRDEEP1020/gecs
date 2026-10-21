@@ -42,8 +42,8 @@
                                 'mx-auto flex size-7 items-center justify-center rounded-full',
                                 'text-zinc-300 dark:text-zinc-600' => $jour['horsMois'],
                                 'text-black dark:text-white' => ! $jour['horsMois'] && ! $jour['estDansSemaineAffichee'],
-                                'bg-brand-blue text-white' => $jour['estAujourdhui'],
-                                'bg-brand-blue-pale text-brand-blue' => $jour['estDansSemaineAffichee'] && ! $jour['estAujourdhui'],
+                                'bg-brand-accent text-white' => $jour['estAujourdhui'],
+                                'bg-brand-accent-pale text-brand-accent' => $jour['estDansSemaineAffichee'] && ! $jour['estAujourdhui'],
                             ])
                         >
                             {{ $jour['numero'] }}
@@ -71,7 +71,7 @@
                     <div class="bg-white dark:bg-zinc-900"></div>
                     @foreach ($this->joursSemaine() as $jour)
                         <div class="bg-white p-2 dark:bg-zinc-900">
-                            <div class="flex items-baseline gap-1.5 {{ $jour['estAujourdhui'] ? 'text-brand-blue' : '' }}">
+                            <div class="flex items-baseline gap-1.5 {{ $jour['estAujourdhui'] ? 'text-brand-accent' : '' }}">
                                 <span class="text-lg font-semibold">{{ $jour['numero'] }}</span>
                                 <span class="text-xs text-zinc-400">{{ $jour['libelle'] }}</span>
                             </div>
@@ -156,7 +156,7 @@
                                     <a
                                         href="{{ route('courriers.rechercher', ['dateDebut' => $jour['date'], 'dateFin' => $jour['date']]) }}"
                                         wire:navigate
-                                        class="block px-1.5 text-xs text-zinc-400 hover:text-brand-blue"
+                                        class="block px-1.5 text-xs text-zinc-400 hover:text-brand-accent"
                                     >
                                         {{ __('+:n autres', ['n' => $donneesJour['surplus']]) }}
                                     </a>
@@ -191,8 +191,8 @@
                                 class="pointer-events-none absolute z-10"
                                 style="top: 0; left: calc(3rem + ({{ $indexAujourdhui }} / 5) * (100% - 3rem)); width: calc((100% - 3rem) / 5);"
                             >
-                                <span class="absolute -top-1 -left-1.5 size-2.5 rounded-full bg-brand-blue"></span>
-                                <div class="border-t-2 border-brand-blue"></div>
+                                <span class="absolute -top-1 -left-1.5 size-2.5 rounded-full bg-brand-accent"></span>
+                                <div class="border-t-2 border-brand-accent"></div>
                             </div>
                         @endif
 

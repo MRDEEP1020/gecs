@@ -7,7 +7,7 @@
 
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                 <flux:icon.users class="size-5" />
             </div>
             <div>
@@ -72,7 +72,7 @@
          style de carte partout", voir mémoire dashboard_module10_navigation). --}}
     <div class="mt-6 overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <table class="w-full text-sm">
-            <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+            <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                 <tr>
                     <th class="cursor-pointer select-none py-3 pl-4 pr-3" wire:click="trierPar('name')">
                         {{ __('Nom') }}
@@ -125,7 +125,7 @@
                         <td class="py-3 pr-3 text-zinc-500">{{ $this->departementLabelDe($utilisateur) ?? '—' }}</td>
                         <td class="py-3 pr-3">
                             @if ($utilisateur->profil)
-                                <span class="inline-flex items-center rounded-full bg-brand-blue-pale px-2 py-0.5 text-xs font-medium text-brand-blue">{{ $utilisateur->profil->nom }}</span>
+                                <span class="inline-flex items-center rounded-full bg-brand-accent-pale px-2 py-0.5 text-xs font-medium text-brand-accent">{{ $utilisateur->profil->nom }}</span>
                             @else
                                 <span class="text-zinc-400">—</span>
                             @endif
@@ -186,7 +186,7 @@
     <flux:modal name="user-ajout" class="w-full max-w-3xl">
         <form wire:submit="ajouter" class="space-y-6">
             <div class="flex items-center gap-3">
-                <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                     <flux:icon.user-plus class="size-5" />
                 </div>
                 <div>
@@ -221,13 +221,22 @@
                          "Aucun" réelle et cliquable, pas seulement un
                          placeholder (piège flux:select "freeze" déjà
                          rencontré). --}}
-                    <div class="grid gap-4 sm:grid-cols-3">
+                    <div class="grid gap-4 sm:grid-cols-4">
                         <flux:select wire:model.live="ajoutSiteSelectionneId" :label="__('Site')">
                             <flux:select.option value="">{{ __('— Aucun (racine) —') }}</flux:select.option>
                             @foreach ($this->sitesDisponibles as $site)
                                 <flux:select.option value="{{ $site->id }}">{{ $site->name }}</flux:select.option>
                             @endforeach
                         </flux:select>
+                        {{-- 2026-10-09 — niveau Direction, OPTIONNEL comme le reste. --}}
+                        @if ($this->ajoutDirectionsDisponibles->isNotEmpty())
+                            <flux:select wire:model.live="ajoutDirectionSelectionneeId" :label="__('Direction')">
+                                <flux:select.option value="">{{ __('— Aucune (direct) —') }}</flux:select.option>
+                                @foreach ($this->ajoutDirectionsDisponibles as $direction)
+                                    <flux:select.option value="{{ $direction->id }}">{{ $direction->name }}</flux:select.option>
+                                @endforeach
+                            </flux:select>
+                        @endif
                         @if ($this->ajoutDepartementsDisponibles->isNotEmpty())
                             <flux:select wire:model.live="ajoutDepartementSelectionneId" :label="__('Département')">
                                 <flux:select.option value="">{{ __('— Aucun (ex. accueil) —') }}</flux:select.option>
@@ -268,7 +277,7 @@
                             <flux:avatar size="lg" circle :initials="$ajoutNom !== '' ? \Illuminate\Support\Str::substr($ajoutNom, 0, 2) : '?'" />
                             <div>
                                 <input type="file" wire:model="ajoutPhoto" accept=".jpg,.jpeg,.png" class="hidden" id="ajout-photo" />
-                                <label for="ajout-photo" class="cursor-pointer text-sm font-medium text-brand-blue hover:underline">{{ __('Choisir une photo') }}</label>
+                                <label for="ajout-photo" class="cursor-pointer text-sm font-medium text-brand-accent hover:underline">{{ __('Choisir une photo') }}</label>
                                 <div class="text-xs text-zinc-500">{{ __('Format recommandé : JPG, PNG') }}<br>{{ __('Taille max : 2 Mo') }}</div>
                                 <div wire:loading wire:target="ajoutPhoto" class="text-xs text-zinc-500">{{ __('Envoi en cours…') }}</div>
                                 <flux:error name="ajoutPhoto" />
@@ -326,7 +335,7 @@
             @php $utilisateur = $this->utilisateurEnEdition; @endphp
             <div x-data="{ onglet: 'general' }" class="space-y-6">
                 <div class="flex items-center gap-3">
-                    <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                    <div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                         <flux:icon.user class="size-5" />
                     </div>
                     <div>
@@ -352,7 +361,7 @@
                             ['cle' => 'destinataires', 'label' => __('Destinataires de transfert'), 'icon' => 'paper-airplane'],
                             $peutGererAcces ? ['cle' => 'perimetre', 'label' => __('Périmètre d\'accès'), 'icon' => 'map'] : null,
                         ]) as $tab)
-                            <button type="button" x-on:click="onglet = '{{ $tab['cle'] }}'" :class="onglet === '{{ $tab['cle'] }}' ? 'bg-brand-blue-pale text-brand-blue' : 'text-brand-text-secondary hover:bg-zinc-50 dark:hover:bg-zinc-800/60'" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors">
+                            <button type="button" x-on:click="onglet = '{{ $tab['cle'] }}'" :class="onglet === '{{ $tab['cle'] }}' ? 'bg-brand-accent-pale text-brand-accent' : 'text-brand-text-secondary hover:bg-zinc-50 dark:hover:bg-zinc-800/60'" class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors">
                                 <flux:icon :icon="$tab['icon']" class="size-4 shrink-0" />
                                 <span class="truncate">{{ $tab['label'] }}</span>
                             </button>
@@ -391,7 +400,7 @@
                                     <flux:avatar size="lg" circle :initials="$utilisateur->initials()" :src="$utilisateur->photoUrl()" />
                                     <div>
                                         <input type="file" wire:model="editionPhoto" accept=".jpg,.jpeg,.png" class="hidden" id="edition-photo" />
-                                        <label for="edition-photo" class="cursor-pointer text-sm font-medium text-brand-blue hover:underline">{{ __('Changer la photo') }}</label>
+                                        <label for="edition-photo" class="cursor-pointer text-sm font-medium text-brand-accent hover:underline">{{ __('Changer la photo') }}</label>
                                         <div class="text-xs text-zinc-500">{{ __('Format recommandé : JPG, PNG') }}<br>{{ __('Taille max : 2 Mo') }}</div>
                                         <flux:error name="editionPhoto" />
                                     </div>
@@ -403,13 +412,22 @@
                                 {{-- 2026-09-23, même cascade que la modale
                                      "Ajouter" ci-dessus — non obligatoire à
                                      aucun niveau, même raison. --}}
-                                <div class="grid gap-4 sm:grid-cols-3">
+                                <div class="grid gap-4 sm:grid-cols-4">
                                     <flux:select wire:model.live="editionSiteSelectionneId" :label="__('Site')" placeholder="{{ __('— Aucun (racine) —') }}">
                                         <flux:select.option value="">{{ __('— Aucun (racine) —') }}</flux:select.option>
                                         @foreach ($this->sitesDisponibles as $site)
                                             <flux:select.option value="{{ $site->id }}">{{ $site->name }}</flux:select.option>
                                         @endforeach
                                     </flux:select>
+                                    {{-- 2026-10-09 — niveau Direction, OPTIONNEL comme le reste. --}}
+                                    @if ($this->editionDirectionsDisponibles->isNotEmpty())
+                                        <flux:select wire:model.live="editionDirectionSelectionneeId" :label="__('Direction')" placeholder="{{ __('— Aucune (direct) —') }}">
+                                            <flux:select.option value="">{{ __('— Aucune (direct) —') }}</flux:select.option>
+                                            @foreach ($this->editionDirectionsDisponibles as $direction)
+                                                <flux:select.option value="{{ $direction->id }}">{{ $direction->name }}</flux:select.option>
+                                            @endforeach
+                                        </flux:select>
+                                    @endif
                                     @if ($this->editionDepartementsDisponibles->isNotEmpty())
                                         <flux:select wire:model.live="editionDepartementSelectionneId" :label="__('Département')" placeholder="{{ __('— Aucun (ex. accueil) —') }}">
                                             <flux:select.option value="">{{ __('— Aucun (ex. accueil) —') }}</flux:select.option>
@@ -464,7 +482,7 @@
                             <flux:text class="text-zinc-500">{{ __('Sélectionnez les modules auxquels l\'utilisateur aura accès.') }}</flux:text>
                             <button type="button" wire:click="ouvrirPermissions({{ $utilisateur->id }})" class="flex w-full items-center justify-between rounded-xl border border-brand-border p-4 text-left hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800/60">
                                 <div class="flex items-center gap-3">
-                                    <flux:icon.shield-check class="size-5 text-brand-blue" />
+                                    <flux:icon.shield-check class="size-5 text-brand-accent" />
                                     <div>
                                         <div class="font-medium">{{ __('Configurer les permissions') }}</div>
                                         <div class="text-xs text-zinc-500">{{ __('Choisissez un ou plusieurs modules pour définir les accès de cet utilisateur.') }}</div>
@@ -694,7 +712,7 @@
             @php $utilisateur = $this->utilisateurEnEdition; @endphp
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
-                    <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                    <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                         <flux:icon.shield-check class="size-5" />
                     </div>
                     <div>
@@ -707,7 +725,7 @@
                     {{-- Modules --}}
                     <div class="space-y-1 lg:max-h-104 lg:overflow-y-auto">
                         @foreach ($this->modules as $module)
-                            <button type="button" wire:click="$set('modulePermissionSelectionne', '{{ $module['cle'] }}')" class="flex w-full items-center justify-between gap-2 rounded-lg p-2.5 text-left text-sm {{ $modulePermissionSelectionne === $module['cle'] ? 'bg-brand-blue-pale text-brand-blue' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60' }}">
+                            <button type="button" wire:click="$set('modulePermissionSelectionne', '{{ $module['cle'] }}')" class="flex w-full items-center justify-between gap-2 rounded-lg p-2.5 text-left text-sm {{ $modulePermissionSelectionne === $module['cle'] ? 'bg-brand-accent-pale text-brand-accent' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60' }}">
                                 <span class="flex items-center gap-2">
                                     <flux:icon :icon="$module['icon']" class="size-4" />
                                     {{ $module['label'] }}
@@ -729,7 +747,7 @@
                                         <span class="flex items-center gap-2">
                                             <span class="font-medium">{{ $permission->nom }}</span>
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs {{ match ($permission->type) {
-                                                'lecture' => 'bg-brand-blue/10 text-brand-blue',
+                                                'lecture' => 'bg-brand-accent/10 text-brand-accent',
                                                 'administratif' => 'bg-brand-danger/10 text-brand-danger',
                                                 default => 'bg-brand-warning/10 text-brand-warning',
                                             } }}">

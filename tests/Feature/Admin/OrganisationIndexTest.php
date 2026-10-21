@@ -8,7 +8,9 @@ use App\Models\Privilege;
 use App\Models\Profil;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\OrganisationRattachementNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -135,9 +137,40 @@ class OrganisationIndexTest extends TestCase
 
         $site = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_SITE]);
 
+        // 2026-10-09 — niveau Direction ajouté (voir CHANGELOG-AGENT.md) :
+        // le type proposé par défaut pour l'enfant d'un Site est désormais
+        // Direction, plus Département directement.
         Livewire::test(OrganisationIndex::class)
             ->call('ouvrirCreation', $site->id)
+            ->assertSet('typeNoeud', OrganizationUnit::TYPE_DIRECTION);
+
+        $direction = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_DIRECTION, 'parent_id' => $site->id]);
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('ouvrirCreation', $direction->id)
             ->assertSet('typeNoeud', OrganizationUnit::TYPE_DEPARTMENT);
+    }
+
+    // 2026-10-09 — second bouton "Ajouter un département directement" sur
+    // un Site (voir organisationIndex.blade.php) : un Département n'a pas
+    // forcément de Direction au-dessus (ex. "Département Informatique").
+    public function test_ouvrir_creation_accepte_un_type_force_pour_un_departement_direct_sous_site(): void
+    {
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $this->actingAs($admin);
+
+        $site = OrganizationUnit::factory()->create(['type' => OrganizationUnit::TYPE_SITE]);
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('ouvrirCreation', $site->id, OrganizationUnit::TYPE_DEPARTMENT)
+            ->assertSet('typeNoeud', OrganizationUnit::TYPE_DEPARTMENT)
+            ->set('nomNoeud', 'Département Informatique')
+            ->call('enregistrerNoeud')
+            ->assertHasNoErrors();
+
+        $noeud = OrganizationUnit::where('name', 'Département Informatique')->firstOrFail();
+        $this->assertSame($site->id, $noeud->parent_id);
+        $this->assertSame(OrganizationUnit::TYPE_DEPARTMENT, $noeud->type);
     }
 
     // 2026-09-23, demande explicite de l'utilisateur ("on the form it shows
@@ -209,6 +242,7 @@ class OrganisationIndexTest extends TestCase
 
     public function test_rattacher_puis_retirer_un_utilisateur(): void
     {
+        Notification::fake();
         $admin = $this->utilisateurAvecProfil('Administrateur');
         $unite = OrganizationUnit::factory()->create();
         $membre = $this->utilisateurAvecProfil('Collaborateur');
@@ -222,12 +256,31 @@ class OrganisationIndexTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertTrue($unite->utilisateurs()->where('users.id', $membre->id)->exists());
+        // 2026-10-09 (audit "list me all").
+        Notification::assertSentTo($membre, OrganisationRattachementNotification::class, fn ($n) => $n->action === 'rattache' && $n->envoyePar?->id === $admin->id);
 
         Livewire::test(OrganisationIndex::class)
             ->call('selectionnerNoeud', $unite->id)
             ->call('retirerUtilisateur', $membre->id);
 
         $this->assertFalse($unite->utilisateurs()->where('users.id', $membre->id)->exists());
+    }
+
+    // 2026-10-09 (audit "list me all").
+    public function test_definir_comme_responsable_notifie_le_nouveau_responsable(): void
+    {
+        Notification::fake();
+        $admin = $this->utilisateurAvecProfil('Administrateur');
+        $unite = OrganizationUnit::factory()->create();
+        $futurResponsable = $this->utilisateurAvecProfil('Responsable de service');
+        $this->actingAs($admin);
+
+        Livewire::test(OrganisationIndex::class)
+            ->call('selectionnerNoeud', $unite->id)
+            ->call('definirCommeResponsable', $futurResponsable->id);
+
+        $this->assertSame($futurResponsable->id, $unite->fresh()->responsible_user_id);
+        Notification::assertSentTo($futurResponsable, OrganisationRattachementNotification::class, fn ($n) => $n->action === 'responsable' && $n->envoyePar?->id === $admin->id);
     }
 
     // 2026-09-24 — la fonction d'un membre se corrige après coup.

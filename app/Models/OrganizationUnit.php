@@ -31,6 +31,19 @@ class OrganizationUnit extends Model
 
     public const TYPE_SITE = 'site';
 
+    // 2026-10-09 — retour utilisateur direct sur un vrai organigramme
+    // (NSIA Assurances Cameroun) : "direction is not a department it is a
+    // direction and a direction has a department under it". Le modèle à 5
+    // niveaux ne distinguait pas "Direction" de "Département" (les deux
+    // tombaient sur TYPE_DEPARTMENT) — une vraie Direction (ex. "Direction
+    // Corporate") NE PEUT PAS avoir un Département comme enfant tant que
+    // les deux partagent le même rang dans ORDRE_TYPES (la validation de
+    // enregistrerNoeud() exige un rang STRICTEMENT croissant). Ajouté comme
+    // 6ème niveau, entre Site et Département — jamais ponté à un service
+    // réel (voir ServiceReelSynchroniseur::TYPES_SYNCHRONISES, inchangé),
+    // purement structurel comme Company/Site.
+    public const TYPE_DIRECTION = 'direction';
+
     public const TYPE_DEPARTMENT = 'department';
 
     public const TYPE_SERVICE = 'service';
@@ -43,6 +56,7 @@ class OrganizationUnit extends Model
     public const ORDRE_TYPES = [
         self::TYPE_COMPANY,
         self::TYPE_SITE,
+        self::TYPE_DIRECTION,
         self::TYPE_DEPARTMENT,
         self::TYPE_SERVICE,
         self::TYPE_SUB_SERVICE,

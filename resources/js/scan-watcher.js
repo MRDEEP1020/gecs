@@ -81,6 +81,20 @@ async function oublierDossier(db) {
     signalerChangement();
 }
 
+// 2026-10-08 (retour utilisateur : "reset the app so those olds ones can
+// be new again") — vide UNIQUEMENT le suivi "déjà traité" (STORE_FICHIERS,
+// voir fichierTraite()/marquerFichierTraite()), jamais la configuration du
+// dossier (STORE_DOSSIER) elle-même : un fichier déjà présent dans le
+// dossier surveillé, auparavant importé (ou rejeté), redevient éligible à
+// un nouvel import au prochain cycle — utile en test/démo, sans devoir
+// re-choisir le dossier ni couper la surveillance. signalerChangement()
+// n'est PAS appelé ici : contrairement à oublierDossier()/definirActif(),
+// vider ce store ne change ni l'état affiché (etat/actif/permission) ni
+// rien que les autres onglets auraient besoin de resynchroniser.
+async function viderFichiersTraites(db) {
+    await demande(transaction(db, STORE_FICHIERS, 'readwrite').clear());
+}
+
 // 2026-09-24 (voir DECISIONS.md "Dossier surveillé : configuration dans
 // l'administration") — activation/désactivation PERSISTANTE de l'import
 // automatique sur ce poste, pilotée depuis la page d'administration.
@@ -289,6 +303,7 @@ window.ScanWatcher = {
     dossierEnregistre,
     enregistrerDossier,
     oublierDossier,
+    viderFichiersTraites,
     estActif,
     definirActif,
     surChangement,
@@ -334,6 +349,9 @@ document.addEventListener('alpine:init', () => {
         // l'utilisateur (2026-09-09), voir DECISIONS.md.
         journal: {},
         messageErreur: '',
+        // 2026-10-08 — confirmation après reinitialiserFichiersTraites(),
+        // distincte de messageErreur (pas une erreur).
+        messageConfirmation: '',
         messages: {},
         intervalId: null,
         desabonner: null,
@@ -378,6 +396,8 @@ document.addEventListener('alpine:init', () => {
         // (Re)lit la configuration de CE poste et en déduit l'état affiché —
         // appelé au chargement et à chaque changement de configuration.
         async charger() {
+            this.messageConfirmation = '';
+
             const enregistre = await window.ScanWatcher.dossierEnregistre(this.db);
 
             this.handle = enregistre?.handle ?? null;
@@ -448,6 +468,15 @@ document.addEventListener('alpine:init', () => {
         async oublier() {
             await window.ScanWatcher.oublierDossier(this.db);
             await this.charger();
+        },
+
+        // 2026-10-08 — voir viderFichiersTraites() ci-dessus. messageConfirmation
+        // distinct de messageErreur (pas une erreur) ; effacé au prochain
+        // changement d'état réel (charger()) pour ne jamais rester affiché
+        // après une action qui le rend obsolète (ex. changer de dossier).
+        async reinitialiserFichiersTraites() {
+            await window.ScanWatcher.viderFichiersTraites(this.db);
+            this.messageConfirmation = this.messages.msgFichiersReinitialises;
         },
 
         // requestPermission() exige un vrai geste utilisateur : toujours

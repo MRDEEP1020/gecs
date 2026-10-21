@@ -10,12 +10,15 @@ use App\Models\Courrier;
 use App\Models\CourrierBrouillon;
 use App\Models\CourrierHistorique;
 use App\Models\OrganizationUnit;
+use App\Models\Privilege;
 use App\Models\Profil;
 use App\Models\RegleClassement;
 use App\Models\Service;
 use App\Models\User;
+use App\Notifications\CourrierNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -148,8 +151,10 @@ class RegistrationFormTest extends TestCase
         // AUTOMATIQUE (déjà possible sans code via une règle de classement,
         // voir DECISIONS.md "Circuit courrier entrant") — pas par une valeur
         // saisie dans le formulaire.
+        Notification::fake();
         $agent = $this->utilisateurAvecProfil('Agent');
-        $dsin = Service::factory()->create(['code' => 'DSIN']);
+        $responsableDsin = $this->utilisateurAvecProfil('Responsable de service');
+        $dsin = Service::factory()->create(['code' => 'DSIN', 'responsable_id' => $responsableDsin->id]);
         RegleClassement::factory()->create([
             'mots_cles' => ['sinistre'],
             'service_propose_id' => $dsin->id,
@@ -171,6 +176,11 @@ class RegistrationFormTest extends TestCase
         $courrier = $dsin->courriers()->firstOrFail();
         $this->assertSame('enregistre', $courrier->statut);
         $this->assertSame($dsin->id, $courrier->service_id);
+
+        // 2026-10-12, même bug que le test d'envoi direct ci-dessous : le
+        // routage automatique d'un sinistre sautait aussi la notification.
+        $this->assertTrue(CourrierHistorique::where('courrier_id', $courrier->id)->where('action', 'service_valide_dga')->exists());
+        Notification::assertSentTo($responsableDsin, CourrierNotification::class, fn ($n) => $n->action === 'service_valide_dga');
     }
 
     // Filet de sécurité (2026-09-15) : si la classification ne résout aucun
@@ -197,6 +207,126 @@ class RegistrationFormTest extends TestCase
         $courrier = Courrier::firstOrFail();
         $this->assertSame('en_attente_de_transfert', $courrier->statut);
         $this->assertNull($courrier->service_id);
+    }
+
+    // 2026-10-08 — privilège courriers.envoyer_direct_service (retour
+    // utilisateur : "make the agent start sending courier to the service
+    // concerné without passing throught the direction service... make
+    // that option as a priviledge"). Un agent qui le possède ET choisit
+    // lui-même un service saute la validation DGA, même mécanisme que le
+    // routage direct d'un sinistre — mais optionnel (voir test suivant).
+    public function test_un_agent_avec_le_privilege_envoie_un_courrier_entrant_direct_au_service(): void
+    {
+        Notification::fake();
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $agent->privilegesDirectes()->attach(Privilege::where('cle', 'courriers.envoyer_direct_service')->value('id'));
+        $responsable = $this->utilisateurAvecProfil('Responsable de service');
+        $service = Service::factory()->create(['code' => 'DI', 'responsable_id' => $responsable->id]);
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'entrant')
+            ->set('form.date_mouvement', now()->format('Y-m-d'))
+            ->set('form.objet', 'Courrier envoyé directement au service')
+            ->set('form.type_document', 'Lettre')
+            ->set('form.mode_reception', 'email')
+            ->set('form.priorite', 'normale')
+            ->set('form.confidentialite', 1)
+            ->set('form.service_id', $service->id)
+            ->call('enregistrer')
+            ->assertHasNoErrors();
+
+        $courrier = Courrier::firstOrFail();
+        $this->assertSame('enregistre', $courrier->statut);
+        $this->assertSame($service->id, $courrier->service_id);
+
+        // 2026-10-12, bug réel (retour utilisateur, "no notification of the
+        // new courrier been transfere to him why") — ce chemin saute
+        // WorkflowService::validerService() (seul endroit qui notifiait
+        // jusqu'ici), donc le responsable n'était jamais prévenu. Règle n°5 —
+        // doit aussi laisser une trace d'historique, pas seulement "creation".
+        $this->assertTrue(CourrierHistorique::where('courrier_id', $courrier->id)->where('action', 'service_valide_dga')->exists());
+        Notification::assertSentTo($responsable, CourrierNotification::class, fn ($n) => $n->action === 'service_valide_dga' && $n->envoyePar?->id === $agent->id);
+    }
+
+    // Le privilège rend le choix du service POSSIBLE, jamais obligatoire :
+    // un agent qui le possède mais ne choisit rien garde le circuit normal
+    // (validation DGA), exactement comme avant ce privilège.
+    public function test_un_agent_avec_le_privilege_qui_ne_choisit_aucun_service_garde_le_circuit_dga(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $agent->privilegesDirectes()->attach(Privilege::where('cle', 'courriers.envoyer_direct_service')->value('id'));
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'entrant')
+            ->set('form.date_mouvement', now()->format('Y-m-d'))
+            ->set('form.objet', 'Courrier sans service choisi')
+            ->set('form.type_document', 'Lettre')
+            ->set('form.mode_reception', 'email')
+            ->set('form.priorite', 'normale')
+            ->set('form.confidentialite', 1)
+            ->call('enregistrer')
+            ->assertHasNoErrors();
+
+        $courrier = Courrier::firstOrFail();
+        $this->assertSame('en_attente_de_transfert', $courrier->statut);
+        $this->assertNull($courrier->service_id);
+    }
+
+    // Règle n°6 — un agent SANS le privilège ne peut pas court-circuiter la
+    // validation DGA en forgeant form.service_id directement (requête
+    // Livewire manipulée) : RegistrationForm::enregistrer() revérifie le
+    // privilège lui-même, jamais confiance en ce que $data contient déjà.
+    public function test_un_agent_sans_le_privilege_ne_peut_pas_forger_lenvoi_direct(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $service = Service::factory()->create(['code' => 'DI']);
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'entrant')
+            ->set('form.date_mouvement', now()->format('Y-m-d'))
+            ->set('form.objet', 'Tentative de contournement')
+            ->set('form.type_document', 'Lettre')
+            ->set('form.mode_reception', 'email')
+            ->set('form.priorite', 'normale')
+            ->set('form.confidentialite', 1)
+            ->set('form.service_id', $service->id)
+            ->call('enregistrer')
+            ->assertHasNoErrors();
+
+        $courrier = Courrier::firstOrFail();
+        $this->assertSame('en_attente_de_transfert', $courrier->statut);
+        $this->assertNull($courrier->service_id);
+    }
+
+    // Le sélecteur de service (cascade Site/Département/Service) ne
+    // s'affiche pour un courrier ENTRANT que si l'agent a le privilège —
+    // sinon le texte "Le service sera choisi par le DGA..." reste affiché
+    // comme avant ce privilège.
+    public function test_le_selecteur_de_service_napparait_pour_un_entrant_que_si_le_privilege_est_present(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'entrant')
+            ->assertSee('Le service sera choisi par le DGA')
+            ->assertDontSee('Optionnel — si vous choisissez un service');
+
+        $agent->privilegesDirectes()->attach(Privilege::where('cle', 'courriers.envoyer_direct_service')->value('id'));
+
+        // hasPrivilege() est mémoïsé via once() pour la durée de l'instance
+        // PHP (voir memory systeme_privileges) : relire l'utilisateur et
+        // ré-authentifier avant de revérifier, sinon la liste de privilèges
+        // mise en cache AVANT l'attach() ci-dessus persiste.
+        $this->actingAs(User::find($agent->id));
+
+        Livewire::test(RegistrationForm::class)
+            ->set('form.sens', 'entrant')
+            ->assertDontSee('Le service sera choisi par le DGA')
+            ->assertSee('Optionnel — si vous choisissez un service');
     }
 
     public function test_un_courrier_sortant_non_sinistre_saute_la_validation_dga(): void
@@ -1104,11 +1234,38 @@ class RegistrationFormTest extends TestCase
     {
         $agent = $this->utilisateurAvecProfil('Agent');
         $autreAgent = $this->utilisateurAvecProfil('Agent');
+        // source par défaut du helper brouillon() = 'manuel' : seul un
+        // brouillon "dossier_surveille" bénéficie de l'exception ci-dessous
+        // (voir CourrierBrouillonPolicy::utiliser()), un scan manuel reste
+        // personnel à son créateur comme avant.
         $brouillon = $this->brouillon($autreAgent);
 
         $this->actingAs($agent);
 
         Livewire::test(RegistrationForm::class, ['brouillonId' => $brouillon->id])->assertForbidden();
+    }
+
+    // 2026-10-08 — retour utilisateur réel : le dossier surveillé attribue
+    // le brouillon importé à QUELLE QUE SOIT la session active au moment
+    // précis de l'import, pas forcément celle de l'agent qui ouvre ensuite
+    // "Enregistrer un courrier" sur le même poste partagé — sans cette
+    // exception, un agent ne voyait/n'utilisait JAMAIS les documents que le
+    // dossier surveillé venait pourtant bien d'importer, dès qu'une autre
+    // session avait déclenché l'import. Volontairement PAS
+    // brouillons.utiliser_tout (explicitement refusé par l'utilisateur,
+    // "not the whole thing the admin can see" — ce privilège couvrirait
+    // AUSSI les scans MANUELS d'autres agents, hors sujet) : voir
+    // CourrierBrouillonPolicy::utiliser(), troisième branche dédiée à
+    // source === SOURCE_DOSSIER_SURVEILLE.
+    public function test_un_agent_peut_utiliser_un_brouillon_dossier_surveille_dun_autre(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $autreAgent = $this->utilisateurAvecProfil('Agent');
+        $brouillon = $this->brouillon($autreAgent, ['source' => CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE]);
+
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class, ['brouillonId' => $brouillon->id])->assertHasNoErrors();
     }
 
     public function test_la_soumission_est_bloquee_si_locr_du_brouillon_est_encore_en_cours(): void
@@ -1251,6 +1408,9 @@ class RegistrationFormTest extends TestCase
         $autreAgent = $this->utilisateurAvecProfil('Agent');
 
         $lemien = $this->brouillon($agent, ['nom_original' => 'mon-scan.pdf']);
+        // source par défaut du helper brouillon() = 'manuel' : reste
+        // personnel à son créateur, contrairement à un import
+        // 'dossier_surveille' (voir le test suivant).
         $this->brouillon($autreAgent, ['nom_original' => 'pas-le-mien.pdf']);
 
         $this->actingAs($agent);
@@ -1258,6 +1418,26 @@ class RegistrationFormTest extends TestCase
         Livewire::test(RegistrationForm::class)
             ->assertSee('mon-scan.pdf')
             ->assertDontSee('pas-le-mien.pdf');
+    }
+
+    // 2026-10-08 — retour utilisateur réel, voir le commentaire détaillé de
+    // test_un_agent_peut_utiliser_un_brouillon_dossier_surveille_dun_autre()
+    // plus haut : un import "dossier_surveille" est visible par N'IMPORTE
+    // QUEL agent, pas seulement son créateur — contrairement au test
+    // ci-dessus (source 'manuel', qui reste personnel).
+    public function test_les_imports_dossier_surveille_dun_autre_agent_sont_listes(): void
+    {
+        $agent = $this->utilisateurAvecProfil('Agent');
+        $autreAgent = $this->utilisateurAvecProfil('Agent');
+
+        $this->brouillon($autreAgent, [
+            'nom_original' => 'scan-autre-agent.pdf',
+            'source' => CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE,
+        ]);
+
+        $this->actingAs($agent);
+
+        Livewire::test(RegistrationForm::class)->assertSee('scan-autre-agent.pdf');
     }
 
     // Cohérence avec CourrierBrouillonPolicy::utiliser() qui autorise déjà

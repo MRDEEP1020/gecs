@@ -18,7 +18,7 @@
 
     <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full {{ $modeConfidentiel ? 'bg-brand-secure' : 'bg-brand-blue' }} text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full {{ $modeConfidentiel ? 'bg-brand-secure' : 'bg-brand-accent' }} text-white">
                 @if ($modeConfidentiel)
                     <flux:icon.lock-closed class="size-5" />
                 @else
@@ -184,7 +184,7 @@
                 >
                     <span
                         class="flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                        x-bind:class="etape === {{ $n }} ? 'bg-brand-blue text-white' : (etape > {{ $n }} ? 'bg-brand-success text-white' : 'bg-brand-disabled-bg text-brand-disabled-text')"
+                        x-bind:class="etape === {{ $n }} ? 'bg-brand-accent text-white' : (etape > {{ $n }} ? 'bg-brand-success text-white' : 'bg-brand-disabled-bg text-brand-disabled-text')"
                     >
                         <template x-if="etape > {{ $n }}"><flux:icon.check class="size-4" /></template>
                         <template x-if="etape <= {{ $n }}"><span>{{ $n }}</span></template>
@@ -361,11 +361,26 @@
                         <flux:input type="date" wire:model="form.date_mouvement" :label="__('Date de réception / d\'envoi')" class:input="invalid:border-brand-danger valid:border-brand-success" required />
                     </flux:field>
 
-                    @if ($form->sens === 'sortant')
-                        <div class="grid gap-3 sm:col-span-2 sm:grid-cols-3">
-                            {{-- Module "Organisation" v2 (2026-09-22, spec §16)
-                                 — cascade Site → Département → Service/Unité,
-                                 remplace le sélecteur plat unique. --}}
+                    {{-- 2026-10-08 — privilège courriers.envoyer_direct_service
+                         (retour utilisateur, "make the agent start sending
+                         courier to the service concerné without passing
+                         throught the direction service") : un agent qui le
+                         possède peut désormais choisir lui-même le service
+                         d'un courrier ENTRANT aussi, pas seulement sortant —
+                         mais contrairement à sortant, ce choix reste
+                         OPTIONNEL ici (jamais "required") : s'il choisit un
+                         service, le courrier lui est envoyé directement (même
+                         mécanisme qu'un sinistre auto-classé, voir
+                         RegistrationForm::enregistrer()) ; s'il laisse vide,
+                         le circuit normal (validation DGA/ADJ DGA) reprend
+                         exactement comme avant pour qui n'a pas ce privilège. --}}
+                    @php $peutEnvoyerDirectService = $form->sens === 'entrant' && auth()->user()->hasPrivilege('courriers.envoyer_direct_service'); @endphp
+                    @if ($form->sens === 'sortant' || $peutEnvoyerDirectService)
+                        <div class="grid gap-3 sm:col-span-2 sm:grid-cols-4">
+                            {{-- Module "Organisation" v2 (2026-09-22, spec §16,
+                                 niveau Direction ajouté le 2026-10-09) —
+                                 cascade Site → Direction → Département →
+                                 Service/Unité, remplace le sélecteur plat unique. --}}
                             {{-- 2026-09-23, clarification explicite de l'utilisateur :
                                  le Site est OPTIONNEL — des Départements réels
                                  existent déjà à la racine (sans Site au-dessus) en
@@ -383,9 +398,27 @@
                                     @endforeach
                                 </flux:select>
                             </flux:field>
+                            {{-- 2026-10-09 — Direction, OPTIONNELLE comme Site :
+                                 un Département peut reporter directement au
+                                 Site, sans Direction au-dessus (ex. "Département
+                                 Informatique"). --}}
+                            @if ($this->directionsDisponibles->isNotEmpty())
+                                <flux:field>
+                                    <flux:select wire:model.live="directionSelectionneeId" :label="__('Direction')" placeholder="{{ __('— Aucune (direct) —') }}">
+                                        <flux:select.option value="">{{ __('— Aucune (direct) —') }}</flux:select.option>
+                                        @foreach ($this->directionsDisponibles as $direction)
+                                            <flux:select.option value="{{ $direction->id }}">{{ $direction->name }}</flux:select.option>
+                                        @endforeach
+                                    </flux:select>
+                                </flux:field>
+                            @endif
                             @if ($this->departementsDisponibles->isNotEmpty())
                                 <flux:field>
-                                    <flux:select wire:model.live="departementSelectionneId" :label="__('Département')" placeholder="{{ __('Choisir un département') }}" required>
+                                    {{-- required SEULEMENT pour sortant : pour un
+                                         entrant envoyé en direct, le Département
+                                         reste volontairement optionnel (voir
+                                         commentaire du privilège ci-dessus). --}}
+                                    <flux:select wire:model.live="departementSelectionneId" :label="__('Département')" placeholder="{{ __('Choisir un département') }}" :required="$form->sens === 'sortant'">
                                         @foreach ($this->departementsDisponibles as $departement)
                                             <flux:select.option value="{{ $departement->id }}">{{ $departement->name }}</flux:select.option>
                                         @endforeach
@@ -404,6 +437,8 @@
                             @endif
                             @if ($champsProposesAutomatiquement && $form->service_id)
                                 <flux:description class="text-brand-warning sm:col-span-3">{{ __('Proposé automatiquement — à vérifier') }}</flux:description>
+                            @elseif ($peutEnvoyerDirectService)
+                                <flux:description class="sm:col-span-3">{{ __('Optionnel — si vous choisissez un service, ce courrier lui sera envoyé directement, sans passer par la validation DGA/ADJ DGA.') }}</flux:description>
                             @endif
                             @error('form.service_id') <flux:text class="text-sm text-brand-danger sm:col-span-3">{{ $message }}</flux:text> @enderror
                         </div>
@@ -660,7 +695,7 @@
             @endphp
             <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="mb-3 flex items-center gap-2">
-                    <flux:icon.information-circle class="size-4 text-brand-blue" />
+                    <flux:icon.information-circle class="size-4 text-brand-accent" />
                     <flux:heading level="3">{{ __('Aperçu du document') }}</flux:heading>
                 </div>
 

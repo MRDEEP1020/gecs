@@ -18,7 +18,6 @@
 <flux:menu.separator />
 <flux:menu.radio>
     <flux:menu.item :href="route('langue.changer', 'fr')">
-
         {{ __('Fr') }}
     </flux:menu.item>
     <flux:menu.item :href="route('langue.changer', 'en')">

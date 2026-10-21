@@ -246,7 +246,18 @@ class ScanPremierTest extends TestCase
         $this->assertCount(1, $resultats);
     }
 
-    public function test_un_agent_sans_privilege_ne_voit_que_ses_propres_imports(): void
+    // 2026-10-08 — revu suite à un retour utilisateur réel : cette liste
+    // est déjà entièrement restreinte à source=dossier_surveille (voir
+    // ScanPremier::importsDossierSurveille()), une ressource du POSTE
+    // partagé plutôt que personnelle à qui était connecté au moment précis
+    // de l'import (l'import est attribué à Auth::id() de quelle que soit
+    // la session active à cet instant, pas forcément celle de l'agent qui
+    // consulte ensuite cette page) — tout agent qui atteint cette page voit
+    // donc TOUS ces imports, sans condition de privilège. Volontairement
+    // PAS brouillons.utiliser_tout (explicitement refusé par l'utilisateur,
+    // "not the whole thing the admin can see" — ce privilège couvrirait
+    // aussi des scans manuels d'autres agents, hors sujet ici).
+    public function test_un_agent_voit_les_imports_dossier_surveille_de_tous_les_agents(): void
     {
         Storage::fake('s3');
         $agent = $this->utilisateurAvecProfil('Agent');
@@ -257,7 +268,7 @@ class ScanPremierTest extends TestCase
             'type_mime' => 'application/pdf', 'taille' => 100, 'cree_par_id' => $agent->id,
             'source' => CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE,
         ]);
-        CourrierBrouillon::create([
+        $pasLeMien = CourrierBrouillon::create([
             'fichier_path' => 'brouillons/b.pdf', 'nom_original' => 'b.pdf',
             'type_mime' => 'application/pdf', 'taille' => 100, 'cree_par_id' => $autreAgent->id,
             'source' => CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE,
@@ -267,8 +278,9 @@ class ScanPremierTest extends TestCase
 
         $resultats = Livewire::test(ScanPremier::class)->get('importsDossierSurveille');
 
-        $this->assertCount(1, $resultats);
-        $this->assertSame($lemien->id, $resultats->first()->id);
+        $this->assertCount(2, $resultats);
+        $this->assertTrue($resultats->contains('id', $lemien->id));
+        $this->assertTrue($resultats->contains('id', $pasLeMien->id));
     }
 
     // Carte de recherche ajoutée au-dessus du tableau (2026-09-22, "it

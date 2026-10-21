@@ -24,9 +24,9 @@
     $selectionne = $dossierIdSelectionne === $dossier->id;
     $aDesEnfants = count($noeud['enfants']) > 0;
     $classesLigne = 'flex flex-1 min-w-0 cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60'
-        .($selectionne ? ' bg-brand-blue-pale font-medium text-brand-blue dark:bg-zinc-800' : '');
+        .($selectionne ? ' bg-brand-accent-pale font-medium text-brand-accent dark:bg-zinc-800' : '');
     $classesCompteur = 'shrink-0 rounded-full px-1.5 py-0.5 text-xs '
-        .($selectionne ? 'bg-white text-brand-blue' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800');
+        .($selectionne ? 'bg-white text-brand-accent' : 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800');
 @endphp
 
 @if ($aDesEnfants)

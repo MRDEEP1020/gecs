@@ -8,6 +8,7 @@ use App\Models\Privilege;
 use App\Models\Service;
 use App\Models\User;
 use App\Notifications\CourrierEnRetardNotification;
+use App\Notifications\CourrierNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -91,6 +92,33 @@ class NotificationsIndexTest extends TestCase
             ->call('marquerCommeLue', $id);
 
         $this->assertNotNull($utilisateur->notifications()->find($id)->read_at);
+    }
+
+    // 2026-10-12, demande explicite de l'utilisateur ("make each
+    // notification to show who send it").
+    public function test_affiche_lauteur_de_la_notification_quand_disponible(): void
+    {
+        $utilisateur = $this->utilisateurAvecPrivilege('general.notifications');
+        $courrier = $this->courrier();
+        $auteur = User::factory()->create(['profil_id' => null, 'name' => 'Jean Dupont']);
+        $utilisateur->notify(new CourrierNotification($courrier, 'affectation', envoyePar: $auteur));
+
+        Livewire::actingAs($utilisateur)
+            ->test(NotificationsIndex::class)
+            ->assertSee('Jean Dupont');
+    }
+
+    // Alerte SLA automatique (SendMailAlertJob) : aucun auteur humain réel,
+    // la ligne "Envoyé par" ne doit pas apparaître du tout.
+    public function test_naffiche_pas_denvoye_par_pour_une_alerte_automatique(): void
+    {
+        $utilisateur = $this->utilisateurAvecPrivilege('general.notifications');
+        $courrier = $this->courrier();
+        $utilisateur->notify(new CourrierEnRetardNotification($courrier, enRetard: true));
+
+        Livewire::actingAs($utilisateur)
+            ->test(NotificationsIndex::class)
+            ->assertDontSee('Envoyé par');
     }
 
     public function test_narrive_jamais_a_voir_les_notifications_dun_autre_utilisateur(): void

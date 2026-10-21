@@ -126,22 +126,23 @@ class ScanPremier extends Component
     // spécifiquement via le dossier surveillé (demande explicite de
     // l'utilisateur, distincte de RegistrationForm::brouillonsEnAttente()
     // qui liste TOUS les brouillons en attente, quelle que soit leur
-    // origine). Même périmètre par privilège que brouillonsEnAttente()
-    // (réutilise brouillons.utiliser_tout, pas de nouveau privilège) — mais
-    // PAS de whereNull('finalise_le') : c'est un historique complet
-    // (importé, en attente OU déjà enregistré), pas une liste "à traiter".
+    // origine). PAS de whereNull('finalise_le') : c'est un historique
+    // complet (importé, en attente OU déjà enregistré), pas une liste "à
+    // traiter".
+    //
+    // 2026-10-08 — ne filtre PLUS par cree_par_id/brouillons.utiliser_tout
+    // (retour utilisateur, "not the whole thing the admin can see" — voir
+    // CourrierBrouillonPolicy::utiliser() pour le raisonnement complet) :
+    // cette liste est déjà entièrement restreinte à source=dossier_surveille,
+    // une ressource du poste partagé plutôt que personnelle à qui était
+    // connecté au moment précis de l'import — tout agent qui atteint cette
+    // page (déjà gardée par courriers.numeriser) voit donc tous ces imports.
     #[Computed]
     public function importsDossierSurveille()
     {
-        $peutTout = Auth::user()->hasPrivilege('brouillons.utiliser_tout');
-
         return CourrierBrouillon::query()
             ->where('source', CourrierBrouillon::SOURCE_DOSSIER_SURVEILLE)
-            ->when(
-                $peutTout,
-                fn ($q) => $q->with('creePar:id,name'),
-                fn ($q) => $q->where('cree_par_id', Auth::id()),
-            )
+            ->with('creePar:id,name')
             ->when($this->rechercheImports !== '', fn ($q) => $q->where('nom_original', 'like', "%{$this->rechercheImports}%"))
             ->latest()
             ->paginate(10, ['id', 'nom_original', 'ocr_statut', 'created_at', 'cree_par_id', 'finalise_le'], 'importsPage');

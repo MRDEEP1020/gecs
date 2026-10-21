@@ -16,7 +16,7 @@
     </flux:breadcrumbs>
 
     <div class="mt-3 flex items-center gap-3">
-        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+        <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
             <flux:icon.adjustments-horizontal class="size-5" />
         </div>
         <div>
@@ -46,7 +46,7 @@
                         <button
                             type="button"
                             x-on:click="section = '{{ $categorie['cle'] }}'"
-                            :class="section === '{{ $categorie['cle'] }}' ? 'bg-brand-blue-pale text-brand-blue' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60'"
+                            :class="section === '{{ $categorie['cle'] }}' ? 'bg-brand-accent-pale text-brand-accent' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/60'"
                             class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm font-medium transition-colors"
                         >
                             <flux:icon :icon="$categorie['icon']" class="size-4 shrink-0" />
@@ -64,7 +64,7 @@
             {{-- ----- Numéro de référence ----- --}}
             <div x-show="section === 'numero'" x-cloak class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="mb-1 flex items-center gap-2">
-                    <flux:icon.hashtag class="size-4 text-brand-blue" />
+                    <flux:icon.hashtag class="size-4 text-brand-accent" />
                     <flux:heading level="2" class="text-base">{{ __('Numéro de référence') }}</flux:heading>
                 </div>
                 <flux:text class="mb-4 text-zinc-500">{{ __('Format attribué à chaque nouveau courrier — les numéros déjà générés ne changent jamais, même après une modification ici.') }}</flux:text>
@@ -95,7 +95,7 @@
                     <flux:icon.eye class="size-4 shrink-0 text-zinc-400" />
                     <flux:text class="text-sm">
                         {{ __('Prochain numéro') }} :
-                        <span class="font-mono font-semibold text-brand-blue">{{ $this->apercuProchainNumero }}</span>
+                        <span class="font-mono font-semibold text-brand-accent">{{ $this->apercuProchainNumero }}</span>
                     </flux:text>
                 </div>
             </div>
@@ -103,7 +103,7 @@
             {{-- ----- SLA — délais ----- --}}
             <div x-show="section === 'sla'" x-cloak class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="mb-1 flex items-center gap-2">
-                    <flux:icon.clock class="size-4 text-brand-blue" />
+                    <flux:icon.clock class="size-4 text-brand-accent" />
                     <flux:heading level="2" class="text-base">{{ __('SLA — délais de traitement') }}</flux:heading>
                 </div>
                 <flux:text class="mb-4 text-zinc-500">{{ __('Jours calendaires. Une échéance saisie à la main sur un courrier, ou un délai propre à ce courrier, reste toujours prioritaire sur ces valeurs.') }}</flux:text>
@@ -148,7 +148,7 @@
             {{-- ----- SLA — délais par type de document ----- --}}
             <div x-show="section === 'sla_type'" x-cloak class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="mb-1 flex items-center gap-2">
-                    <flux:icon.queue-list class="size-4 text-brand-blue" />
+                    <flux:icon.queue-list class="size-4 text-brand-accent" />
                     <flux:heading level="2" class="text-base">{{ __('SLA — délais par type de document') }}</flux:heading>
                 </div>
                 <flux:text class="mb-4 text-zinc-500">{{ __('Laissez vide pour utiliser le délai par défaut.') }}</flux:text>
@@ -170,7 +170,7 @@
             {{-- ----- Confidentialité & qualité scan/OCR (Group A) ----- --}}
             <div x-show="section === 'qualite'" x-cloak class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="mb-1 flex items-center gap-2">
-                    <flux:icon.shield-check class="size-4 text-brand-blue" />
+                    <flux:icon.shield-check class="size-4 text-brand-accent" />
                     <flux:heading level="2" class="text-base">{{ __('Confidentialité & qualité scan/OCR') }}</flux:heading>
                 </div>
                 <flux:text class="mb-4 text-zinc-500">{{ __('Seuils techniques — modifier ces valeurs change le comportement du scan et de la reconnaissance de texte pour tous les prochains courriers.') }}</flux:text>
@@ -235,10 +235,10 @@
                         @forelse ($liste['items'] as $valeur)
                             <div wire:key="liste-{{ $liste['type'] }}-{{ $valeur->id }}" class="flex items-center gap-2 py-2 {{ ! $valeur->actif ? 'opacity-50' : '' }}">
                                 <div class="flex shrink-0 flex-col">
-                                    <button type="button" wire:click="deplacerValeur({{ $valeur->id }}, 'haut')" class="text-zinc-400 hover:text-brand-blue disabled:opacity-30" {{ $loop->first ? 'disabled' : '' }}>
+                                    <button type="button" wire:click="deplacerValeur({{ $valeur->id }}, 'haut')" class="text-zinc-400 hover:text-brand-accent disabled:opacity-30" {{ $loop->first ? 'disabled' : '' }}>
                                         <flux:icon.chevron-up class="size-3.5" />
                                     </button>
-                                    <button type="button" wire:click="deplacerValeur({{ $valeur->id }}, 'bas')" class="text-zinc-400 hover:text-brand-blue disabled:opacity-30" {{ $loop->last ? 'disabled' : '' }}>
+                                    <button type="button" wire:click="deplacerValeur({{ $valeur->id }}, 'bas')" class="text-zinc-400 hover:text-brand-accent disabled:opacity-30" {{ $loop->last ? 'disabled' : '' }}>
                                         <flux:icon.chevron-down class="size-3.5" />
                                     </button>
                                 </div>

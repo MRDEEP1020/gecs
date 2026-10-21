@@ -30,7 +30,7 @@
     <form wire:submit="enregistrerModification">
         <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
             <div class="flex items-center gap-3">
-                <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+                <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                     <flux:icon.envelope class="size-5" />
                 </div>
                 <div>
@@ -73,7 +73,7 @@
                 <div x-show="onglet === 'general'" x-cloak class="mt-4 space-y-6">
                     <div class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                         <div class="mb-4 flex items-center gap-2">
-                            <flux:icon.information-circle class="size-4 text-brand-blue" />
+                            <flux:icon.information-circle class="size-4 text-brand-accent" />
                             <flux:heading level="3">{{ __('Informations générales') }}</flux:heading>
                         </div>
 
@@ -184,7 +184,7 @@
 
                     <div class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                         <div class="mb-4 flex items-center gap-2">
-                            <flux:icon.user-plus class="size-4 text-brand-blue" />
+                            <flux:icon.user-plus class="size-4 text-brand-accent" />
                             <flux:heading level="3">{{ __('Expéditeur / Destinataire') }}</flux:heading>
                         </div>
 
@@ -210,7 +210,7 @@
 
                     <div class="rounded-2xl border border-brand-border bg-white p-5 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                         <div class="mb-4 flex items-center gap-2">
-                            <flux:icon.chat-bubble-bottom-center-text class="size-4 text-brand-blue" />
+                            <flux:icon.chat-bubble-bottom-center-text class="size-4 text-brand-accent" />
                             <flux:heading level="3">{{ __('Résumé / Commentaire') }}</flux:heading>
                         </div>
 
@@ -272,7 +272,7 @@
             <div class="sticky top-20 self-start space-y-6">
                 <div class="rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="flex items-center gap-2 border-b border-brand-border p-4 dark:border-zinc-700">
-                        <flux:icon.document class="size-4 text-brand-blue" />
+                        <flux:icon.document class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Document principal') }}</flux:heading>
                     </div>
 
@@ -490,7 +490,7 @@
 
                 <div class="rounded-2xl border border-brand-border bg-white p-4 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
                     <div class="mb-3 flex items-center gap-2">
-                        <flux:icon.squares-2x2 class="size-4 text-brand-blue" />
+                        <flux:icon.squares-2x2 class="size-4 text-brand-accent" />
                         <flux:heading level="3">{{ __('Informations complémentaires') }}</flux:heading>
                     </div>
                     <dl class="grid grid-cols-2 gap-3 text-sm">
@@ -528,7 +528,7 @@
                     </dl>
                 </div>
 
-                <div class="flex items-start gap-2 rounded-2xl bg-brand-blue-pale p-4 text-sm text-brand-blue-medium">
+                <div class="flex items-start gap-2 rounded-2xl bg-brand-accent-pale p-4 text-sm text-brand-accent-medium">
                     <flux:icon.information-circle class="size-4 shrink-0" />
                     <span>{{ __('Les modifications seront enregistrées dans l\'historique du courrier et tracées dans le journal des actions.') }}</span>
                 </div>

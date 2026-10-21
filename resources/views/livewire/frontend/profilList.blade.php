@@ -11,7 +11,7 @@
 
     <div class="mt-3 flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-center gap-3">
-            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-blue text-white">
+            <div class="flex size-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-white">
                 <flux:icon.identification class="size-5" />
             </div>
             <div>
@@ -33,7 +33,7 @@
 
     <div class="mt-6 overflow-x-auto rounded-2xl border border-brand-border bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
         <table class="w-full text-sm">
-            <thead class="bg-brand-blue-pale text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
+            <thead class="bg-brand-table-header text-left text-sm font-medium text-zinc-600 dark:bg-zinc-800">
                 <tr>
                     <th class="py-3 pl-4 pr-3">{{ __('Profil') }}</th>
                     <th class="py-3 pr-3">{{ __('Utilisateurs') }}</th>
@@ -47,7 +47,7 @@
                     <tr class="hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
                         <td class="py-3 pl-4 pr-3">
                             <div class="flex items-center gap-2.5">
-                                <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                                <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                                     <flux:icon.identification class="size-4" />
                                 </div>
                                 <span class="font-medium">{{ $profil->nom }}</span>
@@ -55,13 +55,13 @@
                         </td>
                         <td class="py-3 pr-3 text-zinc-500">{{ trans_choice(':n utilisateur|:n utilisateurs', $profil->users_count, ['n' => $profil->users_count]) }}</td>
                         <td class="py-3 pr-3">
-                            <span class="inline-flex items-center rounded-full bg-brand-blue-pale px-2 py-0.5 text-xs font-medium text-brand-blue">
+                            <span class="inline-flex items-center rounded-full bg-brand-accent-pale px-2 py-0.5 text-xs font-medium text-brand-accent">
                                 {{ $profil->privileges->count() }} / {{ $this->permissionsCatalogue->count() }}
                             </span>
                         </td>
                         <td class="py-3 pr-3">
                             <div class="flex flex-wrap gap-1 text-xs">
-                                <span class="inline-flex items-center rounded-full bg-brand-blue/10 px-2 py-0.5 text-brand-blue">{{ __('Lecture') }} {{ $profil->privileges->where('type', 'lecture')->count() }}</span>
+                                <span class="inline-flex items-center rounded-full bg-brand-accent/10 px-2 py-0.5 text-brand-accent">{{ __('Lecture') }} {{ $profil->privileges->where('type', 'lecture')->count() }}</span>
                                 <span class="inline-flex items-center rounded-full bg-brand-warning/10 px-2 py-0.5 text-brand-warning">{{ __('Écriture') }} {{ $profil->privileges->where('type', 'ecriture')->count() }}</span>
                                 <span class="inline-flex items-center rounded-full bg-brand-danger/10 px-2 py-0.5 text-brand-danger">{{ __('Administratif') }} {{ $profil->privileges->where('type', 'administratif')->count() }}</span>
                             </div>
@@ -107,7 +107,7 @@
             @php($idsAssignes = $profil->privileges->pluck('id'))
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
-                    <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                    <div class="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                         <flux:icon.shield-check class="size-5" />
                     </div>
                     <div>
@@ -120,7 +120,7 @@
                     {{-- Modules --}}
                     <div class="space-y-1 lg:max-h-104 lg:overflow-y-auto">
                         @foreach ($this->modules as $module)
-                            <button type="button" wire:click="$set('modulePermissionSelectionne', '{{ $module['cle'] }}')" class="flex w-full items-center justify-between gap-2 rounded-lg p-2.5 text-left text-sm {{ $modulePermissionSelectionne === $module['cle'] ? 'bg-brand-blue-pale text-brand-blue' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60' }}">
+                            <button type="button" wire:click="$set('modulePermissionSelectionne', '{{ $module['cle'] }}')" class="flex w-full items-center justify-between gap-2 rounded-lg p-2.5 text-left text-sm {{ $modulePermissionSelectionne === $module['cle'] ? 'bg-brand-accent-pale text-brand-accent' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60' }}">
                                 <span class="flex items-center gap-2">
                                     <flux:icon :icon="$module['icon']" class="size-4" />
                                     {{ $module['label'] }}
@@ -141,7 +141,7 @@
                                         <span class="flex items-center gap-2">
                                             <span class="font-medium">{{ $permission->nom }}</span>
                                             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs {{ match ($permission->type) {
-                                                'lecture' => 'bg-brand-blue/10 text-brand-blue',
+                                                'lecture' => 'bg-brand-accent/10 text-brand-accent',
                                                 'administratif' => 'bg-brand-danger/10 text-brand-danger',
                                                 default => 'bg-brand-warning/10 text-brand-warning',
                                             } }}">
@@ -162,7 +162,7 @@
                     {{-- Récapitulatif --}}
                     <div class="space-y-4">
                         <div class="flex items-center gap-3 rounded-xl border border-brand-border p-3 dark:border-zinc-700">
-                            <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-blue-pale text-brand-blue">
+                            <div class="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-accent-pale text-brand-accent">
                                 <flux:icon.identification class="size-4" />
                             </div>
                             <div class="min-w-0">
